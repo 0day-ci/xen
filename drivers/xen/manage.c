@@ -178,7 +178,9 @@ out:
 #endif	/* CONFIG_HIBERNATE_CALLBACKS */
 
 struct shutdown_handler {
-	const char *command;
+#define SHUTDOWN_CMD_SIZE 11
+	const char command[SHUTDOWN_CMD_SIZE];
+	bool flag;
 	void (*cb)(void);
 };
 
@@ -194,22 +196,22 @@ static void do_reboot(void)
 	ctrl_alt_del();
 }
 
+static struct shutdown_handler shutdown_handlers[] = {
+	{ "poweroff",	true,	do_poweroff },
+	{ "halt",	false,	do_poweroff },
+	{ "reboot",	true,	do_reboot   },
+#ifdef CONFIG_HIBERNATE_CALLBACKS
+	{ "suspend",	true,	do_suspend  },
+#endif
+};
+
 static void shutdown_handler(struct xenbus_watch *watch,
 			     const char **vec, unsigned int len)
 {
 	char *str;
 	struct xenbus_transaction xbt;
 	int err;
-	static struct shutdown_handler handlers[] = {
-		{ "poweroff",	do_poweroff },
-		{ "halt",	do_poweroff },
-		{ "reboot",	do_reboot   },
-#ifdef CONFIG_HIBERNATE_CALLBACKS
-		{ "suspend",	do_suspend  },
-#endif
-		{NULL, NULL},
-	};
-	static struct shutdown_handler *handler;
+	int idx;
 
 	if (shutting_down != SHUTDOWN_INVALID)
 		return;
@@ -226,13 +228,13 @@ static void shutdown_handler(struct xenbus_watch *watch,
 		return;
 	}
 
-	for (handler = &handlers[0]; handler->command; handler++) {
-		if (strcmp(str, handler->command) == 0)
+	for (idx = 0; idx < ARRAY_SIZE(shutdown_handlers); idx++) {
+		if (strcmp(str, shutdown_handlers[idx].command) == 0)
 			break;
 	}
 
 	/* Only acknowledge commands which we are prepared to handle. */
-	if (handler->cb)
+	if (idx < ARRAY_SIZE(shutdown_handlers))
 		xenbus_write(xbt, "control", "shutdown", "");
 
 	err = xenbus_transaction_end(xbt, 0);
@@ -241,8 +243,8 @@ static void shutdown_handler(struct xenbus_watch *watch,
 		goto again;
 	}
 
-	if (handler->cb) {
-		handler->cb();
+	if (idx < ARRAY_SIZE(shutdown_handlers)) {
+		shutdown_handlers[idx].cb();
 	} else {
 		pr_info("Ignoring shutdown request: %s\n", str);
 		shutting_down = SHUTDOWN_INVALID;
@@ -294,6 +296,9 @@ static struct xenbus_watch shutdown_watch = {
 static int setup_shutdown_watcher(void)
 {
 	int err;
+	int idx;
+#define FEATURE_PATH_SIZE (SHUTDOWN_CMD_SIZE + sizeof("feature-"))
+	char node[FEATURE_PATH_SIZE];
 
 	err = register_xenbus_watch(&shutdown_watch);
 	if (err) {
@@ -308,6 +313,14 @@ static int setup_shutdown_watcher(void)
 		return err;
 	}
 #endif
+
+	for (idx = 0; idx < ARRAY_SIZE(shutdown_handlers); idx++) {
+		if (!shutdown_handlers[idx].flag)
+			continue;
+		snprintf(node, FEATURE_PATH_SIZE, "feature-%s",
+			 shutdown_handlers[idx].command);
+		xenbus_printf(XBT_NIL, "control", node, "%u", 1);
+	}
 
 	return 0;
 }
