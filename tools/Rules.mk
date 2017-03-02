@@ -30,6 +30,12 @@ XENSTORE_XENSTORED ?= y
 debug ?= y
 debug_symbols ?= $(debug)
 
+# Uncomment to compile with Go
+CONFIG_GOLANG ?= y
+ifeq ($(CONFIG_GOLANG),y)
+XEN_GOPATH        = $(XEN_ROOT)/tools/golang
+endif
+
 ifeq ($(debug_symbols),y)
 CFLAGS += -g3
 endif
