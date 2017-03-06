@@ -237,4 +237,42 @@ config FAST_SYMBOL_LOOKUP
 	  The only user of this is Live patching.
 
 	  If unsure, say Y.
+
+config CMDLINE_BOOL
+	bool "Built-in hypervisor command line"
+	default n
+	---help---
+	  Allow for specifying boot arguments to the hypervisor at
+	  build time.  On some systems (e.g. embedded ones), it is
+	  necessary or convenient to provide some or all of the
+	  hypervisor boot arguments with the hypervisor itself (that is,
+	  to not rely on the boot loader to provide them.)
+
+	  To compile command line arguments into the hypervisor,
+	  set this option to 'Y', then fill in the
+	  boot arguments in CONFIG_CMDLINE.
+
+config CMDLINE
+	string "Built-in hypervisor command string"
+	depends on CMDLINE_BOOL
+	default ""
+	---help---
+	  Enter arguments here that should be compiled into the hypervisor
+	  image and used at boot time.  If the boot loader provides a
+	  command line at boot time, it is appended to this string to
+	  form the full hypervisor command line, when the system boots.
+
+	  However, you can use the CONFIG_CMDLINE_OVERRIDE option to
+	  change this behavior.
+
+config CMDLINE_OVERRIDE
+	bool "Built-in command line overrides boot loader arguments"
+	default n
+	depends on CMDLINE_BOOL
+	---help---
+	  Set this option to 'Y' to have the hypervisor ignore the boot loader
+	  command line, and use ONLY the built-in command line.
+
+	  This is used to work around broken boot loaders.  This should
+	  be set to 'N' under normal conditions.
 endmenu

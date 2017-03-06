@@ -636,10 +636,34 @@ static char * __init cmdline_cook(char *p, const char *loader_name)
     return p;
 }
 
+/*
+ * Extracts dom0 options from the commandline.
+ *
+ * Options after ' -- ' separator belong to dom0.
+ *  1. Orphan dom0's options from Xen's command line.
+ *  2. Skip all but final leading space from dom0's options.
+ */
+
+static inline char* __init extract_dom0_options(char *cmdline)
+{
+    char *kextra;
+
+    if ( (kextra = strstr(cmdline, " -- ")) != NULL )
+    {
+        *kextra = '\0';
+        kextra += 3;
+        while ( kextra[1] == ' ' ) kextra++;
+    }
+
+    return kextra;
+}
+
 void __init noreturn __start_xen(unsigned long mbi_p)
 {
     char *memmap_type = NULL;
     char *cmdline, *kextra, *loader;
+    static xen_commandline_t __initdata complete_cmdline;
+    static char __initdata complete_kextra[MAX_GUEST_CMDLINE];
     unsigned int initrdidx, domcr_flags = DOMCRF_s3_integrity;
     multiboot_info_t *mbi = __va(mbi_p);
     module_t *mod = (module_t *)__va(mbi->mods_addr);
@@ -672,25 +696,31 @@ void __init noreturn __start_xen(unsigned long mbi_p)
 
     /* Full exception support from here on in. */
 
+#ifdef CONFIG_CMDLINE
+    /* Process the built-in command line options. */
+
+    safe_strcpy(complete_cmdline, CONFIG_CMDLINE);
+    if ( (kextra = extract_dom0_options(complete_cmdline)) != NULL )
+        safe_strcpy(complete_kextra, kextra); 
+    printk("Compiled-in command line: %s\n", complete_cmdline);
+#endif
+
     loader = (mbi->flags & MBI_LOADERNAME)
         ? (char *)__va(mbi->boot_loader_name) : "unknown";
 
-    /* Parse the command-line options. */
+#ifndef CONFIG_CMDLINE_OVERRIDE
+    /* Parse the command-line options passed by the bootloader. */
+
     cmdline = cmdline_cook((mbi->flags & MBI_CMDLINE) ?
                            __va(mbi->cmdline) : NULL,
                            loader);
-    if ( (kextra = strstr(cmdline, " -- ")) != NULL )
-    {
-        /*
-         * Options after ' -- ' separator belong to dom0.
-         *  1. Orphan dom0's options from Xen's command line.
-         *  2. Skip all but final leading space from dom0's options.
-         */
-        *kextra = '\0';
-        kextra += 3;
-        while ( kextra[1] == ' ' ) kextra++;
-    }
-    cmdline_parse(cmdline);
+    safe_strcat(complete_cmdline, " ");
+    safe_strcat(complete_cmdline, cmdline);
+    if ( (kextra = extract_dom0_options(cmdline)) != NULL )
+        safe_strcat(complete_kextra, kextra);
+#endif
+
+    cmdline_parse(complete_cmdline);
 
     /* Must be after command line argument parsing and before
      * allocing any xenheap structures wanted in lower memory. */
@@ -713,7 +743,7 @@ void __init noreturn __start_xen(unsigned long mbi_p)
 
     printk("Bootloader: %s\n", loader);
 
-    printk("Command line: %s\n", cmdline);
+    printk("Command line: %s\n", complete_cmdline);
 
     printk("Video information:\n");
 
@@ -1567,16 +1597,16 @@ void __init noreturn __start_xen(unsigned long mbi_p)
 
     /* Grab the DOM0 command line. */
     cmdline = (char *)(mod[0].string ? __va(mod[0].string) : NULL);
-    if ( (cmdline != NULL) || (kextra != NULL) )
+    if ( (cmdline != NULL) || (strlen(complete_kextra) != 0) )
     {
         static char __initdata dom0_cmdline[MAX_GUEST_CMDLINE];
 
         cmdline = cmdline_cook(cmdline, loader);
         safe_strcpy(dom0_cmdline, cmdline);
 
-        if ( kextra != NULL )
-            /* kextra always includes exactly one leading space. */
-            safe_strcat(dom0_cmdline, kextra);
+        if ( complete_kextra != NULL )
+            /* complete_kextra  always includes exactly one leading space. */
+            safe_strcat(dom0_cmdline, complete_kextra);
 
         /* Append any extra parameters. */
         if ( skip_ioapic_setup && !strstr(dom0_cmdline, "noapic") )

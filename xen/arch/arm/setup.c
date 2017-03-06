@@ -705,6 +705,7 @@ void __init start_xen(unsigned long boot_phys_offset,
     int cpus, i;
     paddr_t xen_paddr;
     const char *cmdline;
+    static xen_commandline_t __initdata complete_cmdline;
     struct bootmodule *xen_bootmodule;
     struct domain *dom0;
     struct xen_arch_domainconfig config;
@@ -728,9 +729,19 @@ void __init start_xen(unsigned long boot_phys_offset,
         + (fdt_paddr & ((1 << SECOND_SHIFT) - 1));
     fdt_size = boot_fdt_info(device_tree_flattened, fdt_paddr);
 
+#ifdef CONFIG_CMDLINE
+    safe_strcpy(complete_cmdline, CONFIG_CMDLINE);
+    printk("Compiled-in command line: %s\n", complete_cmdline);
+#endif
+
+#ifndef CONFIG_CMDLINE_OVERRIDE
     cmdline = boot_fdt_cmdline(device_tree_flattened);
-    printk("Command line: %s\n", cmdline);
-    cmdline_parse(cmdline);
+    safe_strcat(complete_cmdline, " ");
+    safe_strcat(complete_cmdline, cmdline);
+    printk("Command line: %s\n", complete_cmdline);
+#endif
+
+    cmdline_parse(complete_cmdline);
 
     /* Register Xen's load address as a boot module. */
     xen_bootmodule = add_boot_module(BOOTMOD_XEN,
