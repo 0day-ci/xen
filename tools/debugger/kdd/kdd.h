@@ -37,8 +37,6 @@
 
 #include <stdint.h>
 
-#define PACKED __attribute__((packed))
-
 /*****************************************************************************
  * Serial line protocol: Sender sends a 16-byte header with an optional
  * payload following it.  Receiver responds to each packet with an
@@ -69,7 +67,7 @@ typedef struct {
     uint32_t id;      /* Echoed in responses */
     uint32_t sum;     /* Unsigned sum of all payload bytes */
     uint8_t payload[0];
-} PACKED kdd_hdr;
+} kdd_hdr;
 
 #define KDD_PKT_CMD 0x0002      /* Debugger commands (and replies to them) */
 #define KDD_PKT_MSG 0x0003      /* Kernel messages for the user */
@@ -122,7 +120,7 @@ typedef struct {
     uint64_t addr;              /* IN: address of start of read/write */
     uint32_t length_req;        /* IN: bytes to read/write */
     uint32_t length_rsp;        /* OUT: bytes successfully read/written */
-} PACKED kdd_cmd_mem;
+} kdd_cmd_mem;
 
 /* CPU register access.  As for memory accesses, but the data is a
  * fixed-length block of register info. */
@@ -134,7 +132,7 @@ typedef struct {
     uint16_t u1;
     uint16_t cpu;               /* IN: Zero-based processor ID */
     uint32_t status;            /* IN: STATUS_PENDING; OUT: result status. */
-} PACKED kdd_cmd_regs;
+} kdd_cmd_regs;
 
 #define KDD_CMD_READ_MSR    0x00003152  /* "R1" */
 #define KDD_CMD_WRITE_MSR   0x00003153  /* "S1" */
@@ -145,7 +143,7 @@ typedef struct {
     uint32_t u2;
     uint32_t msr;               /* IN/OUT: MSR number */
     uint64_t val;               /* IN/OUT: MSR contents */
-} PACKED kdd_cmd_msr;
+} kdd_cmd_msr;
 
 /* Breakpoint commands. */
 
@@ -156,7 +154,7 @@ typedef struct {
     uint32_t status;            /* IN: STATUS_PENDING; OUT: result status. */
     uint32_t u2;
     uint32_t bp;                /* IN: ID of breakpoint to operate on */
-} PACKED kdd_cmd_soft_bp;
+} kdd_cmd_soft_bp;
 
 #define KDD_CMD_HARD_BP     0x0000315C  /* "\1" */
 
@@ -169,7 +167,7 @@ typedef struct {
     uint64_t u4;
     uint64_t u5;
     uint64_t u6;
-} PACKED kdd_cmd_hard_bp;
+} kdd_cmd_hard_bp;
 
 /* Flow control commands.  These commands are _not_ responded to.  */
 
@@ -184,7 +182,7 @@ typedef struct {
     uint32_t reason1;           /* IN: KDD_DBG_* */
     uint32_t u2;
     uint64_t reason2;           /* IN: always same as reason1 */
-} PACKED kdd_cmd_cont;
+} kdd_cmd_cont;
 
 /* Handshake command. */
 
@@ -212,7 +210,7 @@ typedef struct {
     int64_t kern_addr;          /* OUT: KernBase */
     int64_t mods_addr;          /* OUT: PsLoadedModuleList */
     int64_t data_addr;          /* OUT: DebuggerDataList */
-} PACKED kdd_cmd_shake;
+} kdd_cmd_shake;
 
 /* Change active CPU.  This command is _not_ responded to */
 
@@ -222,7 +220,7 @@ typedef struct {
     uint16_t u1;
     uint16_t cpu;               /* IN: Zero-based processor ID */
     uint32_t status;            /* IN: STATUS_PENDING */
-} PACKED kdd_cmd_setcpu;
+} kdd_cmd_setcpu;
 
 typedef struct {
     uint32_t subtype;           /* IN: KDD_CMD_x */
@@ -238,7 +236,7 @@ typedef struct {
         uint8_t pad[52];
     };
     uint8_t data[0];
-} PACKED kdd_cmd;
+} kdd_cmd;
 
 
 /*****************************************************************************
@@ -257,7 +255,7 @@ typedef struct {
     uint32_t length;            /* Length in bytes of trailing string */
     uint32_t u2;
     uint8_t string[0];          /* Non-terminated character string */
-} PACKED kdd_msg;
+} kdd_msg;
 
 /* Registry updates (Hive loads?) */
 
@@ -267,7 +265,7 @@ typedef struct {
     uint32_t subtype;           /* KDD_REG_CHANGE */
     uint32_t u1[15];
     uint16_t string[0];         /* Null-terminated wchar string */
-} PACKED kdd_reg;
+} kdd_reg;
 
 /* State changes.  After sending a state-change message the kernel halts
  * until it receives a continue command from the debugger. */
@@ -293,7 +291,7 @@ typedef struct {
     uint32_t u4[2];
     uint32_t ilen;              /* Number of bytes of instruction following */
     uint8_t inst[36];           /* VA contents from %eip onwards */
-} PACKED kdd_stc_stop;
+} kdd_stc_stop;
 
 typedef struct {
     uint32_t u1[3];
@@ -301,7 +299,7 @@ typedef struct {
     uint64_t rip;               /* Instruction pointer, sign-extended */
     uint64_t u3[26];
     uint8_t path[0];            /* Null-terminated ASCII path to loaded mod. */
-} PACKED kdd_stc_load;
+} kdd_stc_load;
 
 typedef struct {
     uint32_t subtype;           /* KDD_STC_x */
@@ -309,7 +307,7 @@ typedef struct {
         kdd_stc_stop stop;
         kdd_stc_load load;
     };
-} PACKED kdd_stc;
+} kdd_stc;
 
 
 /*****************************************************************************
@@ -325,7 +323,7 @@ typedef struct {
         kdd_stc stc;
         uint8_t payload[0];
     };
-} PACKED kdd_pkt;
+} kdd_pkt;
 
 
 /*****************************************************************************
@@ -357,7 +355,7 @@ typedef union {
         uint32_t sp2[37];       /* More 0x20202020. fp? */
         uint32_t sp3;           /* 0x00202020 */
     };
-} PACKED kdd_regs_x86_32;
+} kdd_regs_x86_32;
 
 typedef union {
     uint64_t pad[154];
@@ -402,12 +400,12 @@ typedef union {
 
         uint64_t u3[26];
     };
-} PACKED kdd_regs_x86_64;
+} kdd_regs_x86_64;
 
 typedef union {
     kdd_regs_x86_32 r32;
     kdd_regs_x86_64 r64;
-} PACKED kdd_regs;
+} kdd_regs;
 
 /* System registers */
 typedef struct {
@@ -430,7 +428,7 @@ typedef struct {
     uint16_t tss_sel;
     uint16_t ldt_sel;
     uint8_t u1[24];
-} PACKED kdd_ctrl_x86_32;
+} kdd_ctrl_x86_32;
 
 typedef struct {
     uint64_t cr0;
@@ -455,7 +453,7 @@ typedef struct {
     uint64_t cr8;
     uint8_t u2[40];
     uint64_t efer; // XXX find out where EFER actually goes
-} PACKED kdd_ctrl_x86_64;
+} kdd_ctrl_x86_64;
 
 typedef union {
     kdd_ctrl_x86_32 c32;
