@@ -2811,6 +2811,7 @@ asmlinkage void leave_hypervisor_tail(void)
         local_irq_disable();
         if (!softirq_pending(smp_processor_id())) {
             gic_inject();
+            WRITE_SYSREG(current->arch.hcr_el2, HCR_EL2);
             return;
         }
         local_irq_enable();
