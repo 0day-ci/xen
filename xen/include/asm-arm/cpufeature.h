@@ -40,8 +40,9 @@
 #define ARM32_WORKAROUND_766422 2
 #define ARM64_WORKAROUND_834220 3
 #define LIVEPATCH_FEATURE   4
+#define SKIP_CHECK_PENDING_VSERROR 5
 
-#define ARM_NCAPS           5
+#define ARM_NCAPS           6
 
 #ifndef __ASSEMBLY__
 

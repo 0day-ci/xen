@@ -134,6 +134,15 @@ static void __init parse_serrors_behavior(const char *str)
 }
 custom_param("serrors", parse_serrors_behavior);
 
+static __init int update_serrors_cpu_caps(void)
+{
+    if ( serrors_op != SERRORS_DIVERSE )
+        cpus_set_cap(SKIP_CHECK_PENDING_VSERROR);
+
+    return 0;
+}
+__initcall(update_serrors_cpu_caps);
+
 register_t get_default_hcr_flags(void)
 {
     return  (HCR_PTW|HCR_BSU_INNER|HCR_AMO|HCR_IMO|HCR_FMO|HCR_VM|
