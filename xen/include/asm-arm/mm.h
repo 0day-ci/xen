@@ -260,6 +260,13 @@ static inline int gvirt_to_maddr(vaddr_t va, paddr_t *pa, unsigned int flags)
 #define virt_to_mfn(va)   (virt_to_maddr(va) >> PAGE_SHIFT)
 #define mfn_to_virt(mfn)  (maddr_to_virt((paddr_t)(mfn) << PAGE_SHIFT))
 
+/*
+ * On ARM DIRECTMAP_VIRT region is directly mapped. Hence return true;
+ */
+static inline bool_t arch_mfn_below_directmap_max_mfn(unsigned long mfn)
+{
+    return 1;
+}
 
 /* Convert between Xen-heap virtual addresses and page-info structures. */
 static inline struct page_info *virt_to_page(const void *v)

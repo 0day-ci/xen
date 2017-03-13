@@ -18,6 +18,7 @@
 #ifndef __ASSEMBLY__
 # include <asm/types.h>
 # include <xen/lib.h>
+# include <xen/kernel.h>
 #endif
 
 #include <asm/x86_64/page.h>
@@ -372,6 +373,21 @@ perms_strictly_increased(uint32_t old_flags, uint32_t new_flags)
     /* If the changed bits are all set in the new flags, then rights strictly
      * increased between old and new. */
     return ((of | (of ^ nf)) == nf);
+}
+
+/*
+ * x86 maps DIRECTMAP_VIRT to physical memory. Get the mfn for directmap
+ * memory region.
+ */
+static inline bool_t arch_mfn_below_directmap_max_mfn(unsigned long mfn)
+{
+#ifdef DIRECTMAP_VIRT_END
+    unsigned long eva = min(DIRECTMAP_VIRT_END, HYPERVISOR_VIRT_END);
+
+    return mfn <= (virt_to_mfn(eva - 1) + 1);
+#else
+    return 0;
+#endif
 }
 
 #endif /* !__ASSEMBLY__ */
