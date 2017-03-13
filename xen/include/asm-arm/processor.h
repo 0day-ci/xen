@@ -711,6 +711,8 @@ void do_trap_hyp_serror(struct cpu_user_regs *regs);
 
 void do_trap_guest_serror(struct cpu_user_regs *regs);
 
+void prevent_forward_serror_to_next_vcpu(void);
+
 /* Functions for pending virtual abort checking window. */
 void abort_guest_exit_start(void);
 void abort_guest_exit_end(void);

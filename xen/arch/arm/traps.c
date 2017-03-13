@@ -2899,7 +2899,6 @@ asmlinkage void do_trap_hypervisor(struct cpu_user_regs *regs)
     }
 }
 
-#if 0
 static void synchronize_serror(void)
 {
     /* Synchronize against in-flight ld/st. */
@@ -2908,7 +2907,18 @@ static void synchronize_serror(void)
     /* A single instruction exception window */
     isb();
 }
-#endif
+
+/*
+ * If the SErrors option is "FORWARD", we have to prevent forwarding
+ * serror to wrong vCPU. So before context switch, we have to use the
+ * synchronize_serror to guarantee that the pending serror would be
+ * caught by current vCPU.
+ */
+void prevent_forward_serror_to_next_vcpu(void)
+{
+    if ( serrors_op == SERRORS_FORWARD )
+        synchronize_serror();
+}
 
 asmlinkage void do_trap_hyp_serror(struct cpu_user_regs *regs)
 {

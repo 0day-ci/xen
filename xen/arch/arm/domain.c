@@ -312,6 +312,8 @@ void context_switch(struct vcpu *prev, struct vcpu *next)
 
     local_irq_disable();
 
+    prevent_forward_serror_to_next_vcpu();
+
     set_current(next);
 
     prev = __context_switch(prev, next);
