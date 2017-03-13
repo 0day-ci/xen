@@ -709,6 +709,10 @@ int call_smc(register_t function_id, register_t arg0, register_t arg1,
 
 void do_trap_guest_error(struct cpu_user_regs *regs);
 
+void do_trap_hyp_serror(struct cpu_user_regs *regs);
+
+void do_trap_guest_serror(struct cpu_user_regs *regs);
+
 /* Functions for pending virtual abort checking window. */
 void abort_guest_exit_start(void);
 void abort_guest_exit_end(void);
