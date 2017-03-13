@@ -1481,6 +1481,50 @@ enabling more sockets and cores to go into deeper sleep states.
 
 Set the serial transmit buffer size.
 
+### serrors (ARM)
+> `= diverse | forward | panic`
+
+> Default: `diverse`
+
+This parameter is provided to administrator to determine how to handle the
+SErrors.
+
+In order to distinguish guest-generated SErrors from hypervisor-generated
+SErrors. We have to place SError checking code in every EL1 -> EL2 paths.
+That will be an overhead on entries caused by dsb/isb. But not all platforms
+need to categorize the SErrors. For example, a host that is running with
+trusted guests. The administrator can confirm that all guests that are
+running on the host will not trigger such SErrors. In this case, the
+administrator can use this parameter to skip categorizing the SErrors. And
+reduce the overhead of dsb/isb.
+
+We provided following 3 options to administrator to determine how to handle
+the SErrors:
+
+* `diverse`:
+  The hypervisor will distinguish guest SErrors from hypervisor SErrors.
+  The guest generated SErrors will be forwarded to guests, the hypervisor
+  generated SErrors will cause the whole system crash.
+  It requires:
+  1. Place dsb/isb on all EL1 -> EL2 trap entries to categorize SErrors
+     correctly.
+  2. Place dsb/isb on EL2 -> EL1 return paths to prevent slipping hypervisor
+     SErrors to guests.
+  3. Place dsb/isb in context switch to isolate the SErrors between 2 vCPUs.
+
+* `forward`:
+  The hypervisor will not distinguish guest SErrors from hypervisor SErrors.
+  All SErrors will be forwarded to guests, except the SErrors generated when
+  idle vCPU is running. The idle domain doesn't have the ability to hanle the
+  SErrors, so we have to crash the whole system when we get SErros with idle
+  vCPU. This option will avoid most overhead of the dsb/isb, except the dsb/isb
+  in context switch which is used to isolate the SErrors between 2 vCPUs.
+
+* `panic`:
+  The hypervisor will not distinguish guest SErrors from hypervisor SErrors.
+  All SErrors will crash the whole system. This option will avoid all overhead
+  of the dsb/isb.
+
 ### smap
 > `= <boolean> | hvm`
 

@@ -115,6 +115,25 @@ static void __init parse_vwfi(const char *s)
 }
 custom_param("vwfi", parse_vwfi);
 
+static enum {
+    SERRORS_DIVERSE,
+    SERRORS_FORWARD,
+    SERRORS_PANIC,
+} serrors_op;
+
+static void __init parse_serrors_behavior(const char *str)
+{
+    if ( !strcmp(str, "forward") )
+        serrors_op = SERRORS_FORWARD;
+    else if ( !strcmp(str, "panic") )
+        serrors_op = SERRORS_PANIC;
+    else
+        serrors_op = SERRORS_DIVERSE;
+
+    return;
+}
+custom_param("serrors", parse_serrors_behavior);
+
 register_t get_default_hcr_flags(void)
 {
     return  (HCR_PTW|HCR_BSU_INNER|HCR_AMO|HCR_IMO|HCR_FMO|HCR_VM|
