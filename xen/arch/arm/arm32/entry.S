@@ -125,6 +125,7 @@ abort_guest_exit_end:
 trap_##trap:                                                            \
         SAVE_ALL;                                                       \
         cpsie i;        /* local_irq_enable */                          \
+        cpsie a;        /* asynchronous abort enable */                 \
         adr lr, return_from_trap;                                       \
         mov r0, sp;                                                     \
         mov r11, sp;                                                    \
@@ -135,6 +136,18 @@ trap_##trap:                                                            \
         ALIGN;                                                          \
 trap_##trap:                                                            \
         SAVE_ALL;                                                       \
+        cpsie a;        /* asynchronous abort enable */                 \
+        adr lr, return_from_trap;                                       \
+        mov r0, sp;                                                     \
+        mov r11, sp;                                                    \
+        bic sp, #7; /* Align the stack pointer (noop on guest trap) */  \
+        b do_trap_##trap
+
+#define DEFINE_TRAP_ENTRY_NOABORT(trap)                                 \
+        ALIGN;                                                          \
+trap_##trap:                                                            \
+        SAVE_ALL;                                                       \
+        cpsie i;        /* local_irq_enable */                          \
         adr lr, return_from_trap;                                       \
         mov r0, sp;                                                     \
         mov r11, sp;                                                    \
@@ -155,10 +168,10 @@ GLOBAL(hyp_traps_vector)
 DEFINE_TRAP_ENTRY(undefined_instruction)
 DEFINE_TRAP_ENTRY(supervisor_call)
 DEFINE_TRAP_ENTRY(prefetch_abort)
-DEFINE_TRAP_ENTRY(data_abort)
 DEFINE_TRAP_ENTRY(hypervisor)
 DEFINE_TRAP_ENTRY_NOIRQ(irq)
 DEFINE_TRAP_ENTRY_NOIRQ(fiq)
+DEFINE_TRAP_ENTRY_NOABORT(data_abort)
 
 return_from_trap:
         mov sp, r11
