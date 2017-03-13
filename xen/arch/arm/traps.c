@@ -2899,6 +2899,17 @@ asmlinkage void do_trap_hypervisor(struct cpu_user_regs *regs)
     }
 }
 
+#if 0
+static void synchronize_serror(void)
+{
+    /* Synchronize against in-flight ld/st. */
+    dsb(sy);
+
+    /* A single instruction exception window */
+    isb();
+}
+#endif
+
 asmlinkage void do_trap_hyp_serror(struct cpu_user_regs *regs)
 {
     enter_hypervisor_head(regs);
