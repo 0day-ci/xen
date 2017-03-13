@@ -65,9 +65,15 @@ struct cpu_user_regs
 
     /* Return address and mode */
     __DECL_REG(pc,           pc32);             /* ELR_EL2 */
+    /*
+     * Be careful for 32-bit registers, if we use xN to save 32-bit register
+     * to stack, its next field on stack will be overridden.
+     * For example, if we use xN to save SPSR_EL2 to stack will override the
+     * hsr field on stack.
+     * So, it's better to use wN to save 32-bit registers to stack.
+     */
     uint32_t cpsr;                              /* SPSR_EL2 */
-
-    uint32_t pad0; /* Align end of kernel frame. */
+    uint32_t hsr;                               /* ESR_EL2 */
 
     /* Outer guest frame only from here on... */
 

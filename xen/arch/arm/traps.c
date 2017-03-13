@@ -2657,7 +2657,7 @@ static void enter_hypervisor_head(struct cpu_user_regs *regs)
 
 asmlinkage void do_trap_hypervisor(struct cpu_user_regs *regs)
 {
-    const union hsr hsr = { .bits = READ_SYSREG32(ESR_EL2) };
+    const union hsr hsr = { .bits = regs->hsr };
 
     enter_hypervisor_head(regs);
 
