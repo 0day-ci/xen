@@ -1,5 +1,6 @@
 #include <asm/asm_defns.h>
 #include <asm/regs.h>
+#include <asm/cpufeature.h>
 #include <public/xen.h>
 
 #define SAVE_ONE_BANKED(reg)    mrs r11, reg; str r11, [sp, #UREGS_##reg]
@@ -10,6 +11,21 @@
 
 #define RESTORE_BANKED(mode) \
         RESTORE_ONE_BANKED(SP_##mode) ; RESTORE_ONE_BANKED(LR_##mode) ; RESTORE_ONE_BANKED(SPSR_##mode)
+
+/*
+ * If the SKIP_CHECK_PENDING_VSERROR has been set in the cpu feature,
+ * the checking of pending SErrors will be skipped.
+ *
+ * As it is a temporary solution, we are assuming that
+ * SKIP_CHECK_PENDING_VSERROR will always be in the first word for
+ * cpu_hwcaps. This would have to be dropped as soon as ARM32 gain
+ * support of alternative.
+ */
+#define SKIP_VSERROR_CHECK                      \
+        ldr r1, =cpu_hwcaps;                    \
+        ldr r1, [r1];                           \
+        tst r1, #SKIP_CHECK_PENDING_VSERROR;    \
+        moveq pc, lr
 
 #define SAVE_ALL                                                        \
         sub sp, #(UREGS_SP_usr - UREGS_sp); /* SP, LR, SPSR, PC */      \
@@ -44,6 +60,9 @@ save_guest_regs:
         SAVE_BANKED(fiq)
         SAVE_ONE_BANKED(R8_fiq); SAVE_ONE_BANKED(R9_fiq); SAVE_ONE_BANKED(R10_fiq)
         SAVE_ONE_BANKED(R11_fiq); SAVE_ONE_BANKED(R12_fiq);
+
+        SKIP_VSERROR_CHECK
+
         /*
          * Start to check pending virtual abort in the gap of Guest -> HYP
          * world switch.
