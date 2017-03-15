@@ -169,6 +169,38 @@ bool_t __init iommu_supports_eim(void)
     return 1;
 }
 
+static void update_irte(struct iremap_entry *entry,
+                        const struct iremap_entry *new_ire)
+{
+    if ( cpu_has_cx16 )
+    {
+        __uint128_t ret;
+        struct iremap_entry old_ire;
+
+        old_ire = *entry;
+        ret = cmpxchg16b(entry, &old_ire, new_ire);
+
+        /*
+         * In the above, we use cmpxchg16 to atomically update the 128-bit
+         * IRTE, and the hardware cannot update the IRTE behind us, so
+         * the return value of cmpxchg16 should be the same as old_ire.
+         * This ASSERT validate it.
+         */
+        ASSERT(ret == old_ire.val);
+    }
+    else
+    {
+        /*
+         * The following method to update IRTE is safe on condition that
+         * only the high qword or the low qword is to be updated.
+         * If entire IRTE is to be updated, callers should make sure the
+         * IRTE is not in use.
+         */
+        entry->lo = new_ire->lo;
+        entry->hi = new_ire->hi;
+    }
+}
+
 /* Mark specified intr remap entry as free */
 static void free_remap_entry(struct iommu *iommu, int index)
 {
@@ -353,7 +385,7 @@ static int ioapic_rte_to_remap_entry(struct iommu *iommu,
         remap_rte->format = 1;    /* indicate remap format */
     }
 
-    *iremap_entry = new_ire;
+    update_irte(iremap_entry, &new_ire);
     iommu_flush_cache_entry(iremap_entry, sizeof(*iremap_entry));
     iommu_flush_iec_index(iommu, 0, index);
 
@@ -640,7 +672,7 @@ static int msi_msg_to_remap_entry(
     remap_rte->address_hi = 0;
     remap_rte->data = index - i;
 
-    *iremap_entry = new_ire;
+    update_irte(iremap_entry, &new_ire);
     iommu_flush_cache_entry(iremap_entry, sizeof(*iremap_entry));
     iommu_flush_iec_index(iommu, 0, index);
 
