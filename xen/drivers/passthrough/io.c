@@ -365,6 +365,7 @@ int pt_irq_create_bind(
     {
         uint8_t dest, dest_mode, delivery_mode;
         int dest_vcpu_id;
+        const struct vcpu *vcpu = NULL;
 
         if ( !(pirq_dpci->flags & HVM_IRQ_DPCI_MAPPED) )
         {
@@ -441,6 +442,15 @@ int pt_irq_create_bind(
 
         dest_vcpu_id = hvm_girq_dest_2_vcpu_id(d, dest, dest_mode);
         pirq_dpci->gmsi.dest_vcpu_id = dest_vcpu_id;
+
+        pirq_dpci->gmsi.via_pi = 0;
+        if ( iommu_intpost )
+        {
+            vcpu = pi_find_dest_vcpu(d, dest, dest_mode, delivery_mode,
+                                     pirq_dpci->gmsi.gvec);
+            if ( vcpu )
+                pirq_dpci->gmsi.via_pi = 1;
+        }
         spin_unlock(&d->event_lock);
         if ( dest_vcpu_id >= 0 )
             hvm_migrate_pirqs(d->vcpu[dest_vcpu_id]);
@@ -448,11 +458,8 @@ int pt_irq_create_bind(
         /* Use interrupt posting if it is supported. */
         if ( iommu_intpost )
         {
-            const struct vcpu *vcpu = pi_find_dest_vcpu(d, dest, dest_mode,
-                                          delivery_mode, pirq_dpci->gmsi.gvec);
-
             if ( vcpu )
-                pi_update_irte( vcpu, info, pirq_dpci->gmsi.gvec );
+                pi_update_irte(vcpu, info, pirq_dpci->gmsi.gvec);
             else
                 dprintk(XENLOG_G_INFO,
                         "%pv: deliver interrupt in remapping mode,gvec:%02x\n",

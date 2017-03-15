@@ -445,6 +445,9 @@ static int hvm_migrate_pirq(struct domain *d, struct hvm_pirq_dpci *pirq_dpci,
     struct vcpu *v = arg;
 
     if ( (pirq_dpci->flags & HVM_IRQ_DPCI_MACH_MSI) &&
+         (pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI) &&
+         /* Needn't migrate pirq if this pirq is delivered to guest directly.*/
+         (pirq_dpci->gmsi.via_pi != 1) &&
          (pirq_dpci->gmsi.dest_vcpu_id == v->vcpu_id) )
     {
         struct irq_desc *desc =
