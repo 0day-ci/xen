@@ -118,6 +118,8 @@ struct msi_desc {
 	struct msi_msg msg;		/* Last set MSI message */
 
 	int remap_index;		/* index in interrupt remapping table */
+	const void *pi_desc;		/* PDA, indicates msi is delivered via VT-d PI */
+	uint8_t gvec;			/* guest vector. valid when pi_desc isn't NULL */
 };
 
 /*
