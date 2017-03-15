@@ -946,7 +946,7 @@ int pi_update_irte(const struct vcpu *v, const struct pirq *pirq,
 {
     struct irq_desc *desc;
     struct msi_desc *msi_desc;
-    const struct pi_desc *pi_desc = &v->arch.hvm_vmx.pi_desc;
+    const struct pi_desc *pi_desc = v ? &v->arch.hvm_vmx.pi_desc : NULL;
     int rc;
 
     desc = pirq_spin_lock_irq_desc(pirq, NULL);

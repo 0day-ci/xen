@@ -457,14 +457,7 @@ int pt_irq_create_bind(
 
         /* Use interrupt posting if it is supported. */
         if ( iommu_intpost )
-        {
-            if ( vcpu )
-                pi_update_irte(vcpu, info, pirq_dpci->gmsi.gvec);
-            else
-                dprintk(XENLOG_G_INFO,
-                        "%pv: deliver interrupt in remapping mode,gvec:%02x\n",
-                        vcpu, pirq_dpci->gmsi.gvec);
-        }
+            pi_update_irte(vcpu, info, pirq_dpci->gmsi.gvec);
 
         break;
     }
