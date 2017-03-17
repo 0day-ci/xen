@@ -56,6 +56,7 @@ struct hvm_vioapic {
 #define vioapic_domain(v) (container_of((v), struct hvm_vioapic, \
                                         hvm_hw_vioapic)->domain)
 
+int vioapic_gsi_vector(struct domain *d, unsigned int gsi);
 int vioapic_init(struct domain *d);
 void vioapic_deinit(struct domain *d);
 void vioapic_reset(struct domain *d);

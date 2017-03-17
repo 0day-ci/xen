@@ -276,6 +276,32 @@ static inline int pit_channel0_enabled(void)
     return pt_active(&current->domain->arch.vpit.pt0);
 }
 
+int vioapic_gsi_vector(struct domain *d, unsigned int gsi)
+{
+    int err;
+    struct irq_remapping_request request;
+    struct hvm_hw_vioapic *vioapic = domain_vioapic(d);
+    struct irq_remapping_info info;
+
+    if ( vioapic->redirtbl[gsi].ir.format )
+    {
+        irq_request_ioapic_fill(&request, vioapic->id,
+                                vioapic->redirtbl[gsi].bits);
+        err = viommu_get_irq_info(d, &request, &info);
+        if ( err < 0 )
+        {
+            gdprintk(XENLOG_ERR, "Bad gsi or bad interrupt remapping table "
+                     "entry.\n");
+            domain_crash(d);
+        }
+        return info.vector;
+    }
+    else
+    {
+        return vioapic->redirtbl[gsi].fields.vector;
+    }
+}
+
 static void vioapic_deliver(struct hvm_hw_vioapic *vioapic, int irq)
 {
     uint16_t dest = vioapic->redirtbl[irq].fields.dest_id;

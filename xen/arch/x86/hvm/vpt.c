@@ -91,7 +91,7 @@ static int pt_irq_vector(struct periodic_time *pt, enum hvm_intsrc src)
                 + (isa_irq & 7));
 
     ASSERT(src == hvm_intsrc_lapic);
-    return domain_vioapic(v->domain)->redirtbl[gsi].fields.vector;
+    return vioapic_gsi_vector(v->domain, gsi);
 }
 
 static int pt_irq_masked(struct periodic_time *pt)
