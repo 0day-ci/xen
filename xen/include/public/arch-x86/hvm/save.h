@@ -401,6 +401,7 @@ struct hvm_hw_vioapic {
             uint8_t reserved[4];
             uint8_t dest_id;
         } fields;
+        struct ir_ioapic_rte ir;
     } redirtbl[VIOAPIC_NUM_PINS];
 };
 

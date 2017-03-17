@@ -49,6 +49,9 @@ struct irq_remapping_request
     } msg;
 };
 
+void irq_request_ioapic_fill(struct irq_remapping_request *req,
+                             uint32_t ioapic_id, uint64_t rte);
+
 static inline const struct viommu_ops *viommu_get_ops(void)
 {
     /*

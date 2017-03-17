@@ -30,6 +30,7 @@
 #include <xen/lib.h>
 #include <xen/errno.h>
 #include <xen/sched.h>
+#include <xen/viommu.h>
 #include <public/hvm/ioreq.h>
 #include <asm/hvm/io.h>
 #include <asm/hvm/vpic.h>
@@ -285,8 +286,17 @@ static void vioapic_deliver(struct hvm_hw_vioapic *vioapic, int irq)
     struct domain *d = vioapic_domain(vioapic);
     struct vlapic *target;
     struct vcpu *v;
+    struct irq_remapping_request request;
 
     ASSERT(spin_is_locked(&d->arch.hvm_domain.irq_lock));
+
+    if ( vioapic->redirtbl[irq].ir.format )
+    {
+        irq_request_ioapic_fill(&request, vioapic->id,
+                                vioapic->redirtbl[irq].bits);
+        viommu_handle_irq_request(d, &request);
+        return;
+    }
 
     HVM_DBG_LOG(DBG_LEVEL_IOAPIC,
                 "dest=%x dest_mode=%x delivery_mode=%x "

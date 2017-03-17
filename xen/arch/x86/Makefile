@@ -66,6 +66,7 @@ obj-y += usercopy.o
 obj-y += x86_emulate.o
 obj-$(CONFIG_TBOOT) += tboot.o
 obj-y += hpet.o
+obj-y += viommu.o
 obj-y += vm_event.o
 obj-y += xstate.o
 
