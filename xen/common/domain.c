@@ -398,6 +398,9 @@ struct domain *domain_create(domid_t domid, unsigned int domcr_flags,
         spin_unlock(&domlist_update_lock);
     }
 
+    if ( (err = viommu_init_domain(d)) != 0)
+        goto fail;
+
     return d;
 
  fail:
