@@ -87,6 +87,17 @@ u64 viommu_query_caps(struct domain *d)
     return info->ops->query_caps(d);
 }
 
+int viommu_handle_irq_request(struct domain *d,
+        struct irq_remapping_request *request)
+{
+    struct viommu_info *info = &d->viommu;
+
+    if ( !info || !info->ops || !info->ops->handle_irq_request)
+        return -EINVAL;
+
+    return info->ops->handle_irq_request(d, request);
+}
+
 /*
  * Local variables:
  * mode: C

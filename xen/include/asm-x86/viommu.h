@@ -23,6 +23,21 @@
 #include <xen/viommu.h>
 #include <asm/types.h>
 
+struct irq_remapping_request
+{
+    u8 type;
+    u16 source_id;
+    union {
+        /* MSI */
+        struct {
+            u64 addr;
+            u32 data;
+        } msi;
+        /* Redirection Entry in IOAPIC */
+        u64 rte;
+    } msg;
+};
+
 static inline const struct viommu_ops *viommu_get_ops(void)
 {
     return NULL;

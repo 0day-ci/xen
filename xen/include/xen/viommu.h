@@ -24,6 +24,10 @@
 
 #define NR_VIOMMU_PER_DOMAIN 1
 
+/* IRQ request type */
+#define VIOMMU_REQUEST_IRQ_MSI          0
+#define VIOMMU_REQUEST_IRQ_APIC         1
+
 struct viommu {
     u64 base_address;
     u64 length;
@@ -36,6 +40,8 @@ struct viommu_ops {
     u64 (*query_caps)(struct domain *d);
     int (*create)(struct domain *d, struct viommu *viommu);
     int (*destroy)(struct viommu *viommu);
+    int (*handle_irq_request)(struct domain *d,
+                              struct irq_remapping_request *request);
 };
 
 struct viommu_info {
@@ -48,6 +54,8 @@ int viommu_init_domain(struct domain *d);
 int viommu_create(struct domain *d, u64 base_address, u64 length, u64 caps);
 int viommu_destroy(struct domain *d, u32 viommu_id);
 u64 viommu_query_caps(struct domain *d);
+int viommu_handle_irq_request(struct domain *d,
+                              struct irq_remapping_request *request);
 
 #endif /* __XEN_VIOMMU_H__ */
 

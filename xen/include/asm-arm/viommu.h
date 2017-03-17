@@ -22,6 +22,10 @@
 
 #include <xen/viommu.h>
 
+struct irq_remapping_request
+{
+};
+
 static inline const struct viommu_ops *viommu_get_ops(void)
 {
     return NULL;
