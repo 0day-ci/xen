@@ -363,6 +363,24 @@ DECLARE_HVM_SAVE_TYPE(PIC, 3, struct hvm_hw_vpic);
 
 #define VIOAPIC_NUM_PINS  48 /* 16 ISA IRQs, 32 non-legacy PCI IRQS. */
 
+struct ir_ioapic_rte
+{
+    uint8_t vector;
+    uint8_t reserved:3; /* Reserved(0) */
+    uint8_t index2:1;   /* Interrupt Index [15] */
+    uint8_t delivery_status:1;
+    uint8_t polarity:1;
+    uint8_t remote_irr:1;
+    uint8_t trig_mode:1;
+    uint8_t mask:1;
+    uint8_t reserved1:7; /* Reserved(0) */
+    uint8_t reserved2[3]; /* Reserved(0) */
+    uint16_t format:1; /* Should always be 1 */
+    uint16_t index1:15; /* Interrupt Index [14:0] */
+};
+
+#define IR_IOAPIC_RTE_INDEX(rte)    (((rte)->index2 << 15) + (rte)->index1)
+
 struct hvm_hw_vioapic {
     uint64_t base_address;
     uint32_t ioregsel;

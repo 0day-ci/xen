@@ -65,6 +65,8 @@ struct hvm_gmsi_info {
     int dest_vcpu_id; /* -1 :multi-dest, non-negative: dest_vcpu_id */
 };
 
+#define IR_MSI_INDEX(data, addr) (((((addr) & 0x4) << 13) + (((addr) & 0xfffff) >> 5)) + (!!((addr) & 0x8)) * ((data) & 0xffff))
+
 struct hvm_girq_dpci_mapping {
     struct list_head list;
     uint8_t bus;
