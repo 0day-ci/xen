@@ -491,6 +491,35 @@ static int dm_op(domid_t domid,
         break;
     }
 
+    case XEN_DMOP_create_viommu:
+    {
+        struct xen_dm_op_create_viommu *data =
+            &op.u.create_viommu;
+
+        rc = viommu_create(d, data->base_address, data->length, data->capabilities);
+        if (rc >= 0) {
+            data->viommu_id = rc;
+            rc = 0;
+        }
+        break;
+    }
+    case XEN_DMOP_destroy_viommu:
+    {
+        const struct xen_dm_op_destroy_viommu *data =
+            &op.u.destroy_viommu;
+
+        rc = viommu_destroy(d, data->viommu_id);
+        break;
+    }
+    case XEN_DMOP_query_viommu_caps:
+    {
+        struct xen_dm_op_query_viommu_caps *data =
+            &op.u.query_viommu_caps;
+
+        data->caps = viommu_query_caps(d);
+        rc = 0;
+        break;
+    }
     default:
         rc = -EOPNOTSUPP;
         break;

@@ -318,6 +318,42 @@ struct xen_dm_op_inject_msi {
     uint64_aligned_t addr;
 };
 
+/*
+ * XEN_DMOP_create_viommu: Create vIOMMU device.
+ */
+#define XEN_DMOP_create_viommu 15
+
+struct xen_dm_op_create_viommu {
+    /* IN - MMIO base address of vIOMMU */
+    uint64_t base_address;
+    /* IN - Length of MMIO region */
+    uint64_t length;
+    /* IN - Capabilities with which we want to create */
+    uint64_t capabilities;
+    /* OUT - vIOMMU identity */
+    uint32_t viommu_id;
+};
+
+/*
+ * XEN_DMOP_destroy_viommu: Destroy vIOMMU device.
+ */
+#define XEN_DMOP_destroy_viommu 16
+
+struct xen_dm_op_destroy_viommu {
+    /* OUT - vIOMMU identity */
+    uint32_t viommu_id;
+};
+
+/*
+ * XEN_DMOP_q_viommu: Query vIOMMU capabilities.
+ */
+#define XEN_DMOP_query_viommu_caps 17
+
+struct xen_dm_op_query_viommu_caps {
+    /* OUT - vIOMMU Capabilities*/
+    uint64_t caps;
+};
+
 struct xen_dm_op {
     uint32_t op;
     uint32_t pad;
@@ -336,6 +372,9 @@ struct xen_dm_op {
         struct xen_dm_op_set_mem_type set_mem_type;
         struct xen_dm_op_inject_event inject_event;
         struct xen_dm_op_inject_msi inject_msi;
+        struct xen_dm_op_create_viommu create_viommu;
+        struct xen_dm_op_destroy_viommu destroy_viommu;
+        struct xen_dm_op_query_viommu_caps query_viommu_caps;
     } u;
 };
 
