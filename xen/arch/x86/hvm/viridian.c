@@ -160,6 +160,19 @@ typedef struct {
     uint64_t Reserved8:10;
 } HV_PARTITION_PRIVILEGE_MASK;
 
+typedef union _HV_CRASH_CTL_REG_CONTENTS
+{
+    uint64_t AsUINT64;
+    struct
+    {
+        uint64_t Reserved:63;
+        uint64_t CrashNotify:1;
+    };
+} HV_CRASH_CTL_REG_CONTENTS;
+
+/* Viridian CPUID leaf 3, Hypervisor Feature Indication */
+#define CPUID3D_CRASH_MSRS (1 << 10)
+
 /* Viridian CPUID leaf 4: Implementation Recommendations. */
 #define CPUID4A_HCALL_REMOTE_TLB_FLUSH (1 << 2)
 #define CPUID4A_MSR_BASED_APIC         (1 << 3)
@@ -234,6 +247,10 @@ void cpuid_viridian_leaves(const struct vcpu *v, uint32_t leaf,
 
         res->a = u.lo;
         res->b = u.hi;
+
+        if ( viridian_feature_mask(d) & HVMPV_crash_ctl )
+            res->d = CPUID3D_CRASH_MSRS;
+
         break;
     }
 
@@ -603,6 +620,37 @@ int wrmsr_viridian_regs(uint32_t idx, uint64_t val)
             update_reference_tsc(d, 1);
         break;
 
+    case HV_X64_MSR_CRASH_P0:
+    case HV_X64_MSR_CRASH_P1:
+    case HV_X64_MSR_CRASH_P2:
+    case HV_X64_MSR_CRASH_P3:
+    case HV_X64_MSR_CRASH_P4:
+        BUILD_BUG_ON(HV_X64_MSR_CRASH_P4 - HV_X64_MSR_CRASH_P0 >
+                     ARRAY_SIZE(d->arch.hvm_domain.viridian.crash_param));
+
+        idx -= HV_X64_MSR_CRASH_P0;
+        d->arch.hvm_domain.viridian.crash_param[idx] = val;
+        break;
+
+    case HV_X64_MSR_CRASH_CTL:
+    {
+        HV_CRASH_CTL_REG_CONTENTS ctl;
+
+        ctl.AsUINT64 = val;
+
+        if ( !ctl.CrashNotify )
+            break;
+
+        printk(XENLOG_G_INFO "d%d: VIRIDIAN CRASH: %lx %lx %lx %lx %lx\n",
+               d->domain_id,
+               d->arch.hvm_domain.viridian.crash_param[0],
+               d->arch.hvm_domain.viridian.crash_param[1],
+               d->arch.hvm_domain.viridian.crash_param[2],
+               d->arch.hvm_domain.viridian.crash_param[3],
+               d->arch.hvm_domain.viridian.crash_param[4]);
+        break;
+    }
+
     default:
         if (idx >= VIRIDIAN_MSR_MIN && idx <= VIRIDIAN_MSR_MAX)
             gdprintk(XENLOG_WARNING, "unimplemented MSR %08x\n",
@@ -727,6 +775,25 @@ int rdmsr_viridian_regs(uint32_t idx, uint64_t *val)
 
         perfc_incr(mshv_rdmsr_time_ref_count);
         *val = raw_trc_val(d) + trc->off;
+        break;
+    }
+
+    case HV_X64_MSR_CRASH_P0:
+    case HV_X64_MSR_CRASH_P1:
+    case HV_X64_MSR_CRASH_P2:
+    case HV_X64_MSR_CRASH_P3:
+    case HV_X64_MSR_CRASH_P4:
+        idx -= HV_X64_MSR_CRASH_P0;
+        *val = d->arch.hvm_domain.viridian.crash_param[idx];
+        break;
+
+    case HV_X64_MSR_CRASH_CTL:
+    {
+        HV_CRASH_CTL_REG_CONTENTS ctl;
+
+        ctl.CrashNotify = 1;
+
+        *val = ctl.AsUINT64;
         break;
     }
 

@@ -96,6 +96,7 @@ struct viridian_domain
     union viridian_hypercall_gpa hypercall_gpa;
     struct viridian_time_ref_count time_ref_count;
     union viridian_reference_tsc reference_tsc;
+    uint64_t crash_param[5];
 };
 
 void cpuid_viridian_leaves(const struct vcpu *v, uint32_t leaf,
