@@ -51,6 +51,8 @@ struct irq_remapping_request
 
 void irq_request_ioapic_fill(struct irq_remapping_request *req,
                              uint32_t ioapic_id, uint64_t rte);
+void irq_request_msi_fill(struct irq_remapping_request *req,
+                          uint32_t source_id, uint64_t addr, uint32_t data);
 
 static inline const struct viommu_ops *viommu_get_ops(void)
 {

@@ -28,3 +28,13 @@ void irq_request_ioapic_fill(struct irq_remapping_request *req,
     req->source_id = ioapic_id;
     req->msg.rte = rte;
 }
+
+void irq_request_msi_fill(struct irq_remapping_request *req,
+                          uint32_t source_id, uint64_t addr, uint32_t data)
+{
+    ASSERT(req);
+    req->type = VIOMMU_REQUEST_IRQ_MSI;
+    req->source_id = source_id;
+    req->msg.msi.addr = addr;
+    req->msg.msi.data = data;
+}

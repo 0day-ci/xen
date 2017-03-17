@@ -40,6 +40,7 @@ struct dev_intx_gsi_link {
 #define _HVM_IRQ_DPCI_EOI_LATCH_SHIFT           3
 #define _HVM_IRQ_DPCI_GUEST_PCI_SHIFT           4
 #define _HVM_IRQ_DPCI_GUEST_MSI_SHIFT           5
+#define _HVM_IRQ_DPCI_GUEST_MSI_IR_SHIFT        6
 #define _HVM_IRQ_DPCI_TRANSLATE_SHIFT          15
 #define HVM_IRQ_DPCI_MACH_PCI        (1 << _HVM_IRQ_DPCI_MACH_PCI_SHIFT)
 #define HVM_IRQ_DPCI_MACH_MSI        (1 << _HVM_IRQ_DPCI_MACH_MSI_SHIFT)
@@ -47,6 +48,7 @@ struct dev_intx_gsi_link {
 #define HVM_IRQ_DPCI_EOI_LATCH       (1 << _HVM_IRQ_DPCI_EOI_LATCH_SHIFT)
 #define HVM_IRQ_DPCI_GUEST_PCI       (1 << _HVM_IRQ_DPCI_GUEST_PCI_SHIFT)
 #define HVM_IRQ_DPCI_GUEST_MSI       (1 << _HVM_IRQ_DPCI_GUEST_MSI_SHIFT)
+#define HVM_IRQ_DPCI_GUEST_MSI_IR    (1 << _HVM_IRQ_DPCI_GUEST_MSI_IR_SHIFT)
 #define HVM_IRQ_DPCI_TRANSLATE       (1 << _HVM_IRQ_DPCI_TRANSLATE_SHIFT)
 
 #define VMSI_DEST_ID_MASK 0xff
@@ -65,8 +67,14 @@ struct hvm_gmsi_info {
             uint32_t gvec;
             uint32_t gflags;
         } legacy;
+        struct {
+            uint32_t source_id;
+            uint32_t data;
+            uint64_t addr;
+        } intremap;
     };
-    int dest_vcpu_id; /* -1 :multi-dest, non-negative: dest_vcpu_id */
+    /* -2 :internal error, -1 :multi-dest, non-negative: dest_vcpu_id */
+    int dest_vcpu_id;
 };
 
 #define IR_MSI_INDEX(data, addr) (((((addr) & 0x4) << 13) + (((addr) & 0xfffff) >> 5)) + (!!((addr) & 0x8)) * ((data) & 0xffff))

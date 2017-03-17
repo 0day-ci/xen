@@ -1592,8 +1592,35 @@ int xc_deassign_dt_device(
     return rc;
 }
 
+int xc_domain_update_msi_irq_remapping(
+    xc_interface *xch,
+    uint32_t domid,
+    uint32_t pirq,
+    uint32_t source_id,
+    uint32_t data,
+    uint64_t addr,
+    uint64_t gtable)
+{
+    int rc;
+    xen_domctl_bind_pt_irq_t *bind;
 
+    DECLARE_DOMCTL;
 
+    domctl.cmd = XEN_DOMCTL_bind_pt_irq;
+    domctl.domain = (domid_t)domid;
+
+    bind = &(domctl.u.bind_pt_irq);
+    bind->hvm_domid = domid;
+    bind->irq_type = PT_IRQ_TYPE_MSI_IR;
+    bind->machine_irq = pirq;
+    bind->u.msi_ir.source_id = source_id;
+    bind->u.msi_ir.data = data;
+    bind->u.msi_ir.addr = addr;
+    bind->u.msi_ir.gtable = gtable;
+
+    rc = do_domctl(xch, &domctl);
+    return rc;
+}
 
 int xc_domain_update_msi_irq(
     xc_interface *xch,
@@ -1618,6 +1645,34 @@ int xc_domain_update_msi_irq(
     bind->u.msi.gvec = gvec;
     bind->u.msi.gflags = gflags;
     bind->u.msi.gtable = gtable;
+
+    rc = do_domctl(xch, &domctl);
+    return rc;
+}
+
+int xc_domain_unbind_msi_irq_remapping(
+    xc_interface *xch,
+    uint32_t domid,
+    uint32_t pirq,
+    uint32_t source_id,
+    uint32_t data,
+    uint64_t addr)
+{
+    int rc;
+    xen_domctl_bind_pt_irq_t *bind;
+
+    DECLARE_DOMCTL;
+
+    domctl.cmd = XEN_DOMCTL_unbind_pt_irq;
+    domctl.domain = (domid_t)domid;
+
+    bind = &(domctl.u.bind_pt_irq);
+    bind->hvm_domid = domid;
+    bind->irq_type = PT_IRQ_TYPE_MSI_IR;
+    bind->machine_irq = pirq;
+    bind->u.msi_ir.source_id = source_id;
+    bind->u.msi_ir.data = data;
+    bind->u.msi_ir.addr = addr;
 
     rc = do_domctl(xch, &domctl);
     return rc;
