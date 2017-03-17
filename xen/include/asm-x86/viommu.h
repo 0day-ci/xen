@@ -22,6 +22,9 @@
 
 #include <xen/viommu.h>
 #include <asm/types.h>
+#include <asm/processor.h>
+
+extern struct viommu_ops vvtd_hvm_vmx_ops;
 
 struct irq_remapping_info
 {
@@ -48,6 +51,12 @@ struct irq_remapping_request
 
 static inline const struct viommu_ops *viommu_get_ops(void)
 {
+    /*
+     * Don't mean that viommu relies on hardward cpu vendor, but just
+     * limit the usage to minimize the impact to existing code.
+     */
+    if ( boot_cpu_data.x86_vendor == X86_VENDOR_INTEL )
+        return &vvtd_hvm_vmx_ops;
     return NULL;
 }
 

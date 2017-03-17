@@ -23,31 +23,54 @@
 #include <asm/msi.h>
 
 /*
- * Intel IOMMU register specification per version 1.0 public spec.
+ * Intel IOMMU register specification per version 2.4 public spec.
  */
 
-#define    DMAR_VER_REG    0x0    /* Arch version supported by this IOMMU */
-#define    DMAR_CAP_REG    0x8    /* Hardware supported capabilities */
-#define    DMAR_ECAP_REG    0x10    /* Extended capabilities supported */
-#define    DMAR_GCMD_REG    0x18    /* Global command register */
-#define    DMAR_GSTS_REG    0x1c    /* Global status register */
-#define    DMAR_RTADDR_REG    0x20    /* Root entry table */
-#define    DMAR_CCMD_REG    0x28    /* Context command reg */
-#define    DMAR_FSTS_REG    0x34    /* Fault Status register */
-#define    DMAR_FECTL_REG    0x38    /* Fault control register */
-#define    DMAR_FEDATA_REG    0x3c    /* Fault event interrupt data register */
-#define    DMAR_FEADDR_REG    0x40    /* Fault event interrupt addr register */
-#define    DMAR_FEUADDR_REG 0x44    /* Upper address register */
-#define    DMAR_AFLOG_REG    0x58    /* Advanced Fault control */
-#define    DMAR_PMEN_REG    0x64    /* Enable Protected Memory Region */
-#define    DMAR_PLMBASE_REG 0x68    /* PMRR Low addr */
-#define    DMAR_PLMLIMIT_REG 0x6c    /* PMRR low limit */
-#define    DMAR_PHMBASE_REG 0x70    /* pmrr high base addr */
-#define    DMAR_PHMLIMIT_REG 0x78    /* pmrr high limit */
-#define    DMAR_IQH_REG    0x80    /* invalidation queue head */
-#define    DMAR_IQT_REG    0x88    /* invalidation queue tail */
-#define    DMAR_IQA_REG    0x90    /* invalidation queue addr */
-#define    DMAR_IRTA_REG   0xB8    /* intr remap */
+#define DMAR_VER_REG            0x0  /* Arch version supported by this IOMMU */
+#define DMAR_CAP_REG            0x8  /* Hardware supported capabilities */
+#define DMAR_ECAP_REG           0x10 /* Extended capabilities supported */
+#define DMAR_GCMD_REG           0x18 /* Global command register */
+#define DMAR_GSTS_REG           0x1c /* Global status register */
+#define DMAR_RTADDR_REG         0x20 /* Root entry table */
+#define DMAR_CCMD_REG           0x28 /* Context command reg */
+#define DMAR_FSTS_REG           0x34 /* Fault Status register */
+#define DMAR_FECTL_REG          0x38 /* Fault control register */
+#define DMAR_FEDATA_REG         0x3c /* Fault event interrupt data register */
+#define DMAR_FEADDR_REG         0x40 /* Fault event interrupt addr register */
+#define DMAR_FEUADDR_REG        0x44 /* Upper address register */
+#define DMAR_AFLOG_REG          0x58 /* Advanced Fault control */
+#define DMAR_PMEN_REG           0x64 /* Enable Protected Memory Region */
+#define DMAR_PLMBASE_REG        0x68 /* PMRR Low addr */
+#define DMAR_PLMLIMIT_REG       0x6c /* PMRR low limit */
+#define DMAR_PHMBASE_REG        0x70 /* pmrr high base addr */
+#define DMAR_PHMLIMIT_REG       0x78 /* pmrr high limit */
+#define DMAR_IQH_REG            0x80 /* invalidation queue head */
+#define DMAR_IQT_REG            0x88 /* invalidation queue tail */
+#define DMAR_IQT_REG_HI         0x8c
+#define DMAR_IQA_REG            0x90 /* invalidation queue addr */
+#define DMAR_IQA_REG_HI         0x94
+#define DMAR_ICS_REG            0x9c /* Invalidation complete status */
+#define DMAR_IECTL_REG          0xa0 /* Invalidation event control */
+#define DMAR_IEDATA_REG         0xa4 /* Invalidation event data */
+#define DMAR_IEADDR_REG         0xa8 /* Invalidation event address */
+#define DMAR_IEUADDR_REG        0xac /* Invalidation event address */
+#define DMAR_IRTA_REG           0xb8 /* Interrupt remapping table addr */
+#define DMAR_IRTA_REG_HI        0xbc
+#define DMAR_PQH_REG            0xc0 /* Page request queue head */
+#define DMAR_PQH_REG_HI         0xc4
+#define DMAR_PQT_REG            0xc8 /* Page request queue tail*/
+#define DMAR_PQT_REG_HI         0xcc
+#define DMAR_PQA_REG            0xd0 /* Page request queue address */
+#define DMAR_PQA_REG_HI         0xd4
+#define DMAR_PRS_REG            0xdc /* Page request status */
+#define DMAR_PECTL_REG          0xe0 /* Page request event control */
+#define DMAR_PEDATA_REG         0xe4 /* Page request event data */
+#define DMAR_PEADDR_REG         0xe8 /* Page request event address */
+#define DMAR_PEUADDR_REG        0xec /* Page event upper address */
+#define DMAR_MTRRCAP_REG        0x100 /* MTRR capability */
+#define DMAR_MTRRCAP_REG_HI     0x104
+#define DMAR_MTRRDEF_REG        0x108 /* MTRR default type */
+#define DMAR_MTRRDEF_REG_HI     0x10c
 
 #define OFFSET_STRIDE        (9)
 #define dmar_readl(dmar, reg) readl((dmar) + (reg))
@@ -57,6 +80,31 @@
 
 #define VER_MAJOR(v)        (((v) & 0xf0) >> 4)
 #define VER_MINOR(v)        ((v) & 0x0f)
+
+/* CAP_REG */
+/* (offset >> 4) << 24 */
+#define DMA_DOMAIN_ID_SHIFT         16  /* 16-bit domain id for 64K domains */
+#define DMA_DOMAIN_ID_MASK          ((1UL << DMA_DOMAIN_ID_SHIFT) - 1)
+#define DMA_CAP_ND                  (((DMA_DOMAIN_ID_SHIFT - 4) / 2) & 7ULL)
+#define DMA_MGAW                    39  /* Maximum Guest Address Width */
+#define DMA_CAP_MGAW                (((DMA_MGAW - 1) & 0x3fULL) << 16)
+#define DMA_MAMV                    18ULL
+#define DMA_CAP_MAMV                (DMA_MAMV << 48)
+#define DMA_CAP_PSI                 (1ULL << 39)
+#define DMA_CAP_SLLPS               ((1ULL << 34) | (1ULL << 35))
+#define DMAR_FRCD_REG_NR            1ULL
+#define DMA_CAP_FRO_OFFSET          0x220ULL
+#define DMA_CAP_FRO                 (DMA_CAP_FRO_OFFSET << 20)
+#define DMA_CAP_NFR                 ((DMAR_FRCD_REG_NR - 1) << 40)
+
+/* Supported Adjusted Guest Address Widths */
+#define DMA_CAP_SAGAW_SHIFT         8
+#define DMA_CAP_SAGAW_MASK          (0x1fULL << DMA_CAP_SAGAW_SHIFT)
+ /* 39-bit AGAW, 3-level page-table */
+#define DMA_CAP_SAGAW_39bit         (0x2ULL << DMA_CAP_SAGAW_SHIFT)
+ /* 48-bit AGAW, 4-level page-table */
+#define DMA_CAP_SAGAW_48bit         (0x4ULL << DMA_CAP_SAGAW_SHIFT)
+#define DMA_CAP_SAGAW               DMA_CAP_SAGAW_39bit
 
 /*
  * Decoding Capability Register
@@ -88,6 +136,14 @@
 #define cap_rwbf(c)        (((c) >> 4) & 1)
 #define cap_afl(c)        (((c) >> 3) & 1)
 #define cap_ndoms(c)        (1 << (4 + 2 * ((c) & 0x7)))
+
+/* ECAP_REG */
+/* (offset >> 4) << 8 */
+#define DMA_ECAP_QI                 (1ULL << 1)
+/* Interrupt Remapping support */
+#define DMA_ECAP_IR                 (1ULL << 3)
+#define DMA_ECAP_EIM                (1ULL << 4)
+#define DMA_ECAP_MHMV               (15ULL << 20)
 
 /*
  * Extended Capability Register

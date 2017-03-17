@@ -21,6 +21,7 @@ obj-y += rtc.o
 obj-y += save.o
 obj-y += stdvga.o
 obj-y += vioapic.o
+obj-y += vvtd.o
 obj-y += viridian.o
 obj-y += vlapic.o
 obj-y += vmsi.o
