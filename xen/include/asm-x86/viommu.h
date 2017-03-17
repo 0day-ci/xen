@@ -23,6 +23,14 @@
 #include <xen/viommu.h>
 #include <asm/types.h>
 
+struct irq_remapping_info
+{
+    u8  vector;
+    u32 dest;
+    u32 dest_mode:1;
+    u32 delivery_mode:3;
+};
+
 struct irq_remapping_request
 {
     u8 type;

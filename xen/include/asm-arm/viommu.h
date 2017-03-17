@@ -22,6 +22,10 @@
 
 #include <xen/viommu.h>
 
+struct irq_remapping_info
+{
+};
+
 struct irq_remapping_request
 {
 };

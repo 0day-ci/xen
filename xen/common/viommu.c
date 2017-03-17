@@ -98,6 +98,17 @@ int viommu_handle_irq_request(struct domain *d,
     return info->ops->handle_irq_request(d, request);
 }
 
+int viommu_get_irq_info(struct domain *d, struct irq_remapping_request *request,
+                        struct irq_remapping_info *irq_info)
+{
+    struct viommu_info *info = &d->viommu;
+
+    if ( !info || !info->ops || !info->ops->get_irq_info)
+        return -EINVAL;
+
+    return info->ops->get_irq_info(d, request, irq_info);
+}
+
 /*
  * Local variables:
  * mode: C

@@ -42,6 +42,8 @@ struct viommu_ops {
     int (*destroy)(struct viommu *viommu);
     int (*handle_irq_request)(struct domain *d,
                               struct irq_remapping_request *request);
+    int (*get_irq_info)(struct domain *d, struct irq_remapping_request *request,
+                        struct irq_remapping_info *info);
 };
 
 struct viommu_info {
@@ -56,6 +58,8 @@ int viommu_destroy(struct domain *d, u32 viommu_id);
 u64 viommu_query_caps(struct domain *d);
 int viommu_handle_irq_request(struct domain *d,
                               struct irq_remapping_request *request);
+int viommu_get_irq_info(struct domain *d, struct irq_remapping_request *request,
+                        struct irq_remapping_info *irq_info);
 
 #endif /* __XEN_VIOMMU_H__ */
 
