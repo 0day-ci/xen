@@ -101,8 +101,8 @@ int vmsi_deliver(
 
 void vmsi_deliver_pirq(struct domain *d, const struct hvm_pirq_dpci *pirq_dpci)
 {
-    uint32_t flags = pirq_dpci->gmsi.gflags;
-    int vector = pirq_dpci->gmsi.gvec;
+    uint32_t flags = pirq_dpci->gmsi.legacy.gflags;
+    int vector = pirq_dpci->gmsi.legacy.gvec;
     uint8_t dest = (uint8_t)flags;
     uint8_t dest_mode = !!(flags & VMSI_DM_MASK);
     uint8_t delivery_mode = (flags & VMSI_DELIV_MASK)

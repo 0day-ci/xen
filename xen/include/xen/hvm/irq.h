@@ -60,8 +60,12 @@ struct dev_intx_gsi_link {
 #define GFLAGS_SHIFT_TRG_MODE       15
 
 struct hvm_gmsi_info {
-    uint32_t gvec;
-    uint32_t gflags;
+    union {
+        struct {
+            uint32_t gvec;
+            uint32_t gflags;
+        } legacy;
+    };
     int dest_vcpu_id; /* -1 :multi-dest, non-negative: dest_vcpu_id */
 };
 
