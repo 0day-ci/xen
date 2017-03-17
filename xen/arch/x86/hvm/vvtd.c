@@ -423,6 +423,185 @@ static int vvtd_log_fault(struct vvtd *vvtd,
     return X86EMUL_OKAY;
 }
 
+/*
+ * Process a invalidation descriptor. Currently, only Two types descriptors,
+ * Interrupt Entry Cache invalidation descritor and Invalidation Wait
+ * Descriptor are handled.
+ * @vvtd: the virtual vtd instance
+ * @i: the index of the invalidation descriptor to be processed
+ *
+ * If success return 0, or return -1 when failure.
+ */
+static int process_iqe(struct vvtd *vvtd, int i)
+{
+    uint64_t iqa, addr;
+    struct qinval_entry *qinval_page;
+    void *pg;
+    int ret;
+
+    vvtd_get_reg_quad(vvtd, DMAR_IQA_REG, iqa);
+    ret = map_guest_page(vvtd->domain, DMA_IQA_ADDR(iqa)>>PAGE_SHIFT,
+                         (void**)&qinval_page);
+    if ( ret )
+    {
+        gdprintk(XENLOG_ERR, "Can't map guest IRT (rc %d)", ret);
+        return -1;
+    }
+
+    switch ( qinval_page[i].q.inv_wait_dsc.lo.type )
+    {
+    case TYPE_INVAL_WAIT:
+        if ( qinval_page[i].q.inv_wait_dsc.lo.sw )
+        {
+            addr = (qinval_page[i].q.inv_wait_dsc.hi.saddr << 2);
+            ret = map_guest_page(vvtd->domain, addr >> PAGE_SHIFT, &pg);
+            if ( ret )
+            {
+                gdprintk(XENLOG_ERR, "Can't map guest memory to inform guest "
+                         "IWC completion (rc %d)", ret);
+                goto error;
+            }
+            *(uint32_t *)((uint64_t)pg + (addr & ~PAGE_MASK)) =
+                qinval_page[i].q.inv_wait_dsc.lo.sdata;
+            unmap_guest_page(pg);
+        }
+
+        /*
+         * The following code generates an invalidation completion event
+         * indicating the invalidation wait descriptor completion. Note that
+         * the following code fragment is not tested properly.
+         */
+        if ( qinval_page[i].q.inv_wait_dsc.lo.iflag )
+        {
+            uint32_t ie_data, ie_addr;
+            if ( !vvtd_test_and_set_bit(vvtd, DMAR_ICS_REG, DMA_ICS_IWC_BIT) )
+            {
+                __vvtd_set_bit(vvtd, DMAR_IECTL_REG, DMA_IECTL_IP_BIT);
+                if ( !vvtd_test_bit(vvtd, DMAR_IECTL_REG, DMA_IECTL_IM_BIT) )
+                {
+                    ie_data = vvtd_get_reg(vvtd, DMAR_IEDATA_REG);
+                    ie_addr = vvtd_get_reg(vvtd, DMAR_IEADDR_REG);
+                    vvtd_generate_interrupt(vvtd, ie_addr, ie_data);
+                    __vvtd_clear_bit(vvtd, DMAR_IECTL_REG, DMA_IECTL_IP_BIT);
+                }
+            }
+        }
+        break;
+
+    case TYPE_INVAL_IEC:
+        /*
+         * Currently, no cache is preserved in hypervisor. Only need to update
+         * pIRTEs which are modified in binding process.
+         */
+        break;
+
+    default:
+        goto error;
+    }
+
+    unmap_guest_page((void*)qinval_page);
+    return 0;
+
+error:
+    unmap_guest_page((void*)qinval_page);
+    gdprintk(XENLOG_ERR, "Internal error in Queue Invalidation.\n");
+    domain_crash(vvtd->domain);
+    return -1;
+}
+
+/*
+ * Invalidate all the descriptors in Invalidation Queue.
+ */
+static void vvtd_process_iq(struct vvtd *vvtd)
+{
+    uint64_t iqh, iqt, iqa, max_entry, i;
+    int ret = 0;
+
+    /*
+     * No new descriptor is fetched from the Invalidation Queue until
+     * software clears the IQE field in the Fault Status Register
+     */
+    if ( vvtd_test_bit(vvtd, DMAR_FSTS_REG, DMA_FSTS_IQE_BIT) )
+        return;
+
+    vvtd_get_reg_quad(vvtd, DMAR_IQH_REG, iqh);
+    vvtd_get_reg_quad(vvtd, DMAR_IQT_REG, iqt);
+    vvtd_get_reg_quad(vvtd, DMAR_IQA_REG, iqa);
+
+    max_entry = DMA_IQA_ENTRY_PER_PAGE << DMA_IQA_QS(iqa);
+    iqh = DMA_IQH_QH(iqh);
+    iqt = DMA_IQT_QT(iqt);
+
+    ASSERT(iqt < max_entry);
+    if ( iqh == iqt )
+        return;
+
+    i = iqh;
+    while ( i != iqt )
+    {
+        ret = process_iqe(vvtd, i);
+        if ( ret )
+            break;
+        else
+            i = (i + 1) % max_entry;
+        vvtd_set_reg_quad(vvtd, DMAR_IQH_REG, i << DMA_IQH_QH_SHIFT);
+    }
+
+    /*
+     * When IQE set, IQH references the desriptor associated with the error.
+     */
+    if ( ret )
+        vvtd_report_non_recoverable_fault(vvtd, DMA_FSTS_IQE_BIT);
+}
+
+static int vvtd_write_iqt(struct vvtd *vvtd, unsigned long val)
+{
+    uint64_t iqa;
+
+    if ( val & DMA_IQT_RSVD )
+    {
+        VVTD_DEBUG(VVTD_DBG_RW, "Attempt to set reserved bits in "
+                   "Invalidation Queue Tail.");
+        return X86EMUL_OKAY;
+    }
+
+    vvtd_get_reg_quad(vvtd, DMAR_IQA_REG, iqa);
+    if ( DMA_IQT_QT(val) >= DMA_IQA_ENTRY_PER_PAGE << DMA_IQA_QS(iqa) )
+    {
+        VVTD_DEBUG(VVTD_DBG_RW, "IQT: Value %lx exceeded supported max "
+                   "index.", val);
+        return X86EMUL_OKAY;
+    }
+
+    vvtd_set_reg_quad(vvtd, DMAR_IQT_REG, val);
+    vvtd_process_iq(vvtd);
+    return X86EMUL_OKAY;
+}
+
+static int vvtd_write_iqa(struct vvtd *vvtd, unsigned long val)
+{
+    if ( val & DMA_IQA_RSVD )
+    {
+        VVTD_DEBUG(VVTD_DBG_RW, "Attempt to set reserved bits in "
+                   "Invalidation Queue Address.");
+        return X86EMUL_OKAY;
+    }
+
+    vvtd_set_reg_quad(vvtd, DMAR_IQA_REG, val);
+    return X86EMUL_OKAY;
+}
+
+static int vvtd_write_ics(struct vvtd *vvtd, unsigned long val)
+{
+    if ( val & DMA_ICS_IWC )
+    {
+        __vvtd_clear_bit(vvtd, DMAR_ICS_REG, DMA_ICS_IWC_BIT);
+        /*When IWC field is cleared, the IP field needs to be cleared */
+        __vvtd_clear_bit(vvtd, DMAR_IECTL_REG, DMA_IECTL_IP_BIT);
+    }
+    return X86EMUL_OKAY;
+}
+
 static int vvtd_write_frcd3(struct vvtd *vvtd, unsigned long val)
 {
     /* Writing a 1 means clear fault */
@@ -431,6 +610,29 @@ static int vvtd_write_frcd3(struct vvtd *vvtd, unsigned long val)
         vvtd_free_frcd(vvtd, 0);
         vvtd_recomputing_ppf(vvtd);
     }
+    return X86EMUL_OKAY;
+}
+
+static int vvtd_write_iectl(struct vvtd *vvtd, unsigned long val)
+{
+    /*
+     * Only DMA_IECTL_IM bit is writable. Generate pending event when unmask.
+     */
+    if ( !(val & DMA_IECTL_IM) )
+    {
+        /* Clear IM and clear IP */
+        __vvtd_clear_bit(vvtd, DMAR_IECTL_REG, DMA_IECTL_IM_BIT);
+        if ( vvtd_test_and_clear_bit(vvtd, DMAR_IECTL_REG, DMA_IECTL_IP_BIT) )
+        {
+            uint32_t ie_data, ie_addr;
+            ie_data = vvtd_get_reg(vvtd, DMAR_IEDATA_REG);
+            ie_addr = vvtd_get_reg(vvtd, DMAR_IEADDR_REG);
+            vvtd_generate_interrupt(vvtd, ie_addr, ie_data);
+        }
+    }
+    else
+        __vvtd_set_bit(vvtd, DMAR_IECTL_REG, DMA_IECTL_IM_BIT);
+
     return X86EMUL_OKAY;
 }
 
@@ -475,6 +677,10 @@ static int vvtd_write_fsts(struct vvtd *vvtd, unsigned long val)
      */
     if ( !((vvtd_get_reg(vvtd, DMAR_FSTS_REG) & DMA_FSTS_FAULTS)) )
         __vvtd_clear_bit(vvtd, DMAR_FECTL_REG, DMA_FECTL_IP_BIT);
+
+    /* Continue to deal invalidation when IQE is clear */
+    if ( !vvtd_test_bit(vvtd, DMAR_FSTS_REG, DMA_FSTS_IQE_BIT) )
+        vvtd_process_iq(vvtd);
 
     return X86EMUL_OKAY;
 }
@@ -634,6 +840,48 @@ static int vvtd_write(struct vcpu *v, unsigned long addr,
         if ( len == 8 )
             goto error;
         ret = vvtd_write_gcmd(vvtd, val_lo);
+        break;
+
+    case DMAR_IQT_REG:
+        if ( len == 8 )
+            ret = vvtd_write_iqt(vvtd, val);
+        else
+            ret = vvtd_write_iqt(vvtd, val_lo);
+        break;
+
+    case DMAR_IQA_REG:
+        if ( len == 8 )
+            ret = vvtd_write_iqa(vvtd, val);
+        else
+        {
+            unsigned long iqa_hi;
+
+            iqa_hi = vvtd_get_reg(vvtd, DMAR_IQA_REG_HI);
+            ret = vvtd_write_iqa(vvtd, val_lo | (iqa_hi << 32));
+        }
+        break;
+
+    case DMAR_IQA_REG_HI:
+    {
+        unsigned long iqa_lo;
+
+        if ( len == 8 )
+            goto error;
+        iqa_lo = vvtd_get_reg(vvtd, DMAR_IQA_REG);
+        ret = vvtd_write_iqa(vvtd, (val_lo << 32) | iqa_lo);
+        break;
+    }
+
+    case DMAR_ICS_REG:
+        if ( len == 8 )
+            goto error;
+        ret = vvtd_write_ics(vvtd, val_lo);
+        break;
+
+    case DMAR_IECTL_REG:
+        if ( len == 8 )
+            goto error;
+        ret = vvtd_write_iectl(vvtd, val_lo);
         break;
 
     case DMAR_IRTA_REG:

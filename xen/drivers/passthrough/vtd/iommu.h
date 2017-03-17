@@ -207,6 +207,32 @@
 #define DMA_IRTA_S(val)         (val & 0xf)
 #define DMA_IRTA_SIZE(val)      (1UL << (DMA_IRTA_S(val) + 1))
 
+/* IQH_REG */
+#define DMA_IQH_QH_SHIFT        4
+#define DMA_IQH_QH(val)         ((val >> 4) & 0x7fffULL)
+
+/* IQT_REG */
+#define DMA_IQT_QT_SHIFT        4
+#define DMA_IQT_QT(val)         ((val >> 4) & 0x7fffULL)
+#define DMA_IQT_RSVD            0xfffffffffff80007ULL
+
+/* IQA_REG */
+#define DMA_MGAW                39  /* Maximum Guest Address Width */
+#define DMA_IQA_ADDR(val)       (val & ~0xfffULL)
+#define DMA_IQA_QS(val)         (val & 0x7)
+#define DMA_IQA_ENTRY_PER_PAGE  (1 << 8)
+#define DMA_IQA_RSVD            (~((1ULL << DMA_MGAW) -1 ) | 0xff8ULL)
+
+/* IECTL_REG */
+#define DMA_IECTL_IM_BIT 31
+#define DMA_IECTL_IM            (1 << DMA_IECTL_IM_BIT)
+#define DMA_IECTL_IP_BIT 30
+#define DMA_IECTL_IP (((u64)1) << DMA_IECTL_IP_BIT)
+
+/* ICS_REG */
+#define DMA_ICS_IWC_BIT         0
+#define DMA_ICS_IWC             (1 << DMA_ICS_IWC_BIT)
+
 /* PMEN_REG */
 #define DMA_PMEN_EPM    (((u32)1) << 31)
 #define DMA_PMEN_PRS    (((u32)1) << 0)
@@ -241,7 +267,8 @@
 #define DMA_FSTS_PPF ((u64)1 << DMA_FSTS_PPF_BIT)
 #define DMA_FSTS_AFO ((u64)1 << 2)
 #define DMA_FSTS_APF ((u64)1 << 3)
-#define DMA_FSTS_IQE ((u64)1 << 4)
+#define DMA_FSTS_IQE_BIT 4
+#define DMA_FSTS_IQE ((u64)1 << DMA_FSTS_IQE_BIT)
 #define DMA_FSTS_ICE ((u64)1 << 5)
 #define DMA_FSTS_ITE ((u64)1 << 6)
 #define DMA_FSTS_PRO_BIT 7
