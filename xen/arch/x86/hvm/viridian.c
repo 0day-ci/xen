@@ -134,8 +134,8 @@ void cpuid_viridian_leaves(const struct vcpu *v, uint32_t leaf,
            own version number. */
         if ( d->arch.hvm_domain.viridian.guest_os_id.raw == 0 )
             break;
-        res->a = 1; /* Build number */
-        res->b = (xen_major_version() << 16) | xen_minor_version();
+        res->a = 0; /* Build number */
+        res->b = 0x00060000; /* Windows Server 2008 */
         res->c = 0; /* SP */
         res->d = 0; /* Service branch and number */
         break;
