@@ -274,12 +274,34 @@ static int vvtd_handle_gcmd_qie(struct vvtd *vvtd, unsigned long val)
     return X86EMUL_OKAY;
 }
 
+static int vvtd_handle_gcmd_ire(struct vvtd *vvtd, unsigned long val)
+{
+    VVTD_DEBUG(VVTD_DBG_RW, "Enable Interrupt Remapping.");
+
+    if ( val & DMA_GCMD_IRE )
+    {
+        vvtd->status |= VIOMMU_STATUS_IRQ_REMAPPING_ENABLED;
+        __vvtd_set_bit(vvtd, DMAR_GSTS_REG, DMA_GSTS_IRES_BIT);
+    }
+    else
+    {
+        vvtd->status |= ~VIOMMU_STATUS_IRQ_REMAPPING_ENABLED;
+        __vvtd_clear_bit(vvtd, DMAR_GSTS_REG, DMA_GSTS_IRES_BIT);
+    }
+
+    return X86EMUL_OKAY;
+}
+
 static int vvtd_handle_gcmd_sirtp(struct vvtd *vvtd, unsigned long val)
 {
     uint64_t irta;
 
     if ( !(val & DMA_GCMD_SIRTP) )
         return X86EMUL_OKAY;
+
+    if ( vvtd_irq_remapping_enabled(vvtd) )
+        VVTD_DEBUG(VVTD_DBG_RW, "Update Interrupt Remapping Table when "
+                   "active." );
 
     vvtd_get_reg_quad(vvtd, DMAR_IRTA_REG, irta);
     vvtd->irt = DMA_IRTA_ADDR(irta) >> PAGE_SHIFT;
@@ -307,6 +329,10 @@ static int vvtd_write_gcmd(struct vvtd *vvtd, unsigned long val)
         vvtd_handle_gcmd_sirtp(vvtd, val);
     if ( changed & DMA_GCMD_QIE )
         vvtd_handle_gcmd_qie(vvtd, val);
+    if ( changed & DMA_GCMD_IRE )
+        vvtd_handle_gcmd_ire(vvtd, val);
+    if ( changed & ~(DMA_GCMD_QIE | DMA_GCMD_SIRTP | DMA_GCMD_IRE) )
+        gdprintk(XENLOG_INFO, "Only QIE,SIRTP,IRE in GCMD_REG are handled.\n");
 
     return X86EMUL_OKAY;
 }

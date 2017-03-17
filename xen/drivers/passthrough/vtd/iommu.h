@@ -195,7 +195,8 @@
 #define DMA_GSTS_WBFS   (((u64)1) << 27)
 #define DMA_GSTS_QIES_BIT       26
 #define DMA_GSTS_QIES           (((u64)1) << DMA_GSTS_QIES_BIT)
-#define DMA_GSTS_IRES   (((u64)1) <<25)
+#define DMA_GSTS_IRES_BIT       25
+#define DMA_GSTS_IRES   (((u64)1) << DMA_GSTS_IRES_BIT)
 #define DMA_GSTS_SIRTPS_BIT     24
 #define DMA_GSTS_SIRTPS (((u64)1) << DMA_GSTS_SIRTPS_BIT)
 #define DMA_GSTS_CFIS   (((u64)1) <<23)
