@@ -114,9 +114,18 @@ void vmsi_deliver_pirq(struct domain *d, const struct hvm_pirq_dpci *pirq_dpci)
                 "vector=%x trig_mode=%x\n",
                 dest, dest_mode, delivery_mode, vector, trig_mode);
 
-    ASSERT(pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI);
+    ASSERT(pirq_dpci->flags & (HVM_IRQ_DPCI_GUEST_MSI | HVM_IRQ_DPCI_GUEST_MSI_IR));
+    if ( pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI_IR )
+    {
+        struct irq_remapping_request request;
 
-    vmsi_deliver(d, vector, dest, dest_mode, delivery_mode, trig_mode);
+        irq_request_msi_fill(&request, pirq_dpci->gmsi.intremap.source_id,
+                             pirq_dpci->gmsi.intremap.addr,
+                             pirq_dpci->gmsi.intremap.data);
+        viommu_handle_irq_request(d, &request);
+    }
+    else
+        vmsi_deliver(d, vector, dest, dest_mode, delivery_mode, trig_mode);
 }
 
 /* Return value, -1 : multi-dests, non-negative value: dest_vcpu_id */

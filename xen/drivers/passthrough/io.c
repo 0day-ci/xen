@@ -139,7 +139,9 @@ static void pt_pirq_softirq_reset(struct hvm_pirq_dpci *pirq_dpci)
 
 bool_t pt_irq_need_timer(uint32_t flags)
 {
-    return !(flags & (HVM_IRQ_DPCI_GUEST_MSI | HVM_IRQ_DPCI_TRANSLATE));
+    return !(flags & (HVM_IRQ_DPCI_GUEST_MSI_IR |
+                      HVM_IRQ_DPCI_GUEST_MSI |
+                      HVM_IRQ_DPCI_TRANSLATE));
 }
 
 static int pt_irq_guest_eoi(struct domain *d, struct hvm_pirq_dpci *pirq_dpci,
@@ -693,7 +695,8 @@ int pt_irq_destroy_bind(
     pirq = pirq_info(d, machine_gsi);
     pirq_dpci = pirq_dpci(pirq);
 
-    if ( pt_irq_bind->irq_type != PT_IRQ_TYPE_MSI )
+    if ( (pt_irq_bind->irq_type != PT_IRQ_TYPE_MSI_IR) &&
+         (pt_irq_bind->irq_type != PT_IRQ_TYPE_MSI) )
     {
         unsigned int bus = pt_irq_bind->u.pci.bus;
         unsigned int device = pt_irq_bind->u.pci.device;
@@ -856,20 +859,39 @@ static int _hvm_dpci_msi_eoi(struct domain *d,
 {
     int vector = (long)arg;
 
-    if ( (pirq_dpci->flags & HVM_IRQ_DPCI_MACH_MSI) &&
-         (pirq_dpci->gmsi.legacy.gvec == vector) )
+    if ( pirq_dpci->flags & HVM_IRQ_DPCI_MACH_MSI )
     {
-        int dest = pirq_dpci->gmsi.legacy.gflags & VMSI_DEST_ID_MASK;
-        int dest_mode = !!(pirq_dpci->gmsi.legacy.gflags & VMSI_DM_MASK);
-
-        if ( vlapic_match_dest(vcpu_vlapic(current), NULL, 0, dest,
-                               dest_mode) )
+        if ( (pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI) &&
+             (pirq_dpci->gmsi.legacy.gvec == vector) )
         {
-            __msi_pirq_eoi(pirq_dpci);
-            return 1;
+            int dest = pirq_dpci->gmsi.legacy.gflags & VMSI_DEST_ID_MASK;
+            int dest_mode = !!(pirq_dpci->gmsi.legacy.gflags & VMSI_DM_MASK);
+
+            if ( vlapic_match_dest(vcpu_vlapic(current), NULL, 0, dest,
+                                   dest_mode) )
+            {
+                __msi_pirq_eoi(pirq_dpci);
+                return 1;
+            }
+        }
+        else if ( pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI_IR )
+        {
+            int ret;
+            struct irq_remapping_request request;
+            struct irq_remapping_info irq_info;
+
+            irq_request_msi_fill(&request, pirq_dpci->gmsi.intremap.source_id,
+                                 pirq_dpci->gmsi.intremap.addr,
+                                 pirq_dpci->gmsi.intremap.data);
+            ret = viommu_get_irq_info(d, &request, &irq_info);
+            if ( (!ret) && (irq_info.vector == vector) && vlapic_match_dest(
+                vcpu_vlapic(current),NULL, 0, irq_info.dest, irq_info.dest_mode) )
+            {
+                __msi_pirq_eoi(pirq_dpci);
+                return 1;
+            }
         }
     }
-
     return 0;
 }
 
@@ -901,14 +923,16 @@ static void hvm_dirq_assist(struct domain *d, struct hvm_pirq_dpci *pirq_dpci)
         {
             send_guest_pirq(d, pirq);
 
-            if ( pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI )
+            if ( pirq_dpci->flags
+                 & (HVM_IRQ_DPCI_GUEST_MSI | HVM_IRQ_DPCI_GUEST_MSI_IR) )
             {
                 spin_unlock(&d->event_lock);
                 return;
             }
         }
 
-        if ( pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI )
+        if ( pirq_dpci->flags
+             & (HVM_IRQ_DPCI_GUEST_MSI | HVM_IRQ_DPCI_GUEST_MSI_IR) )
         {
             vmsi_deliver_pirq(d, pirq_dpci);
             spin_unlock(&d->event_lock);
