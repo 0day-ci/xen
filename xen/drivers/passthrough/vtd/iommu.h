@@ -195,8 +195,15 @@
 #define DMA_GSTS_WBFS   (((u64)1) << 27)
 #define DMA_GSTS_QIES   (((u64)1) <<26)
 #define DMA_GSTS_IRES   (((u64)1) <<25)
-#define DMA_GSTS_SIRTPS (((u64)1) << 24)
+#define DMA_GSTS_SIRTPS_BIT     24
+#define DMA_GSTS_SIRTPS (((u64)1) << DMA_GSTS_SIRTPS_BIT)
 #define DMA_GSTS_CFIS   (((u64)1) <<23)
+
+/* IRTA_REG */
+#define DMA_IRTA_ADDR(val)      (val & ~0xfffULL)
+#define DMA_IRTA_EIME(val)      (!!(val & (1 << 11)))
+#define DMA_IRTA_S(val)         (val & 0xf)
+#define DMA_IRTA_SIZE(val)      (1UL << (DMA_IRTA_S(val) + 1))
 
 /* PMEN_REG */
 #define DMA_PMEN_EPM    (((u32)1) << 31)
