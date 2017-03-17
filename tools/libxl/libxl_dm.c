@@ -1252,6 +1252,15 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
             flexarray_append(dm_args, "-net");
             flexarray_append(dm_args, "none");
         }
+
+        if ( !libxl_defbool_is_default(b_info->u.hvm.viommu.intremap)
+             && libxl_defbool_val(b_info->u.hvm.viommu.intremap) )
+        {
+            flexarray_append(dm_args, "-device");
+            flexarray_append(dm_args,
+                             GCSPRINTF("xen_viommu,cap=%ld",
+                                       b_info->u.hvm.viommu.cap));
+        }
     } else {
         if (!sdl && !vnc) {
             flexarray_append(dm_args, "-nographic");

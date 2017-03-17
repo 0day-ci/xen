@@ -453,7 +453,7 @@ int libxl__domain_build(libxl__gc *gc,
         vments[4] = "start_time";
         vments[5] = GCSPRINTF("%lu.%02d", start_time.tv_sec,(int)start_time.tv_usec/10000);
 
-        localents = libxl__calloc(gc, 9, sizeof(char *));
+        localents = libxl__calloc(gc, 11, sizeof(char *));
         i = 0;
         localents[i++] = "platform/acpi";
         localents[i++] = libxl__acpi_defbool_val(info) ? "1" : "0";
@@ -471,6 +471,11 @@ int libxl__domain_build(libxl__gc *gc,
                     GCSPRINTF("%"PRIu64,
                                    info->u.hvm.mmio_hole_memkb << 10);
             }
+        }
+        if (info->u.hvm.viommu.base_addr) {
+            localents[i++] = "viommu/base_addr";
+            localents[i++] =
+                GCSPRINTF("%"PRIu64, info->u.hvm.viommu.base_addr);
         }
 
         break;
@@ -679,6 +684,11 @@ retry_transaction:
     libxl__xs_mknod(gc, t,
                     GCSPRINTF("%s/attr", dom_path),
                     rwperm, ARRAY_SIZE(rwperm));
+
+    if (info->type == LIBXL_DOMAIN_TYPE_HVM)
+        libxl__xs_mknod(gc, t,
+                        GCSPRINTF("%s/viommu", dom_path),
+                        noperm, ARRAY_SIZE(noperm));
 
     if (libxl_defbool_val(info->driver_domain)) {
         /*
