@@ -27,6 +27,10 @@
 
 #define ACPI_MAX_SECONDARY_TABLES 16
 
+#define VTD_HOST_ADDRESS_WIDTH 39
+#define I440_PSEUDO_BUS_PLATFORM 0xff
+#define I440_PSEUDO_DEVFN_IOAPIC 0x0
+
 #define align16(sz)        (((sz) + 15) & ~15)
 #define fixed_strcpy(d, s) strncpy((d), (s), sizeof(d))
 
@@ -300,6 +304,55 @@ static struct acpi_20_slit *construct_slit(struct acpi_ctxt *ctxt,
     set_checksum(slit, offsetof(struct acpi_header, checksum), size);
 
     return slit;
+}
+
+struct acpi_dmar *construct_dmar(struct acpi_ctxt *ctxt,
+                                 const struct acpi_config *config)
+{
+    struct acpi_dmar *dmar;
+    struct acpi_dmar_hardware_unit *drhd;
+    struct dmar_device_scope *scope;
+    unsigned int size;
+    unsigned int ioapic_scope_size = sizeof(*scope) + sizeof(scope->path[0]);
+
+    size = sizeof(*dmar) + sizeof(*drhd) + ioapic_scope_size;
+
+    dmar = ctxt->mem_ops.alloc(ctxt, size, 16);
+    if ( !dmar )
+        return NULL;
+
+    memset(dmar, 0, size);
+    dmar->header.signature = ACPI_2_0_DMAR_SIGNATURE;
+    dmar->header.revision = ACPI_2_0_DMAR_REVISION;
+    dmar->header.length = size;
+    fixed_strcpy(dmar->header.oem_id, ACPI_OEM_ID);
+    fixed_strcpy(dmar->header.oem_table_id, ACPI_OEM_TABLE_ID);
+    dmar->header.oem_revision = ACPI_OEM_REVISION;
+    dmar->header.creator_id   = ACPI_CREATOR_ID;
+    dmar->header.creator_revision = ACPI_CREATOR_REVISION;
+    dmar->host_address_width = VTD_HOST_ADDRESS_WIDTH - 1;
+    dmar->flags = config->dmar_flag & (DMAR_INTR_REMAP|DMAR_X2APIC_OPT_OUT);
+
+    drhd = (struct acpi_dmar_hardware_unit *)((void*)dmar + sizeof(*dmar));
+    drhd->type = ACPI_DMAR_TYPE_HARDWARE_UNIT;
+    drhd->length = sizeof(*drhd) + ioapic_scope_size;
+    drhd->flags = ACPI_DMAR_INCLUDE_PCI_ALL;
+    drhd->pci_segment = 0;
+    drhd->address = config->viommu_base_addr;
+
+    scope = &drhd->scope[0];
+    scope->type = ACPI_DMAR_DEVICE_SCOPE_IOAPIC;
+    scope->length = ioapic_scope_size;
+    /*
+     * This field provides the I/O APICID as provided in the I/O APIC structure
+     * in the ACPI MADT (Multiple APIC Descriptor Table).
+     */
+    scope->enumeration_id = 1;
+    scope->bus = I440_PSEUDO_BUS_PLATFORM;
+    scope->path[0] = I440_PSEUDO_DEVFN_IOAPIC;
+
+    set_checksum(dmar, offsetof(struct acpi_header, checksum), size);
+    return dmar;
 }
 
 static int construct_passthrough_tables(struct acpi_ctxt *ctxt,
