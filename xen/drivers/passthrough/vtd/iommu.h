@@ -193,7 +193,8 @@
 #define DMA_GSTS_FLS    (((u64)1) << 29)
 #define DMA_GSTS_AFLS   (((u64)1) << 28)
 #define DMA_GSTS_WBFS   (((u64)1) << 27)
-#define DMA_GSTS_QIES   (((u64)1) <<26)
+#define DMA_GSTS_QIES_BIT       26
+#define DMA_GSTS_QIES           (((u64)1) << DMA_GSTS_QIES_BIT)
 #define DMA_GSTS_IRES   (((u64)1) <<25)
 #define DMA_GSTS_SIRTPS_BIT     24
 #define DMA_GSTS_SIRTPS (((u64)1) << DMA_GSTS_SIRTPS_BIT)

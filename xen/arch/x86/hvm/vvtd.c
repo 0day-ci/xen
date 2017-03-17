@@ -100,6 +100,11 @@ static inline void __vvtd_set_bit(struct vvtd *vvtd, uint32_t reg, int nr)
     return __set_bit(nr, (uint32_t *)&vvtd->regs->data[reg]);
 }
 
+static inline void __vvtd_clear_bit(struct vvtd *vvtd, uint32_t reg, int nr)
+{
+    return __clear_bit(nr, (uint32_t *)&vvtd->regs->data[reg]);
+}
+
 static inline void vvtd_set_reg(struct vvtd *vtd, uint32_t reg,
                                 uint32_t value)
 {
@@ -258,6 +263,17 @@ static int vvtd_log_fault(struct vvtd *vvtd, struct irq_remapping_request *irq,
     return 0;
 }
 
+static int vvtd_handle_gcmd_qie(struct vvtd *vvtd, unsigned long val)
+{
+    VVTD_DEBUG(VVTD_DBG_RW, "Enable Queue Invalidation.");
+
+    if ( val & DMA_GCMD_QIE )
+        __vvtd_set_bit(vvtd, DMAR_GSTS_REG, DMA_GSTS_QIES_BIT);
+    else
+        __vvtd_clear_bit(vvtd, DMAR_GSTS_REG, DMA_GSTS_QIES_BIT);
+    return X86EMUL_OKAY;
+}
+
 static int vvtd_handle_gcmd_sirtp(struct vvtd *vvtd, unsigned long val)
 {
     uint64_t irta;
@@ -289,6 +305,8 @@ static int vvtd_write_gcmd(struct vvtd *vvtd, unsigned long val)
 
     if ( changed & DMA_GCMD_SIRTP )
         vvtd_handle_gcmd_sirtp(vvtd, val);
+    if ( changed & DMA_GCMD_QIE )
+        vvtd_handle_gcmd_qie(vvtd, val);
 
     return X86EMUL_OKAY;
 }
