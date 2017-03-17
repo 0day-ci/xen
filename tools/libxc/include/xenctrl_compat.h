@@ -164,6 +164,11 @@ int xc_hvm_set_mem_type(
 int xc_hvm_inject_trap(
     xc_interface *xch, domid_t domid, int vcpu, uint8_t vector,
     uint8_t type, uint32_t error_code, uint8_t insn_len, uint64_t cr2);
+int xc_viommu_query_cap(xc_interface *xch, domid_t dom, uint64_t *cap);
+int xc_viommu_create(
+    xc_interface *xch, domid_t dom, uint64_t base_addr, uint64_t cap,
+    uint32_t *viommu_id);
+int xc_viommu_destroy(xc_interface *xch, domid_t dom, uint32_t viommu_id);
 
 #endif /* XC_WANT_COMPAT_DEVICEMODEL_API */
 

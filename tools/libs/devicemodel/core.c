@@ -498,6 +498,75 @@ int xendevicemodel_restrict(xendevicemodel_handle *dmod, domid_t domid)
     return osdep_xendevicemodel_restrict(dmod, domid);
 }
 
+int xendevicemodel_viommu_query_cap(
+    xendevicemodel_handle *dmod, domid_t dom, uint64_t *cap)
+{
+    struct xen_dm_op op;
+    struct xen_dm_op_query_viommu_caps *data;
+    int rc;
+
+    if ( !cap )
+        return -EINVAL;
+
+    memset(&op, 0, sizeof(op));
+
+    op.op = XEN_DMOP_query_viommu_caps;
+    data = &op.u.query_viommu_caps;
+
+    rc = xendevicemodel_op(dmod, dom, 1, &op, sizeof(op));
+    if ( rc )
+        return rc;
+
+    *cap = data->caps;
+    return 0;
+}
+
+int xendevicemodel_viommu_create(
+    xendevicemodel_handle *dmod, domid_t dom, uint64_t base_addr,
+    uint64_t cap, uint32_t *viommu_id)
+{
+    struct xen_dm_op op;
+    struct xen_dm_op_create_viommu *data;
+    int rc;
+
+    if ( !viommu_id )
+        return -EINVAL;
+
+    memset(&op, 0, sizeof(op));
+
+    op.op = XEN_DMOP_create_viommu;
+    data = &op.u.create_viommu;
+
+    data->base_address = base_addr;
+    data->capabilities = cap;
+
+    rc = xendevicemodel_op(dmod, dom, 1, &op, sizeof(op));
+    if ( rc )
+        return rc;
+
+    *viommu_id = data->viommu_id;
+    return 0;
+}
+
+int xendevicemodel_viommu_destroy(
+    xendevicemodel_handle *dmod, domid_t dom, uint32_t viommu_id)
+{
+    struct xen_dm_op op;
+    struct xen_dm_op_destroy_viommu *data;
+
+    if ( !viommu_id )
+        return -EINVAL;
+
+    memset(&op, 0, sizeof(op));
+
+    op.op = XEN_DMOP_destroy_viommu;
+    data = &op.u.destroy_viommu;
+
+    data->viommu_id = viommu_id;
+
+    return xendevicemodel_op(dmod, dom, 1, &op, sizeof(op));
+}
+
 /*
  * Local variables:
  * mode: C

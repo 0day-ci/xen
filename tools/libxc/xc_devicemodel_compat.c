@@ -128,6 +128,24 @@ int xc_hvm_inject_trap(
                                        type, error_code, insn_len, cr2);
 }
 
+int xc_viommu_query_cap(xc_interface *xch, domid_t dom, uint64_t *cap)
+{
+    return xendevicemodel_viommu_query_cap(xch->dmod, dom, cap);
+}
+
+int xc_viommu_create(
+    xc_interface *xch, domid_t dom, uint64_t base_addr, uint64_t cap,
+    uint32_t *viommu_id)
+{
+    return xendevicemodel_viommu_create(xch->dmod, dom, base_addr, cap,
+                                        viommu_id);
+}
+
+int xc_viommu_destroy(xc_interface *xch, domid_t dom, uint32_t viommu_id)
+{
+    return xendevicemodel_viommu_destroy(xch->dmod, dom, viommu_id);
+}
+
 /*
  * Local variables:
  * mode: C

@@ -293,6 +293,41 @@ int xendevicemodel_inject_event(
  */
 int xendevicemodel_restrict(xendevicemodel_handle *dmod, domid_t domid);
 
+/**
+ * This function queries the capabilitites of vIOMMU emulated by Xen.
+ *
+ * @parm dmod a handle to an open devicemodel interface.
+ * @parm dom the domain id to be serviced.
+ * @parm cap points to memory to store the capability. 
+ * @return 0 on success, -1 on failure.
+ */
+int xendevicemodel_viommu_query_cap(
+    xendevicemodel_handle *dmod, domid_t dom, uint64_t *cap);
+
+/**
+ * This function creates vIOMMU in Xen hypervisor with base_addr, capability.
+ *
+ * @parm dmod a handle to an open devicemodel interface.
+ * @parm dom the domain id to be serviced.
+ * @parm base_addr base address of register set of the vIOMMU. 
+ * @parm cap the capability owned by the vIOMMU to be created. 
+ * @parm viommu_id points to memory to store the vIOMMU id.
+ * @return 0 on success, -1 on failure.
+ */
+int xendevicemodel_viommu_create(
+    xendevicemodel_handle *dmod, domid_t dom, uint64_t base_addr,
+    uint64_t cap, uint32_t *viommu_id);
+
+/**
+ * This function destroies vIOMMU specified by viommu_id.
+ *
+ * @parm dmod a handle to an open devicemodel interface.
+ * @parm dom the domain id to be serviced.
+ * @parm viommu_id spcifies the id of the vIOMMU to be destroied. 
+ * @return 0 on success, -1 on failure.
+ */
+int xendevicemodel_viommu_destroy(
+    xendevicemodel_handle *dmod, domid_t dom, uint32_t viommu_id);
 #endif /* __XEN_TOOLS__ */
 
 #endif /* XENDEVICEMODEL_H */
