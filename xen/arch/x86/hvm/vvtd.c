@@ -49,6 +49,38 @@ struct vvtd {
     struct page_info *regs_page;
 };
 
+#define __DEBUG_VVTD__
+#ifdef __DEBUG_VVTD__
+extern unsigned int vvtd_debug_level;
+#define VVTD_DBG_INFO     1
+#define VVTD_DBG_TRANS    (1<<1)
+#define VVTD_DBG_RW       (1<<2)
+#define VVTD_DBG_FAULT    (1<<3)
+#define VVTD_DBG_EOI      (1<<4)
+#define VVTD_DEBUG(lvl, _f, _a...) do { \
+    if ( vvtd_debug_level & lvl ) \
+    printk("VVTD %s:" _f "\n", __func__, ## _a);    \
+} while(0)
+#else
+#define VVTD_DEBUG(fmt...) do {} while(0)
+#endif
+
+unsigned int vvtd_debug_level __read_mostly;
+integer_param("vvtd_debug", vvtd_debug_level);
+
+struct vvtd *domain_vvtd(struct domain *d)
+{
+    struct viommu_info *info = &d->viommu;
+
+    BUILD_BUG_ON(NR_VIOMMU_PER_DOMAIN != 1);
+    return (info && info->viommu[0]) ? info->viommu[0]->priv : NULL;
+}
+
+static inline struct vvtd *vcpu_vvtd(struct vcpu *v)
+{
+    return domain_vvtd(v->domain);
+}
+
 static inline void vvtd_set_reg(struct vvtd *vtd, uint32_t reg,
                                 uint32_t value)
 {
@@ -74,6 +106,108 @@ static inline uint8_t vvtd_get_reg_byte(struct vvtd *vtd, uint32_t reg)
     vvtd_set_reg(vvtd, reg, (uint32_t)((val) & 0xffffffff)); \
     vvtd_set_reg(vvtd, (reg) + 4, (uint32_t)((val) >> 32)); \
 } while(0)
+
+static int vvtd_range(struct vcpu *v, unsigned long addr)
+{
+    struct vvtd *vvtd = vcpu_vvtd(v);
+
+    if ( vvtd )
+        return (addr >= vvtd->base_addr) &&
+               (addr < vvtd->base_addr + PAGE_SIZE);
+    return 0;
+}
+
+static int vvtd_read(struct vcpu *v, unsigned long addr,
+                     unsigned int len, unsigned long *pval)
+{
+    struct vvtd *vvtd = vcpu_vvtd(v);
+    unsigned int offset = addr - vvtd->base_addr;
+    unsigned int offset_aligned = offset & ~3;
+
+    if ( !pval )
+        return X86EMUL_OKAY;
+
+    VVTD_DEBUG(VVTD_DBG_RW, "READ INFO: offset %x len %d.", offset, len);
+
+    if ( len != 1 && (offset & 3) != 0 )
+    {
+        VVTD_DEBUG(VVTD_DBG_RW, "Alignment is not canonical.");
+        return X86EMUL_OKAY;
+    }
+
+    switch( len )
+    {
+    case 1:
+        *pval = vvtd_get_reg_byte(vvtd, offset);
+        break;
+
+    case 4:
+        *pval = vvtd_get_reg(vvtd, offset_aligned);
+        break;
+
+    case 8:
+        vvtd_get_reg_quad(vvtd, offset_aligned, *pval);
+        break;
+
+    default:
+        break;
+    }
+
+    return X86EMUL_OKAY;
+}
+
+static int vvtd_write(struct vcpu *v, unsigned long addr,
+                      unsigned int len, unsigned long val)
+{
+    struct vvtd *vvtd = vcpu_vvtd(v);
+    unsigned int offset = addr - vvtd->base_addr;
+    unsigned int offset_aligned = offset & ~0x3;
+    unsigned long val_lo = (val & ((1ULL << 32) - 1));
+    int ret;
+
+    VVTD_DEBUG(VVTD_DBG_RW, "WRITE INFO: offset %x len %d val %lx.",
+               offset, len, val);
+
+    if ( offset & 3 )
+    {
+        VVTD_DEBUG(VVTD_DBG_RW, "Alignment is not canonical");
+        goto error;
+    }
+
+    if ( len != 4 && len != 8)
+    {
+        VVTD_DEBUG(VVTD_DBG_RW, "Len is not canonical");
+        goto error;
+    }
+
+    ret = X86EMUL_UNHANDLEABLE;
+    switch ( offset_aligned  )
+    {
+    case DMAR_IEDATA_REG:
+    case DMAR_IEADDR_REG:
+    case DMAR_IEUADDR_REG:
+    case DMAR_FEDATA_REG:
+    case DMAR_FEADDR_REG:
+    case DMAR_FEUADDR_REG:
+        if ( len == 8 )
+            goto error;
+        vvtd_set_reg(vvtd, offset_aligned, val_lo);
+        ret = X86EMUL_OKAY;
+        break;
+
+    default:
+        break;
+    }
+
+error:
+    return X86EMUL_OKAY;
+}
+
+static const struct hvm_mmio_ops vvtd_mmio_ops = {
+    .check = vvtd_range,
+    .read = vvtd_read,
+    .write = vvtd_write
+};
 
 static void vvtd_reset(struct vvtd *vvtd, uint64_t capability)
 {
@@ -132,6 +266,7 @@ static struct vvtd *__vvtd_create(struct domain *d,
     vvtd->base_addr = base_addr;
     vvtd->domain = d;
     vvtd->status = 0;
+    register_mmio_handler(d, &vvtd_mmio_ops);
     return vvtd;
 
 out2:
