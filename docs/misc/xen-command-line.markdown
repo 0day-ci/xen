@@ -1623,6 +1623,14 @@ The optional `keep` parameter causes Xen to continue using the vga
 console even after dom0 has been started.  The default behaviour is to
 relinquish control to dom0.
 
+### viridian\_spinlock\_retry\_count
+> `= <integer>`
+
+> Default: `2047`
+
+Specify the maximum number of retries before an enlightened Windows
+guest will notify Xen that it has failed to acquire a spinlock.
+
 ### vpid (Intel)
 > `= <boolean>`
 

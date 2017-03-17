@@ -22,6 +22,12 @@
 #include <public/sched.h>
 #include <public/hvm/hvm_op.h>
 
+#define VIRIDIAN_SPINLOCK_RETRY_COUNT_DEFAULT 2047
+
+static int __read_mostly viridian_spinlock_retry_count;
+integer_param("viridian_spinlock_retry_count",
+              viridian_spinlock_retry_count);
+
 /* Viridian MSR numbers. */
 #define HV_X64_MSR_GUEST_OS_ID                   0x40000000
 #define HV_X64_MSR_HYPERCALL                     0x40000001
@@ -241,7 +247,13 @@ void cpuid_viridian_leaves(const struct vcpu *v, uint32_t leaf,
             res->a |= CPUID4A_HCALL_REMOTE_TLB_FLUSH;
         if ( !cpu_has_vmx_apic_reg_virt )
             res->a |= CPUID4A_MSR_BASED_APIC;
-        res->b = 2047; /* long spin count */
+
+        /*
+         * This value is the recommended number of attempts to try to
+         * acquire a spinlock before notifying the hypervisor via the
+         * HvNotifyLongSpinWait hypercall.
+         */
+        res->b = viridian_spinlock_retry_count;
         break;
 
     case 6:
@@ -990,6 +1002,16 @@ static int viridian_load_vcpu_ctxt(struct domain *d, hvm_domain_context_t *h)
 
 HVM_REGISTER_SAVE_RESTORE(VIRIDIAN_VCPU, viridian_save_vcpu_ctxt,
                           viridian_load_vcpu_ctxt, 1, HVMSR_PER_VCPU);
+
+static int __init viridian_init(void)
+{
+    if ( !viridian_spinlock_retry_count )
+        viridian_spinlock_retry_count =
+            VIRIDIAN_SPINLOCK_RETRY_COUNT_DEFAULT;
+
+    return 0;
+}
+__initcall(viridian_init);
 
 /*
  * Local variables:
