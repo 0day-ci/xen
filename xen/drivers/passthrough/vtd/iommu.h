@@ -229,25 +229,67 @@
 #define DMA_CCMD_CAIG_MASK(x) (((u64)x) & ((u64) 0x3 << 59))
 
 /* FECTL_REG */
-#define DMA_FECTL_IM (((u64)1) << 31)
+#define DMA_FECTL_IM_BIT 31
+#define DMA_FECTL_IM (((u64)1) << DMA_FECTL_IM_BIT)
+#define DMA_FECTL_IP_BIT 30
+#define DMA_FECTL_IP (((u64)1) << DMA_FECTL_IP_BIT)
 
 /* FSTS_REG */
-#define DMA_FSTS_PFO ((u64)1 << 0)
-#define DMA_FSTS_PPF ((u64)1 << 1)
+#define DMA_FSTS_PFO_BIT 0
+#define DMA_FSTS_PFO ((u64)1 << DMA_FSTS_PFO_BIT)
+#define DMA_FSTS_PPF_BIT 1
+#define DMA_FSTS_PPF ((u64)1 << DMA_FSTS_PPF_BIT)
 #define DMA_FSTS_AFO ((u64)1 << 2)
 #define DMA_FSTS_APF ((u64)1 << 3)
 #define DMA_FSTS_IQE ((u64)1 << 4)
 #define DMA_FSTS_ICE ((u64)1 << 5)
 #define DMA_FSTS_ITE ((u64)1 << 6)
-#define DMA_FSTS_FAULTS    DMA_FSTS_PFO | DMA_FSTS_PPF | DMA_FSTS_AFO | DMA_FSTS_APF | DMA_FSTS_IQE | DMA_FSTS_ICE | DMA_FSTS_ITE
+#define DMA_FSTS_PRO_BIT 7
+#define DMA_FSTS_PRO ((u64)1 << DMA_FSTS_PRO_BIT)
+#define DMA_FSTS_FAULTS    (DMA_FSTS_PFO | DMA_FSTS_PPF | DMA_FSTS_AFO | DMA_FSTS_APF | DMA_FSTS_IQE | DMA_FSTS_ICE | DMA_FSTS_ITE | DMA_FSTS_PRO)
+#define DMA_FSTS_RW1CS     (DMA_FSTS_PFO | DMA_FSTS_AFO | DMA_FSTS_APF | DMA_FSTS_IQE | DMA_FSTS_ICE | DMA_FSTS_ITE | DMA_FSTS_PRO)
 #define dma_fsts_fault_record_index(s) (((s) >> 8) & 0xff)
 
 /* FRCD_REG, 32 bits access */
-#define DMA_FRCD_F (((u64)1) << 31)
+#define DMA_FRCD_LEN            0x10
+#define DMA_FRCD0_OFFSET        0x0
+#define DMA_FRCD1_OFFSET        0x4
+#define DMA_FRCD2_OFFSET        0x8
+#define DMA_FRCD3_OFFSET        0xc
+#define DMA_FRCD3_FR_MASK       0xffUL
+#define DMA_FRCD_F_BIT 31
+#define DMA_FRCD_F ((u64)1 << DMA_FRCD_F_BIT)
+#define DMA_FRCD(idx, offset) (DMA_CAP_FRO_OFFSET + DMA_FRCD_LEN * idx + offset)
 #define dma_frcd_type(d) ((d >> 30) & 1)
 #define dma_frcd_fault_reason(c) (c & 0xff)
 #define dma_frcd_source_id(c) (c & 0xffff)
 #define dma_frcd_page_addr(d) (d & (((u64)-1) << 12)) /* low 64 bit */
+
+struct vtd_fault_record_register
+{
+    union {
+        struct {
+            u64 lo;
+            u64 hi;
+        } bits;
+        struct {
+            u64 rsvd0   :12,
+                FI      :52; /* Fault Info */
+            u64 SID     :16, /* Source Identifier */
+                rsvd1   :9,
+                PRIV    :1,  /* Privilege Mode Requested */
+                EXE     :1,  /* Execute Permission Requested */
+                PP      :1,  /* PASID Present */
+                FR      :8,  /* Fault Reason */
+                PV      :20, /* PASID Value */
+                AT      :2,  /* Address Type */
+                T       :1,  /* Type. (0) Write Request (1) Read Request or
+                              * AtomicOp request
+                              */
+                F       :1;  /* Fault */
+        } fields;
+    };
+};
 
 enum VTD_FAULT_TYPE
 {
