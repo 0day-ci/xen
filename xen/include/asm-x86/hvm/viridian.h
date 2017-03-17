@@ -23,6 +23,7 @@ struct viridian_vcpu
 {
     struct {
         union viridian_vp_assist msr;
+        unsigned long gmfn;
         void *va;
         int vector;
     } vp_assist;

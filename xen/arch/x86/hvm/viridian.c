@@ -276,6 +276,22 @@ static void enable_hypercall_page(struct domain *d)
     put_page_and_type(page);
 }
 
+static void teardown_vp_assist(struct vcpu *v)
+{
+    void *va = v->arch.hvm_vcpu.viridian.vp_assist.va;
+    struct page_info *page;
+
+    if ( !va )
+        return;
+
+    v->arch.hvm_vcpu.viridian.vp_assist.va = NULL;
+
+    page = mfn_to_page(domain_page_map_to_mfn(va));
+
+    unmap_domain_page_global(va);
+    put_page_and_type(page);
+}
+
 static void initialize_vp_assist(struct vcpu *v)
 {
     struct domain *d = v->domain;
@@ -287,6 +303,14 @@ static void initialize_vp_assist(struct vcpu *v)
      * See section 7.8.7 of the specification for details of this
      * enlightenment.
      */
+
+    if ( v->arch.hvm_vcpu.viridian.vp_assist.va )
+    {
+        if ( v->arch.hvm_vcpu.viridian.vp_assist.gmfn == gmfn )
+            return;
+
+        teardown_vp_assist(v);
+    }
 
     if ( !page )
         goto fail;
@@ -306,36 +330,13 @@ static void initialize_vp_assist(struct vcpu *v)
 
     clear_page(va);
 
-    /*
-     * If we overwrite an existing address here then something has
-     * gone wrong and a domain page will leak. Instead crash the
-     * domain to make the problem obvious.
-     */
-    if ( v->arch.hvm_vcpu.viridian.vp_assist.va )
-        domain_crash(d);
-
     v->arch.hvm_vcpu.viridian.vp_assist.va = va;
+    v->arch.hvm_vcpu.viridian.vp_assist.gmfn = gmfn;
     return;
 
  fail:
     gdprintk(XENLOG_WARNING, "Bad GMFN %#"PRI_gfn" (MFN %#"PRI_mfn")\n", gmfn,
              page ? page_to_mfn(page) : mfn_x(INVALID_MFN));
-}
-
-static void teardown_vp_assist(struct vcpu *v)
-{
-    void *va = v->arch.hvm_vcpu.viridian.vp_assist.va;
-    struct page_info *page;
-
-    if ( !va )
-        return;
-
-    v->arch.hvm_vcpu.viridian.vp_assist.va = NULL;
-
-    page = mfn_to_page(domain_page_map_to_mfn(va));
-
-    unmap_domain_page_global(va);
-    put_page_and_type(page);
 }
 
 void viridian_start_apic_assist(struct vcpu *v, int vector)
@@ -513,7 +514,6 @@ int wrmsr_viridian_regs(uint32_t idx, uint64_t val)
 
     case HV_X64_MSR_VP_ASSIST_PAGE:
         perfc_incr(mshv_wrmsr_apic_msr);
-        teardown_vp_assist(v); /* release any previous mapping */
         v->arch.hvm_vcpu.viridian.vp_assist.msr.raw = val;
         dump_vp_assist(v);
         if ( v->arch.hvm_vcpu.viridian.vp_assist.msr.fields.enabled )
