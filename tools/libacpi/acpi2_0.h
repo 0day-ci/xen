@@ -421,6 +421,49 @@ struct acpi_20_slit {
     uint8_t entry[0];
 };
 
+/* DMA Remapping Table in VTd spec Rev. 2.4. */
+struct acpi_dmar {
+    struct acpi_header header;
+    uint8_t host_address_width;
+    uint8_t flags;
+    uint8_t reserved[10]; /* reserved(0) */
+};
+
+/* Remapping Structure Types */
+enum {
+    ACPI_DMAR_TYPE_HARDWARE_UNIT = 0,       /* DRHD */
+    ACPI_DMAR_TYPE_RESERVED_MEMORY = 1,     /* RMRR */
+    ACPI_DMAR_TYPE_ATSR = 2,                /* ATSR */
+    ACPI_DMAR_TYPE_HARDWARE_AFFINITY = 3,   /* RHSR */
+    ACPI_DMAR_TYPE_ANDD = 4,                /* ANDD */
+    ACPI_DMAR_TYPE_RESERVED = 5             /* Reserved for furture use */
+};
+
+struct dmar_device_scope {
+    uint8_t type;
+    uint8_t length;
+    uint8_t reserved[2]; /* reserved(0) */
+    uint8_t enumeration_id;
+    uint8_t bus;
+    uint16_t path[0];
+};
+
+struct acpi_dmar_hardware_unit {
+    uint16_t type;
+    uint16_t length;
+    uint8_t flags;
+    uint8_t reserved; /* reserved(0) */
+    uint16_t pci_segment; /* The PCI segment associated with this unit */
+    uint64_t address; /* Base address of remapping hardware register-set */
+    struct dmar_device_scope scope[0];
+};
+
+/* Device scope type */
+#define ACPI_DMAR_DEVICE_SCOPE_IOAPIC   0x03
+
+/* Masks for flags field of struct acpi_dmar_hardware_unit */
+#define ACPI_DMAR_INCLUDE_PCI_ALL   1
+
 /*
  * Table Signatures.
  */
@@ -435,6 +478,7 @@ struct acpi_20_slit {
 #define ACPI_2_0_WAET_SIGNATURE ASCII32('W','A','E','T')
 #define ACPI_2_0_SRAT_SIGNATURE ASCII32('S','R','A','T')
 #define ACPI_2_0_SLIT_SIGNATURE ASCII32('S','L','I','T')
+#define ACPI_2_0_DMAR_SIGNATURE ASCII32('D','M','A','R')
 
 /*
  * Table revision numbers.
@@ -449,6 +493,7 @@ struct acpi_20_slit {
 #define ACPI_1_0_FADT_REVISION 0x01
 #define ACPI_2_0_SRAT_REVISION 0x01
 #define ACPI_2_0_SLIT_REVISION 0x01
+#define ACPI_2_0_DMAR_REVISION 0x01
 
 #pragma pack ()
 
