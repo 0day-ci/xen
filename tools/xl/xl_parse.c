@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <xen/hvm/e820.h>
+#include <xen/viommu.h>
 
 #include <libxl.h>
 #include <libxl_utils.h>
@@ -28,6 +29,8 @@
 #include "xl_parse.h"
 
 extern void set_default_nic_values(libxl_device_nic *nic);
+
+#define VIOMMU_BASE_ADDR 0xfed90000
 
 #define ARRAY_EXTEND_INIT__CORE(array,count,initfn,more)                \
     ({                                                                  \
@@ -707,6 +710,25 @@ int parse_usbdev_config(libxl_device_usbdev *usbdev, char *token)
     return 0;
 }
 
+/* Parses viommu data and adds info into viommu
+ * Returns 1 if the input token does not match one of the keys
+ * or parsed values are not correct. Successful parse returns 0 */
+static int parse_viommu_config(libxl_viommu_info *viommu, char *token)
+{
+    char *oparg;
+
+    if (MATCH_OPTION("intremap", token, oparg)) {
+        libxl_defbool_set(&viommu->intremap, !!strtoul(oparg, NULL, 0));
+    } else if (MATCH_OPTION("x2apic_opt_out", token, oparg)) {
+        libxl_defbool_set(&viommu->x2apic_opt_out, !!strtoul(oparg, NULL, 0));
+    } else {
+        fprintf(stderr, "Unknown string `%s' in viommu spec\n", token);
+        return 1;
+    }
+
+    return 0;
+}
+
 void parse_config_data(const char *config_source,
                        const char *config_data,
                        int config_len,
@@ -1084,6 +1106,38 @@ void parse_config_data(const char *config_source,
 
         if (!xlu_cfg_get_long (config, "rdm_mem_boundary", &l, 0))
             b_info->u.hvm.rdm_mem_boundary_memkb = l * 1024;
+
+        if (!xlu_cfg_get_string(config, "viommu_info", &buf, 0)) {
+            libxl_viommu_info viommu;
+            char *p, *str2;
+
+            str2 = strdup(buf);
+            if (!str2) {
+                fprintf(stderr, "ERROR: strdup failed\n");
+                exit (1);
+            }
+            p = strtok(str2, ",");
+            if (!p) {
+                fprintf(stderr, "ERROR: invalid viommu_info format\n");
+                exit (1);
+            }
+            do {
+                if (*p == ' ')
+                    p++;
+                if (parse_viommu_config(&viommu, p)) {
+                    fprintf(stderr, "ERROR: invalid viommu settting\n");
+                    exit (1);
+                }
+            } while ((p=strtok(NULL, ",")) != NULL);
+            free(str2);
+            b_info->u.hvm.viommu.intremap = viommu.intremap;
+            b_info->u.hvm.viommu.x2apic_opt_out = viommu.x2apic_opt_out;
+            if ( libxl_defbool_val(b_info->u.hvm.viommu.intremap) )
+            {
+                b_info->u.hvm.viommu.cap = VIOMMU_CAP_IRQ_REMAPPING;
+                b_info->u.hvm.viommu.base_addr = VIOMMU_BASE_ADDR;
+            }
+        }
         break;
     case LIBXL_DOMAIN_TYPE_PV:
     {

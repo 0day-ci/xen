@@ -550,6 +550,11 @@ static int new_vm_gid(struct acpi_ctxt *ctxt,
     return 1;
 }
 
+uint32_t acpi_get_table_size(struct acpi_header * header)
+{
+    return header ? header->length : 0;
+}
+
 int acpi_build_tables(struct acpi_ctxt *ctxt, struct acpi_config *config)
 {
     struct acpi_info *acpi_info;

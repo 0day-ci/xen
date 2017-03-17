@@ -108,6 +108,7 @@ struct acpi_config {
 #define DMAR_X2APIC_OPT_OUT 0x2
 struct acpi_dmar *construct_dmar(struct acpi_ctxt *ctxt,
                                  const struct acpi_config *config);
+uint32_t acpi_get_table_size(struct acpi_header * header);
 int acpi_build_tables(struct acpi_ctxt *ctxt, struct acpi_config *config);
 
 #endif /* __LIBACPI_H__ */
