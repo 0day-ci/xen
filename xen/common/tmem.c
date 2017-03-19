@@ -1604,8 +1604,8 @@ fail:
 
 /************ TMEM CONTROL OPERATIONS ************************************/
 
-static int tmemc_shared_pool_auth(domid_t cli_id, uint64_t uuid_lo,
-                                  uint64_t uuid_hi, bool_t auth)
+int tmemc_shared_pool_auth(domid_t cli_id, uint64_t uuid_lo,
+                           uint64_t uuid_hi, bool auth)
 {
     struct client *client;
     int i, free = -1;
@@ -1908,7 +1908,8 @@ long do_tmem_op(tmem_cli_op_t uops)
     /* Acquire write lock for all commands at first. */
     write_lock(&tmem_rwlock);
 
-    if ( op.cmd == TMEM_CONTROL || op.cmd == TMEM_RESTORE_NEW )
+    if ( op.cmd == TMEM_CONTROL || op.cmd == TMEM_RESTORE_NEW ||
+         op.cmd == TMEM_AUTH )
     {
         rc = -EOPNOTSUPP;
     }

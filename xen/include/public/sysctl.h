@@ -772,6 +772,7 @@ DEFINE_XEN_GUEST_HANDLE(xen_sysctl_psr_cat_op_t);
 #define XEN_SYSCTL_TMEM_OP_QUERY_FREEABLE_MB      8
 #define XEN_SYSCTL_TMEM_OP_SET_POOLS              9
 #define XEN_SYSCTL_TMEM_OP_SAVE_BEGIN             10
+#define XEN_SYSCTL_TMEM_OP_SET_AUTH               11
 #define XEN_SYSCTL_TMEM_OP_SAVE_GET_NEXT_PAGE     19
 #define XEN_SYSCTL_TMEM_OP_SAVE_GET_NEXT_INV      20
 #define XEN_SYSCTL_TMEM_OP_SAVE_END               21
@@ -824,7 +825,8 @@ struct xen_tmem_pool_info {
         struct {
             uint32_t persist:1,    /* See TMEM_POOL_PERSIST. */
                      shared:1,     /* See TMEM_POOL_SHARED. */
-                     rsv:2,
+                     auth:1,       /* See TMEM_POOL_AUTH. */
+                     rsv1:1,
                      pagebits:8,   /* TMEM_POOL_PAGESIZE_[SHIFT,MASK]. */
                      rsv2:12,
                      version:8;    /* TMEM_POOL_VERSION_[SHIFT,MASK]. */
