@@ -225,6 +225,15 @@ const char *xenstore_read(const char *path, const char *default_resp);
  */
 int xenstore_write(const char *path, const char *value);
 
+/* Read a xenstore directory. Return NULL, or a nul-terminated string
+ * which contains all names of directory entries. Names are separated
+ * by '\0'. The returned string is in a static buffer, so only valid
+ * until the next xenstore/xenbus operation.  If @default_resp is
+ * specified, it is returned in preference to a NULL or empty string
+ * received from xenstore.
+ */
+const char *xenstore_directory(const char *path, uint32_t *len,
+                               const char *default_resp);
 
 /* Get a HVM param.
  */

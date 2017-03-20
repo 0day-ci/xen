@@ -893,6 +893,53 @@ static uint8_t acpi_lapic_id(unsigned cpu)
     return LAPIC_ID(cpu);
 }
 
+static const char *acpi_xs_read(struct acpi_ctxt *ctxt, const char *path)
+{
+    return xenstore_read(path, NULL);
+}
+
+static int acpi_xs_write(struct acpi_ctxt *ctxt,
+                         const char *path, const char *value)
+{
+    return xenstore_write(path, value);
+}
+
+static unsigned int count_strings(const char *strings, unsigned int len)
+{
+    const char *p;
+    unsigned int n;
+
+    for ( p = strings, n = 0; p < strings + len; p++ )
+        if ( *p == '\0' )
+            n++;
+
+    return n;
+}
+
+static char **acpi_xs_directory(struct acpi_ctxt *ctxt,
+                                const char *path, unsigned int *num)
+{
+    const char *strings;
+    char *s, *p, **ret;
+    unsigned int len, n;
+
+    strings = xenstore_directory(path, &len, NULL);
+    if ( !strings )
+        return NULL;
+
+    n = count_strings(strings, len);
+    ret = ctxt->mem_ops.alloc(ctxt, n * sizeof(p) + len, 0);
+    if ( !ret )
+        return NULL;
+    memcpy(&ret[n], strings, len);
+
+    s = (char *)&ret[n];
+    for ( p = s, *num = 0; p < s + len; p += strlen(p) + 1 )
+        ret[(*num)++] = p;
+
+    return ret;
+}
+
 void hvmloader_acpi_build_tables(struct acpi_config *config,
                                  unsigned int physical)
 {
@@ -978,6 +1025,11 @@ void hvmloader_acpi_build_tables(struct acpi_config *config,
     ctxt.mem_ops.p2v = acpi_p2v;
 
     ctxt.min_alloc_byte_align = 16;
+
+    ctxt.xs_ops.read = acpi_xs_read;
+    ctxt.xs_ops.write = acpi_xs_write;
+    ctxt.xs_ops.directory = acpi_xs_directory;
+    ctxt.xs_opaque = NULL;
 
     acpi_build_tables(&ctxt, config);
 

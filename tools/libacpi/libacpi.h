@@ -54,6 +54,16 @@ struct acpi_ctxt {
     } mem_ops;
 
     uint32_t min_alloc_byte_align; /* minimum alignment used by mem_ops.alloc */
+
+    struct acpi_xs_ops {
+        const char *(*read)(struct acpi_ctxt *ctxt, const char *path);
+        int (*write)(struct acpi_ctxt *ctxt,
+                     const char *path, const char *value);
+        char **(*directory)(struct acpi_ctxt *ctxt,
+                            const char *path, unsigned int *num);
+    } xs_ops;
+
+    void *xs_opaque;
 };
 
 struct acpi_config {

@@ -245,6 +245,24 @@ static int xenbus_recv(uint32_t *reply_len, const char **reply_data,
     return 0;
 }
 
+static const char *xenstore_read_common(const char *path, uint32_t *len,
+                                        const char *default_resp, bool is_dir)
+{
+    uint32_t type = 0, expected_type = is_dir ? XS_DIRECTORY : XS_READ;
+    const char *answer = NULL;
+
+    xenbus_send(expected_type, path, strlen(path), "", 1, /* nul separator */
+                NULL, 0);
+
+    if ( xenbus_recv(len, &answer, &type) || type != expected_type )
+        answer = NULL;
+
+    if ( (default_resp != NULL) && ((answer == NULL) || (*answer == '\0')) )
+        answer = default_resp;
+
+    /* We know xenbus_recv() nul-terminates its answer, so just pass it on. */
+    return answer;
+}
 
 /* Read a xenstore key.  Returns a nul-terminated string (even if the XS
  * data wasn't nul-terminated) or NULL.  The returned string is in a
@@ -254,22 +272,22 @@ static int xenbus_recv(uint32_t *reply_len, const char **reply_data,
  */
 const char *xenstore_read(const char *path, const char *default_resp)
 {
-    uint32_t len = 0, type = 0;
-    const char *answer = NULL;
+    uint32_t len = 0;
 
-    xenbus_send(XS_READ,
-                path, strlen(path),
-                "", 1, /* nul separator */
-                NULL, 0);
+    return xenstore_read_common(path, &len, default_resp, false);
+}
 
-    if ( xenbus_recv(&len, &answer, &type) || (type != XS_READ) )
-        answer = NULL;
-
-    if ( (default_resp != NULL) && ((answer == NULL) || (*answer == '\0')) )
-        answer = default_resp;
-
-    /* We know xenbus_recv() nul-terminates its answer, so just pass it on. */
-    return answer;
+/* Read a xenstore directory. Return NULL, or a nul-terminated string
+ * which contains all names of directory entries. Names are separated
+ * by '\0'. The returned string is in a static buffer, so only valid
+ * until the next xenstore/xenbus operation.  If @default_resp is
+ * specified, it is returned in preference to a NULL or empty string
+ * received from xenstore.
+ */
+const char *xenstore_directory(const char *path, uint32_t *len,
+                               const char *default_resp)
+{
+    return xenstore_read_common(path, len, default_resp, true);
 }
 
 /* Write a xenstore key.  @value must be a nul-terminated string. Returns
