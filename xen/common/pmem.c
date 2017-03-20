@@ -18,6 +18,7 @@
 
 #include <xen/errno.h>
 #include <xen/list.h>
+#include <xen/mm.h>
 #include <xen/pmem.h>
 #include <xen/spinlock.h>
 
@@ -28,10 +29,33 @@
 static DEFINE_SPINLOCK(pmem_regions_lock);
 static LIST_HEAD(pmem_regions);
 
+/*
+ * Two types of pmem regions are linked in this list and are
+ * distinguished by their ready flags.
+ * - Data pmem regions that can be mapped to guest, and their ready
+ *   flags are true.
+ * - Management pmem regions that are used to management data regions
+ *   and never mapped to guest, and their ready flags are false.
+ *
+ * All regions linked in this list must be covered by one or multiple
+ * regions in list pmem_regions as well.
+ */
+static DEFINE_SPINLOCK(pmem_gregions_lock);
+static LIST_HEAD(pmem_gregions);
+
 struct pmem {
     struct list_head link;      /* link to pmem_list */
     unsigned long smfn;         /* start MFN of the whole pmem region */
     unsigned long emfn;         /* end MFN of the whole pmem region */
+
+    /*
+     * If frametable and M2P of this pmem region is stored in the
+     * regular RAM, mgmt will be NULL. Otherwise, it refers to another
+     * pmem region used for those management structures.
+     */
+    struct pmem *mgmt;
+
+    bool ready;                 /* indicate whether it can be mapped to guest */
 };
 
 static bool check_overlap(unsigned long smfn1, unsigned long emfn1,
@@ -76,6 +100,82 @@ static int pmem_list_add(struct list_head *list, struct pmem *entry)
     return 0;
 }
 
+static void pmem_list_remove(struct pmem *entry)
+{
+    list_del(&entry->link);
+}
+
+static struct pmem *get_first_overlap(const struct list_head *list,
+                                      unsigned long smfn, unsigned emfn)
+{
+    struct list_head *cur;
+    struct pmem *overlap = NULL;
+
+    list_for_each(cur, list)
+    {
+        struct pmem *cur_pmem = list_entry(cur, struct pmem, link);
+        unsigned long cur_smfn = cur_pmem->smfn;
+        unsigned long cur_emfn = cur_pmem->emfn;
+
+        if ( emfn <= cur_smfn )
+            break;
+
+        if ( check_overlap(smfn, emfn, cur_smfn, cur_emfn) )
+        {
+            overlap = cur_pmem;
+            break;
+        }
+    }
+
+    return overlap;
+}
+
+static bool pmem_list_covered(const struct list_head *list,
+                              unsigned long smfn, unsigned emfn)
+{
+    struct pmem *overlap;
+    bool covered = false;
+
+    do {
+        overlap = get_first_overlap(list, smfn, emfn);
+
+        if ( !overlap || smfn < overlap->smfn )
+            break;
+
+        if ( emfn <= overlap->emfn )
+        {
+            covered = true;
+            break;
+        }
+
+        smfn = overlap->emfn;
+        list = &overlap->link;
+    } while ( list );
+
+    return covered;
+}
+
+static bool check_mgmt_size(unsigned long mgmt_mfns, unsigned long total_mfns)
+{
+    return mgmt_mfns >=
+        ((sizeof(struct page_info) * total_mfns) >> PAGE_SHIFT) +
+        ((sizeof(*machine_to_phys_mapping) * total_mfns) >> PAGE_SHIFT);
+}
+
+static bool check_region(unsigned long smfn, unsigned long emfn)
+{
+    bool rc;
+
+    if ( smfn >= emfn )
+        return false;
+
+    spin_lock(&pmem_regions_lock);
+    rc = pmem_list_covered(&pmem_regions, smfn, emfn);
+    spin_unlock(&pmem_regions_lock);
+
+    return rc;
+}
+
 /**
  * Register a pmem region to Xen. It's used by Xen hypervisor to collect
  * all pmem regions can be used later.
@@ -102,5 +202,102 @@ int pmem_register(unsigned long smfn, unsigned long emfn)
     rc = pmem_list_add(&pmem_regions, pmem);
     spin_unlock(&pmem_regions_lock);
 
+    return rc;
+}
+
+/**
+ * Setup a data pmem region that can be used by guest later. A
+ * separate pmem region, or the management region, can be specified to
+ * store the frametable and M2P tables of the data pmem region.
+ *
+ * Parameters:
+ *  data_smfn/_emfn: start and end MFNs of the data pmem region
+ *  mgmt_emfn/_emfn: If not mfn_x(INVALID_MFN), then the pmem region from
+ *                   mgmt_smfn to mgmt_emfn will be used for the frametable
+ *                   M2P of itself and the data pmem region. Otherwise, the
+ *                   regular RAM will be used.
+ *
+ * Return:
+ *  On success, return 0. Otherwise, an error number will be returned.
+ */
+int pmem_setup(unsigned long data_smfn, unsigned long data_emfn,
+               unsigned long mgmt_smfn, unsigned long mgmt_emfn)
+{
+    int rc = 0;
+    bool mgmt_in_pmem = mgmt_smfn != mfn_x(INVALID_MFN) &&
+                        mgmt_emfn != mfn_x(INVALID_MFN);
+    struct pmem *pmem, *mgmt = NULL;
+    unsigned long mgmt_mfns = mgmt_emfn - mgmt_smfn;
+    unsigned long total_mfns = data_emfn - data_smfn + mgmt_mfns;
+    unsigned long i;
+    struct page_info *pg;
+
+    if ( !check_region(data_smfn, data_emfn) )
+        return -EINVAL;
+
+    if ( mgmt_in_pmem &&
+         (!check_region(mgmt_smfn, mgmt_emfn) ||
+          !check_mgmt_size(mgmt_mfns, total_mfns)) )
+        return -EINVAL;
+
+    pmem = alloc_pmem_struct(data_smfn, data_emfn);
+    if ( !pmem )
+        return -ENOMEM;
+    if ( mgmt_in_pmem )
+    {
+        mgmt = alloc_pmem_struct(mgmt_smfn, mgmt_emfn);
+        if ( !mgmt )
+            return -ENOMEM;
+    }
+
+    spin_lock(&pmem_gregions_lock);
+    rc = pmem_list_add(&pmem_gregions, pmem);
+    if ( rc )
+    {
+        spin_unlock(&pmem_gregions_lock);
+        goto out;
+    }
+    if ( mgmt_in_pmem )
+    {
+        rc = pmem_list_add(&pmem_gregions, mgmt);
+        if ( rc )
+        {
+            spin_unlock(&pmem_gregions_lock);
+            goto out_remove_pmem;
+        }
+    }
+    spin_unlock(&pmem_gregions_lock);
+
+    rc = pmem_arch_setup(data_smfn, data_emfn, mgmt_smfn, mgmt_emfn);
+    if ( rc )
+        goto out_remove_mgmt;
+
+    for ( i = data_smfn; i < data_emfn; i++ )
+    {
+        pg = mfn_to_page(i);
+        pg->count_info = PGC_state_free;
+    }
+
+    if ( mgmt_in_pmem )
+        pmem->mgmt = mgmt->mgmt = mgmt;
+    /* As mgmt is never mapped to guest, we do not set its ready flag. */
+    pmem->ready = true;
+
+    return 0;
+
+ out_remove_mgmt:
+    if ( mgmt )
+    {
+        spin_lock(&pmem_gregions_lock);
+        pmem_list_remove(mgmt);
+        spin_unlock(&pmem_gregions_lock);
+        xfree(mgmt);
+    }
+ out_remove_pmem:
+    spin_lock(&pmem_gregions_lock);
+    pmem_list_remove(pmem);
+    spin_unlock(&pmem_gregions_lock);
+    xfree(pmem);
+ out:
     return rc;
 }

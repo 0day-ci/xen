@@ -817,6 +817,23 @@ int xc_livepatch_replace(xc_interface *xch, char *name, uint32_t timeout)
     return _xc_livepatch_action(xch, name, LIVEPATCH_ACTION_REPLACE, timeout);
 }
 
+int xc_nvdimm_pmem_setup(xc_interface *xch,
+                         unsigned long smfn, unsigned long emfn,
+                         unsigned long mgmt_smfn, unsigned long mgmt_emfn)
+{
+    DECLARE_SYSCTL;
+
+    sysctl.cmd = XEN_SYSCTL_nvdimm_op;
+    sysctl.u.nvdimm.cmd = XEN_SYSCTL_nvdimm_pmem_setup;
+    sysctl.u.nvdimm.pad = 0;
+    sysctl.u.nvdimm.u.setup.smfn = smfn;
+    sysctl.u.nvdimm.u.setup.emfn = emfn;
+    sysctl.u.nvdimm.u.setup.mgmt_smfn = mgmt_smfn;
+    sysctl.u.nvdimm.u.setup.mgmt_emfn = mgmt_emfn;
+
+    return do_sysctl(xch, &sysctl);
+}
+
 /*
  * Local variables:
  * mode: C

@@ -2534,6 +2534,25 @@ int xc_livepatch_replace(xc_interface *xch, char *name, uint32_t timeout);
 int xc_domain_cacheflush(xc_interface *xch, uint32_t domid,
                          xen_pfn_t start_pfn, xen_pfn_t nr_pfns);
 
+/*
+ * Query Xen hypervisor to prepare for mapping host pmem pages.
+ *
+ * Parameters:
+ *  xch:       xc interface handler
+ *  smfn:      the start MFN of the host pmem pages to be mapped
+ *  emfn:      the end MFN of the host pmem pages to be mapped
+ *  mgmt_smfn: If not INVALID_MFN, the start MFN of host pmem pages for managing
+ *             above pmem pages
+ *  mgmt_emfn: If not INVALID_MFN, the end MFN of host pmem pages for managing
+ *             above pmem pages
+ *
+ * Return:
+ *  0 on success; non-zero error code on failures.
+ */
+int xc_nvdimm_pmem_setup(xc_interface *xch,
+                         unsigned long smfn, unsigned long emfn,
+                         unsigned long mgmt_smfn, unsigned long mgmt_emfn);
+
 /* Compat shims */
 #include "xenctrl_compat.h"
 

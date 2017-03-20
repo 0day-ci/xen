@@ -23,6 +23,20 @@
 #include <xen/types.h>
 
 int pmem_register(unsigned long smfn, unsigned long emfn);
+int pmem_setup(unsigned long data_spfn, unsigned long data_emfn,
+               unsigned long mgmt_smfn, unsigned long mgmt_emfn);
+
+#ifdef CONFIG_X86
+int pmem_arch_setup(unsigned long data_smfn, unsigned long data_emfn,
+                    unsigned long mgmt_smfn, unsigned long mgmt_emfn);
+#else /* !CONFIG_X86 */
+static inline int
+pmem_arch_setup(unsigned long data_smfn, unsigned long data_emfn,
+                unsigned mgmt_smfn, unsigned long mgmt_emfn)
+{
+    return -ENOSYS;
+}
+#endif /* CONFIG_X86 */
 
 #endif /* CONFIG_PMEM */
 #endif /* __XEN_PMEM_H__ */

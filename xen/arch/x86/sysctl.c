@@ -19,6 +19,7 @@
 #include <xen/trace.h>
 #include <xen/console.h>
 #include <xen/iocap.h>
+#include <xen/pmem.h>
 #include <asm/irq.h>
 #include <asm/hvm/hvm.h>
 #include <asm/hvm/support.h>
@@ -249,6 +250,27 @@ long arch_do_sysctl(
 
         break;
     }
+
+#ifdef CONFIG_PMEM
+    case XEN_SYSCTL_nvdimm_op:
+    {
+        xen_sysctl_nvdimm_pmem_setup_t *setup;
+
+        switch ( sysctl->u.nvdimm.cmd )
+        {
+        case XEN_SYSCTL_nvdimm_pmem_setup:
+            setup = &sysctl->u.nvdimm.u.setup;
+            ret = pmem_setup(setup->smfn, setup->emfn,
+                             setup->mgmt_smfn, setup->mgmt_emfn);
+            break;
+
+        default:
+            ret = -ENOSYS;
+        }
+
+        break;
+    }
+#endif /* CONFIG_PMEM */
 
     default:
         ret = -ENOSYS;

@@ -27,6 +27,7 @@ asm(".file \"" __FILE__ "\"");
 #include <xen/guest_access.h>
 #include <xen/hypercall.h>
 #include <xen/mem_access.h>
+#include <xen/pmem.h>
 #include <asm/current.h>
 #include <asm/asm_defns.h>
 #include <asm/page.h>
@@ -1521,6 +1522,116 @@ destroy_frametable:
 
     return ret;
 }
+
+#ifdef CONFIG_PMEM
+
+static unsigned long pmem_alloc_from_ram(struct mem_hotadd_info *unused)
+{
+    unsigned long mfn = mfn_x(INVALID_MFN);
+    struct page_info *page = alloc_domheap_pages(NULL, PAGETABLE_ORDER, 0);
+
+    if ( page )
+        mfn = page_to_mfn(page);
+
+    return mfn;
+}
+
+static int pmem_setup_m2p_table(const struct mem_hotadd_info *info,
+                                mfns_alloc_fn_t alloc_fn,
+                                struct mem_hotadd_info *alloc_info)
+{
+    unsigned long smfn = info->spfn;
+    unsigned long emfn = info->epfn;
+
+    if ( max_page < emfn )
+    {
+        max_page = emfn;
+        max_pdx = pfn_to_pdx(max_page - 1) + 1;
+    }
+    total_pages += emfn - smfn;
+
+    set_pdx_range(smfn, emfn);
+
+    return setup_m2p_table(info, alloc_fn, alloc_info);
+}
+
+int pmem_arch_setup(unsigned long data_smfn, unsigned long data_emfn,
+                    unsigned long mgmt_smfn, unsigned long mgmt_emfn)
+{
+    int ret;
+    unsigned old_max_mgmt = max_page, old_total_mgmt = total_pages;
+    unsigned old_max_data, old_total_data;
+    bool mgmt_in_pmem = (mgmt_smfn != mfn_x(INVALID_MFN) &&
+                         mgmt_emfn != mfn_x(INVALID_MFN));
+    mfns_alloc_fn_t alloc_fn = pmem_alloc_from_ram;
+    struct mem_hotadd_info *alloc_info = NULL;
+    struct mem_hotadd_info data_info =
+        { .spfn = data_smfn, .epfn = data_emfn, .cur = data_smfn };
+    struct mem_hotadd_info mgmt_info =
+        { .spfn = mgmt_smfn, .epfn = mgmt_emfn, .cur = mgmt_smfn };
+
+    if ( !mem_hotadd_check(data_smfn, data_emfn) )
+        return -EINVAL;
+
+    if ( mgmt_in_pmem )
+    {
+        if ( !mem_hotadd_check(mgmt_smfn, mgmt_emfn) )
+            return -EINVAL;
+
+        alloc_fn = alloc_hotadd_mfn;
+        alloc_info = &mgmt_info;
+
+        ret = extend_frame_table(&mgmt_info, alloc_fn, alloc_info);
+        if ( ret )
+            goto destroy_frametable_mgmt;
+
+        ret = pmem_setup_m2p_table(&mgmt_info, alloc_fn, alloc_info);
+        if ( ret )
+            goto destroy_m2p_mgmt;
+    }
+
+    ret = extend_frame_table(&data_info, alloc_fn, alloc_info);
+    if ( ret )
+        goto destroy_frametable_data;
+
+    old_max_data = max_page;
+    old_total_data = total_pages;
+    ret = pmem_setup_m2p_table(&data_info, alloc_fn, alloc_info);
+    if ( ret )
+        goto destroy_m2p_data;
+
+    share_hotadd_m2p_table(&data_info);
+    if ( mgmt_in_pmem )
+        share_hotadd_m2p_table(&mgmt_info);
+
+    return 0;
+
+destroy_m2p_data:
+    destroy_m2p_mapping(&data_info);
+    max_page = old_max_data;
+    total_pages = old_total_data;
+    max_pdx = pfn_to_pdx(max_page - 1) + 1;
+
+destroy_frametable_data:
+    cleanup_frame_table(&data_info);
+
+destroy_m2p_mgmt:
+    if ( mgmt_in_pmem )
+    {
+        destroy_m2p_mapping(&mgmt_info);
+        max_page = old_max_mgmt;
+        total_pages = old_total_mgmt;
+        max_pdx = pfn_to_pdx(max_page - 1) + 1;
+    }
+
+destroy_frametable_mgmt:
+    if ( mgmt_in_pmem )
+        cleanup_frame_table(&mgmt_info);
+
+    return ret;
+}
+
+#endif /* CONFIG_PMEM */
 
 #include "compat/mm.c"
 

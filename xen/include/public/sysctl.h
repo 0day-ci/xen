@@ -36,7 +36,7 @@
 #include "physdev.h"
 #include "tmem.h"
 
-#define XEN_SYSCTL_INTERFACE_VERSION 0x0000000F
+#define XEN_SYSCTL_INTERFACE_VERSION 0x00000010
 
 /*
  * Read console content from Xen buffer ring.
@@ -1088,6 +1088,31 @@ struct xen_sysctl_livepatch_op {
 typedef struct xen_sysctl_livepatch_op xen_sysctl_livepatch_op_t;
 DEFINE_XEN_GUEST_HANDLE(xen_sysctl_livepatch_op_t);
 
+#define XEN_SYSCTL_nvdimm_pmem_setup 0
+struct xen_sysctl_nvdimm_pmem_setup {
+    /* IN variables */
+    uint64_t smfn;      /* start MFN of the pmem region                  */
+    uint64_t emfn;      /* end MFN of the pmem region                    */
+    uint64_t mgmt_smfn; /* If not INVALID_MFN, start MFN of another pmem */
+                        /* region that will be used to manage above pmem */
+                        /* region.                                       */
+    uint64_t mgmt_emfn; /* If not INVALID_MFN, end MFN of another pmem   */
+                        /* region that will be used to manage above pmem */
+                        /* region. */
+};
+typedef struct xen_sysctl_nvdimm_pmem_setup xen_sysctl_nvdimm_pmem_setup_t;
+DEFINE_XEN_GUEST_HANDLE(xen_sysctl_nvdimm_pmem_setup_t);
+
+struct xen_sysctl_nvdimm_op {
+    uint32_t cmd; /* IN: XEN_SYSCTL_NVDIMM_*. */
+    uint32_t pad; /* IN: Always zero. */
+    union {
+        xen_sysctl_nvdimm_pmem_setup_t setup;
+    } u;
+};
+typedef struct xen_sysctl_nvdimm_op xen_sysctl_nvdimm_op_t;
+DEFINE_XEN_GUEST_HANDLE(xen_sysctl_nvdimm_op_t);
+
 struct xen_sysctl {
     uint32_t cmd;
 #define XEN_SYSCTL_readconsole                    1
@@ -1116,6 +1141,7 @@ struct xen_sysctl {
 #define XEN_SYSCTL_get_cpu_levelling_caps        25
 #define XEN_SYSCTL_get_cpu_featureset            26
 #define XEN_SYSCTL_livepatch_op                  27
+#define XEN_SYSCTL_nvdimm_op                     28
     uint32_t interface_version; /* XEN_SYSCTL_INTERFACE_VERSION */
     union {
         struct xen_sysctl_readconsole       readconsole;
@@ -1144,6 +1170,7 @@ struct xen_sysctl {
         struct xen_sysctl_cpu_levelling_caps cpu_levelling_caps;
         struct xen_sysctl_cpu_featureset    cpu_featureset;
         struct xen_sysctl_livepatch_op      livepatch;
+        struct xen_sysctl_nvdimm_op         nvdimm;
         uint8_t                             pad[128];
     } u;
 };
