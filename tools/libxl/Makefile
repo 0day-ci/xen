@@ -115,6 +115,10 @@ endif
 endif
 endif
 
+ifeq ($(CONFIG_Linux), y)
+LIBXL_OBJS-y += libxl_nvdimm.o
+endif
+
 ifeq ($(FLEX),)
 %.c %.h:: %.l
 	$(warning Flex is needed to rebuild some libxl parsers and \
