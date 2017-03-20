@@ -1206,9 +1206,21 @@ void do_int3(struct cpu_user_regs *regs)
 
     if ( !guest_mode(regs) )
     {
-        debugger_trap_fatal(TRAP_int3, regs);
-        return;
-    } 
+        unsigned long fixup;
+
+        if ( (fixup = search_exception_table(regs)) != 0 )
+        {
+            this_cpu(last_extable_addr) = regs->rip;
+            regs->rip = fixup;
+            return;
+        }
+
+        if ( debugger_trap_fatal(TRAP_int3, regs) )
+            return;
+
+        show_execution_state(regs);
+        panic("FATAL TRAP: vector = %d (int3)", TRAP_int3);
+    }
 
     do_guest_trap(TRAP_int3, regs);
 }
