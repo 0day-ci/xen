@@ -237,4 +237,13 @@ config FAST_SYMBOL_LOOKUP
 	  The only user of this is Live patching.
 
 	  If unsure, say Y.
+
+config PMEM
+	bool "Pmem support"
+	default n
+	---help---
+	  Enable support for the persistent memory mode NVDIMM.
+
+	  If unsure, say N.
+
 endmenu
