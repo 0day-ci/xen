@@ -871,6 +871,11 @@ static unsigned long acpi_v2p(struct acpi_ctxt *ctxt, void *v)
     return virt_to_phys(v);
 }
 
+static void *acpi_p2v(struct acpi_ctxt *ctxt, unsigned long p)
+{
+    return phys_to_virt(p);
+}
+
 static void *acpi_mem_alloc(struct acpi_ctxt *ctxt,
                             uint32_t size, uint32_t align)
 {
@@ -970,6 +975,7 @@ void hvmloader_acpi_build_tables(struct acpi_config *config,
     ctxt.mem_ops.alloc = acpi_mem_alloc;
     ctxt.mem_ops.free = acpi_mem_free;
     ctxt.mem_ops.v2p = acpi_v2p;
+    ctxt.mem_ops.p2v = acpi_p2v;
 
     ctxt.min_alloc_byte_align = 16;
 
