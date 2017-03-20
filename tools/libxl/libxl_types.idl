@@ -704,6 +704,13 @@ libxl_device_channel = Struct("device_channel", [
            ])),
 ])
 
+libxl_device_vnvdimm = Struct("device_vnvdimm", [
+    ("backend_domid",   libxl_domid),
+    ("backend_domname", string),
+    ("devid",           libxl_devid),
+    ("file",            string),
+])
+
 libxl_domain_config = Struct("domain_config", [
     ("c_info", libxl_domain_create_info),
     ("b_info", libxl_domain_build_info),
@@ -721,6 +728,7 @@ libxl_domain_config = Struct("domain_config", [
     ("channels", Array(libxl_device_channel, "num_channels")),
     ("usbctrls", Array(libxl_device_usbctrl, "num_usbctrls")),
     ("usbdevs", Array(libxl_device_usbdev, "num_usbdevs")),
+    ("vnvdimms", Array(libxl_device_vnvdimm, "num_vnvdimms")),
 
     ("on_poweroff", libxl_action_on_shutdown),
     ("on_reboot", libxl_action_on_shutdown),

@@ -24,6 +24,10 @@
 #include <sys/types.h>
 #include <pwd.h>
 
+#if defined(__linux__)
+#include <linux/fs.h> /* for ioctl(BLKGETSIZE64) */
+#endif
+
 static const char *libxl_tapif_script(libxl__gc *gc)
 {
 #if defined(__linux__) || defined(__FreeBSD__)
@@ -910,6 +914,82 @@ static char *qemu_disk_ide_drive_string(libxl__gc *gc, const char *target_path,
     return drive;
 }
 
+#if defined(__linux__)
+
+static uint64_t libxl__build_dm_vnvdimm_args(libxl__gc *gc, flexarray_t *dm_args,
+                                             struct libxl_device_vnvdimm *dev,
+                                             int dev_no)
+{
+    int fd, rc;
+    struct stat st;
+    uint64_t size = 0;
+    char *arg;
+
+    fd = open(dev->file, O_RDONLY);
+    if (fd < 0) {
+        LOG(ERROR, "failed to open file %s: %s",
+            dev->file, strerror(errno));
+        goto out;
+    }
+
+    if (stat(dev->file, &st)) {
+        LOG(ERROR, "failed to get status of file %s: %s",
+            dev->file, strerror(errno));
+        goto out_fclose;
+    }
+
+    switch (st.st_mode & S_IFMT) {
+    case S_IFBLK:
+        rc = ioctl(fd, BLKGETSIZE64, &size);
+        if (rc == -1) {
+            LOG(ERROR, "failed to get size of block device %s: %s",
+                dev->file, strerror(errno));
+            size = 0;
+        }
+        break;
+
+    default:
+        LOG(ERROR, "%s not block device", dev->file);
+        break;
+    }
+
+    if (!size)
+        goto out_fclose;
+
+    flexarray_append(dm_args, "-object");
+    arg = GCSPRINTF("memory-backend-xen,id=mem%d,size=%"PRIu64",mem-path=%s",
+                    dev_no + 1, size, dev->file);
+    flexarray_append(dm_args, arg);
+
+    flexarray_append(dm_args, "-device");
+    arg = GCSPRINTF("nvdimm,id=nvdimm%d,memdev=mem%d", dev_no + 1, dev_no + 1);
+    flexarray_append(dm_args, arg);
+
+ out_fclose:
+    close(fd);
+ out:
+    return size;
+}
+
+static uint64_t libxl__build_dm_vnvdimms_args(
+    libxl__gc *gc, flexarray_t *dm_args,
+    struct libxl_device_vnvdimm *vnvdimms, int num_vnvdimms)
+{
+    uint64_t total_size = 0, size;
+    unsigned int i;
+
+    for (i = 0; i < num_vnvdimms; i++) {
+        size = libxl__build_dm_vnvdimm_args(gc, dm_args, &vnvdimms[i], i);
+        if (!size)
+            break;
+        total_size += size;
+    }
+
+    return total_size;
+}
+
+#endif /* __linux__ */
+
 static int libxl__build_device_model_args_new(libxl__gc *gc,
                                         const char *dm, int guest_domid,
                                         const libxl_domain_config *guest_config,
@@ -923,13 +1003,18 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
     const libxl_device_nic *nics = guest_config->nics;
     const int num_disks = guest_config->num_disks;
     const int num_nics = guest_config->num_nics;
+#if defined(__linux__)
+    const int num_vnvdimms = guest_config->num_vnvdimms;
+#else
+    const int num_vnvdimms = 0;
+#endif
     const libxl_vnc_info *vnc = libxl__dm_vnc(guest_config);
     const libxl_sdl_info *sdl = dm_sdl(guest_config);
     const char *keymap = dm_keymap(guest_config);
     char *machinearg;
     flexarray_t *dm_args, *dm_envs;
     int i, connection, devid, ret;
-    uint64_t ram_size;
+    uint64_t ram_size, ram_size_in_byte, vnvdimms_size = 0;
     const char *path, *chardev;
     char *user = NULL;
 
@@ -1313,6 +1398,9 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
             }
         }
 
+        if (num_vnvdimms)
+            machinearg = libxl__sprintf(gc, "%s,nvdimm", machinearg);
+
         flexarray_append(dm_args, machinearg);
         for (i = 0; b_info->extra_hvm && b_info->extra_hvm[i] != NULL; i++)
             flexarray_append(dm_args, b_info->extra_hvm[i]);
@@ -1322,8 +1410,25 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
     }
 
     ram_size = libxl__sizekb_to_mb(b_info->max_memkb - b_info->video_memkb);
+    ram_size_in_byte = ram_size * 1024 * 1024;
+    if (num_vnvdimms) {
+        vnvdimms_size = libxl__build_dm_vnvdimms_args(gc, dm_args,
+                                                     guest_config->vnvdimms,
+                                                     num_vnvdimms);
+        if (ram_size_in_byte + vnvdimms_size < ram_size_in_byte) {
+            LOG(ERROR,
+                "total size of RAM (%"PRIu64") and NVDIMM (%"PRIu64") overflow",
+                ram_size_in_byte, vnvdimms_size);
+            return ERROR_INVAL;
+        }
+    }
     flexarray_append(dm_args, "-m");
-    flexarray_append(dm_args, GCSPRINTF("%"PRId64, ram_size));
+    flexarray_append(dm_args,
+                     vnvdimms_size ?
+                     GCSPRINTF("%"PRId64",slots=%d,maxmem=%"PRId64,
+                               ram_size, num_vnvdimms + 1,
+                               ROUNDUP(ram_size_in_byte + vnvdimms_size, 12)) :
+                     GCSPRINTF("%"PRId64, ram_size));
 
     if (b_info->type == LIBXL_DOMAIN_TYPE_HVM) {
         if (b_info->u.hvm.hdtype == LIBXL_HDTYPE_AHCI)

@@ -718,6 +718,7 @@ void parse_config_data(const char *config_source,
     XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms,
                    *usbctrls, *usbdevs;
     XLU_ConfigList *channels, *ioports, *irqs, *iomem, *viridian, *dtdevs;
+    XLU_ConfigList *vnvdimms;
     int num_ioports, num_irqs, num_iomem, num_cpus, num_viridian;
     int pci_power_mgmt = 0;
     int pci_msitranslate = 0;
@@ -1901,6 +1902,21 @@ skip_usbdev:
             exit(-ERROR_FAIL);
         }
      }
+
+    if (!xlu_cfg_get_list (config, "vnvdimms", &vnvdimms, 0, 0)) {
+#if defined(__linux__)
+        while ((buf = xlu_cfg_get_listitem(vnvdimms,
+                                           d_config->num_vnvdimms)) != NULL) {
+            libxl_device_vnvdimm *vnvdimm =
+                ARRAY_EXTEND_INIT(d_config->vnvdimms, d_config->num_vnvdimms,
+                                  libxl_device_vnvdimm_init);
+            vnvdimm->file = strdup(buf);
+        }
+#else
+        fprintf(stderr, "ERROR: vnvdimms is only supported on Linux\n");
+        exit(-ERROR_FAIL);
+#endif /* __linux__ */
+    }
 
     xlu_cfg_destroy(config);
 }
