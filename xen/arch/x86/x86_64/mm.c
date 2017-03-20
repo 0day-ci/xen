@@ -111,15 +111,27 @@ int hotadd_mem_valid(unsigned long pfn, struct mem_hotadd_info *info)
     return (pfn < info->epfn && pfn >= info->spfn);
 }
 
+/*
+ * Allocate pages in the PFN range from info->spfn to info->epfn. The
+ * first free page is indicated by info->cur. The allocation unit is
+ * (1 << PAGETABLE_ORDER) pages.
+ *
+ * On success, return PFN of the first allocated page. Otherwise, return
+ * mfn_x(INVALID_MFN).
+ */
+typedef unsigned long (*mfns_alloc_fn_t)(struct mem_hotadd_info *info);
+
 static unsigned long alloc_hotadd_mfn(struct mem_hotadd_info *info)
 {
-    unsigned mfn;
+    unsigned long mfn;
 
-    ASSERT((info->cur + ( 1UL << PAGETABLE_ORDER) < info->epfn) &&
-            info->cur >= info->spfn);
+    if ( (info->cur + (1UL << PAGETABLE_ORDER) >= info->epfn) ||
+         info->cur < info->spfn )
+        return mfn_x(INVALID_MFN);
 
     mfn = info->cur;
     info->cur += (1UL << PAGETABLE_ORDER);
+
     return mfn;
 }
 
@@ -313,11 +325,13 @@ void destroy_m2p_mapping(struct mem_hotadd_info *info)
 }
 
 /*
- * Allocate and map the compatibility mode machine-to-phys table.
- * spfn/epfn: the pfn ranges to be setup
- * free_s/free_e: the pfn ranges that is free still
+ * Allocate and map the compatibility mode machine-to-phys table for
+ * pages info->spfn ~ info->epfn. M2P is placed in pages allocated
+ * by alloc_fn from the range alloc_info->cur ~ alloc_info->epfn.
  */
-static int setup_compat_m2p_table(struct mem_hotadd_info *info)
+static int setup_compat_m2p_table(const struct mem_hotadd_info *info,
+                                  mfns_alloc_fn_t alloc_fn,
+                                  struct mem_hotadd_info *alloc_info)
 {
     unsigned long i, va, smap, emap, rwva, epfn = info->epfn, mfn;
     unsigned int n;
@@ -371,7 +385,12 @@ static int setup_compat_m2p_table(struct mem_hotadd_info *info)
         if ( n == CNT )
             continue;
 
-        mfn = alloc_hotadd_mfn(info);
+        mfn = alloc_fn(alloc_info);
+        if ( mfn == mfn_x(INVALID_MFN) )
+        {
+            err = -ENOMEM;
+            break;
+        }
         err = map_pages_to_xen(rwva, mfn, 1UL << PAGETABLE_ORDER,
                                PAGE_HYPERVISOR);
         if ( err )
@@ -389,9 +408,14 @@ static int setup_compat_m2p_table(struct mem_hotadd_info *info)
 
 /*
  * Allocate and map the machine-to-phys table.
- * The L3 for RO/RWRW MPT and the L2 for compatible MPT should be setup already
+ * The L3 for RO/RWRW MPT and the L2 for compatible MPT should be setup already.
+ *
+ * M2P is placed in pages allocated by alloc_fn from the range
+ * alloc_info->cur ~ alloc_info->epfn.
  */
-static int setup_m2p_table(struct mem_hotadd_info *info)
+static int setup_m2p_table(const struct mem_hotadd_info *info,
+                           mfns_alloc_fn_t alloc_fn,
+                           struct mem_hotadd_info *alloc_info)
 {
     unsigned long i, va, smap, emap;
     unsigned int n;
@@ -440,7 +464,13 @@ static int setup_m2p_table(struct mem_hotadd_info *info)
                 break;
         if ( n < CNT )
         {
-            unsigned long mfn = alloc_hotadd_mfn(info);
+            unsigned long mfn = alloc_fn(alloc_info);
+
+            if ( mfn == mfn_x(INVALID_MFN) )
+            {
+                ret = -ENOMEM;
+                goto error;
+            }
 
             ret = map_pages_to_xen(
                         RDWR_MPT_VIRT_START + i * sizeof(unsigned long),
@@ -485,7 +515,7 @@ static int setup_m2p_table(struct mem_hotadd_info *info)
 #undef CNT
 #undef MFN
 
-    ret = setup_compat_m2p_table(info);
+    ret = setup_compat_m2p_table(info, alloc_fn, alloc_info);
 error:
     return ret;
 }
@@ -769,7 +799,8 @@ void cleanup_frame_table(struct mem_hotadd_info *info)
 }
 
 static int setup_frametable_chunk(void *start, void *end,
-                                  struct mem_hotadd_info *info)
+                                  mfns_alloc_fn_t alloc_fn,
+                                  struct mem_hotadd_info *alloc_info)
 {
     unsigned long s = (unsigned long)start;
     unsigned long e = (unsigned long)end;
@@ -781,7 +812,9 @@ static int setup_frametable_chunk(void *start, void *end,
 
     for ( ; s < e; s += (1UL << L2_PAGETABLE_SHIFT))
     {
-        mfn = alloc_hotadd_mfn(info);
+        mfn = alloc_fn(alloc_info);
+        if ( mfn == mfn_x(INVALID_MFN) )
+            return -ENOMEM;
         err = map_pages_to_xen(s, mfn, 1UL << PAGETABLE_ORDER,
                                PAGE_HYPERVISOR);
         if ( err )
@@ -792,7 +825,14 @@ static int setup_frametable_chunk(void *start, void *end,
     return 0;
 }
 
-static int extend_frame_table(struct mem_hotadd_info *info)
+/*
+ * Create and map the frame table for page ranges info->spfn ~
+ * info->epfn. The frame table is placed in pages allocated by
+ * alloc_fn from page range alloc_info->cur ~ alloc_info->epfn.
+ */
+static int extend_frame_table(const struct mem_hotadd_info *info,
+                              mfns_alloc_fn_t alloc_fn,
+                              struct mem_hotadd_info *alloc_info)
 {
     unsigned long cidx, nidx, eidx, spfn, epfn;
 
@@ -818,9 +858,9 @@ static int extend_frame_table(struct mem_hotadd_info *info)
         nidx = find_next_bit(pdx_group_valid, eidx, cidx);
         if ( nidx >= eidx )
             nidx = eidx;
-        err = setup_frametable_chunk(pdx_to_page(cidx * PDX_GROUP_COUNT ),
+        err = setup_frametable_chunk(pdx_to_page(cidx * PDX_GROUP_COUNT),
                                      pdx_to_page(nidx * PDX_GROUP_COUNT),
-                                     info);
+                                     alloc_fn, alloc_info);
         if ( err )
             return err;
 
@@ -1422,7 +1462,8 @@ int memory_add(unsigned long spfn, unsigned long epfn, unsigned int pxm)
     info.epfn = epfn;
     info.cur = spfn;
 
-    ret = extend_frame_table(&info);
+    /* Place the frame table at the beginning of hotplugged memory. */
+    ret = extend_frame_table(&info, alloc_hotadd_mfn, &info);
     if (ret)
         goto destroy_frametable;
 
@@ -1435,7 +1476,8 @@ int memory_add(unsigned long spfn, unsigned long epfn, unsigned int pxm)
     total_pages += epfn - spfn;
 
     set_pdx_range(spfn, epfn);
-    ret = setup_m2p_table(&info);
+    /* Place M2P in the hotplugged memory after the frame table. */
+    ret = setup_m2p_table(&info, alloc_hotadd_mfn, &info);
 
     if ( ret )
         goto destroy_m2p;
