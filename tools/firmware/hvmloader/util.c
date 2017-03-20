@@ -971,6 +971,8 @@ void hvmloader_acpi_build_tables(struct acpi_config *config,
     ctxt.mem_ops.free = acpi_mem_free;
     ctxt.mem_ops.v2p = acpi_v2p;
 
+    ctxt.min_alloc_byte_align = 16;
+
     acpi_build_tables(&ctxt, config);
 
     hvm_param_set(HVM_PARAM_VM_GENERATION_ID_ADDR, config->vm_gid_addr);

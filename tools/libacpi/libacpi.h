@@ -51,6 +51,8 @@ struct acpi_ctxt {
         void (*free)(struct acpi_ctxt *ctxt, void *v, uint32_t size);
         unsigned long (*v2p)(struct acpi_ctxt *ctxt, void *v);
     } mem_ops;
+
+    uint32_t min_alloc_byte_align; /* minimum alignment used by mem_ops.alloc */
 };
 
 struct acpi_config {
