@@ -20,6 +20,8 @@
 #ifndef __LIBACPI_H__
 #define __LIBACPI_H__
 
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+
 #define ACPI_HAS_COM1        (1<<0)
 #define ACPI_HAS_COM2        (1<<1)
 #define ACPI_HAS_LPT1        (1<<2)
@@ -35,6 +37,7 @@
 #define ACPI_HAS_VGA         (1<<12)
 #define ACPI_HAS_8042        (1<<13)
 #define ACPI_HAS_CMOS_RTC    (1<<14)
+#define ACPI_HAS_DM          (1<<15)
 
 struct xen_vmemrange;
 struct acpi_numa {
@@ -86,6 +89,11 @@ struct acpi_config {
         uint32_t addr;
         uint32_t length;
     } pt;
+
+    struct {
+        uint32_t addr;
+        uint32_t length;
+    } dm;
 
     struct acpi_numa numa;
     const struct hvm_info_table *hvminfo;

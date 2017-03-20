@@ -1000,6 +1000,21 @@ void hvmloader_acpi_build_tables(struct acpi_config *config,
     if ( !strncmp(xenstore_read("platform/acpi_s4", "1"), "1", 1)  )
         config->table_flags |= ACPI_HAS_SSDT_S4;
 
+    s = xenstore_read(HVM_XS_DM_ACPI_ADDRESS, NULL);
+    if ( s )
+    {
+        config->dm.addr = strtoll(s, NULL, 0);
+
+        s = xenstore_read(HVM_XS_DM_ACPI_LENGTH, NULL);
+        if ( s )
+        {
+            config->dm.length = strtoll(s, NULL, 0);
+            config->table_flags |= ACPI_HAS_DM;
+        }
+        else
+            config->dm.addr = 0;
+    }
+
     config->table_flags |= (ACPI_HAS_TCPA | ACPI_HAS_IOAPIC |
                             ACPI_HAS_WAET | ACPI_HAS_PMTIMER |
                             ACPI_HAS_BUTTONS | ACPI_HAS_VGA |
