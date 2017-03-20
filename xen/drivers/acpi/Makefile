@@ -9,3 +9,5 @@ obj-$(CONFIG_HAS_CPUFREQ) += pmstat.o
 
 obj-$(CONFIG_X86) += hwregs.o
 obj-$(CONFIG_X86) += reboot.o
+
+obj-$(CONFIG_PMEM) += nfit.o

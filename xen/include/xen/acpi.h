@@ -180,4 +180,8 @@ void acpi_reboot(void);
 void acpi_dmar_zap(void);
 void acpi_dmar_reinstate(void);
 
+#ifdef CONFIG_PMEM
+void acpi_nfit_init(void);
+#endif /* CONFIG_PMEM */
+
 #endif /*_LINUX_ACPI_H*/

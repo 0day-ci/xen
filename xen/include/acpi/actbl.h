@@ -71,6 +71,7 @@
 #define ACPI_SIG_XSDT           "XSDT"	/* Extended  System Description Table */
 #define ACPI_SIG_SSDT           "SSDT"	/* Secondary System Description Table */
 #define ACPI_RSDP_NAME          "RSDP"	/* Short name for RSDP, not signature */
+#define ACPI_SIG_NFIT           "NFIT"	/* NVDIMM Firmware Interface Table */
 
 /*
  * All tables and structures must be byte-packed to match the ACPI

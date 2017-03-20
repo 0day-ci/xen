@@ -754,5 +754,9 @@ int __init acpi_boot_init(void)
 
 	acpi_table_parse(ACPI_SIG_BGRT, acpi_invalidate_bgrt);
 
+#ifdef CONFIG_PMEM
+	acpi_nfit_init();
+#endif
+
 	return 0;
 }
