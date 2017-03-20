@@ -1510,7 +1510,9 @@ static void domcreate_devmodel_started(libxl__egc *egc,
     if (dcs->sdss.dm.guest_domid) {
         if (d_config->b_info.device_model_version
             == LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN) {
-            libxl__qmp_initializations(gc, domid, d_config);
+            ret = libxl__qmp_initializations(gc, domid, d_config);
+            if (ret == ERROR_BADFAIL)
+                goto error_out;
         }
     }
 

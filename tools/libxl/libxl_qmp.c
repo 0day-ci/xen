@@ -26,6 +26,7 @@
 
 #include "_libxl_list.h"
 #include "libxl_internal.h"
+#include "libxl_nvdimm.h"
 
 /* #define DEBUG_RECEIVED */
 
@@ -1146,6 +1147,111 @@ out:
     return rc;
 }
 
+static int qmp_nvdimm_get_mempath(libxl__qmp_handler *qmp,
+                                  const libxl__json_object *o,
+                                  void *opaque)
+{
+    const char **output = opaque;
+    const char *mem_path;
+    int rc = 0;
+    GC_INIT(qmp->ctx);
+
+    if (!o) {
+        rc = ERROR_FAIL;
+        goto out;
+    }
+
+    mem_path = libxl__json_object_get_string(o);
+    if (!mem_path) {
+        rc = ERROR_FAIL;
+        goto out;
+    }
+    *output = libxl__strdup(NOGC, mem_path);
+
+ out:
+    GC_FREE;
+    return 0;
+}
+
+static int qmp_register_nvdimm_callback(libxl__qmp_handler *qmp,
+                                        const libxl__json_object *o,
+                                        void *unused)
+{
+    GC_INIT(qmp->ctx);
+    const libxl__json_object *obj, *sub_obj, *sub_map;
+    libxl__json_object *args = NULL;
+    unsigned int i = 0;
+    const char *mem_path = NULL, *memdev;
+    uint64_t slot, spa, size;
+    int rc = 0;
+
+    for (i = 0; (obj = libxl__json_array_get(o, i)); i++) {
+        if (!libxl__json_object_is_map(obj))
+            continue;
+
+        sub_map = libxl__json_map_get("data", obj, JSON_MAP);
+        if (!sub_map)
+            continue;
+
+        sub_obj = libxl__json_map_get("slot", sub_map, JSON_INTEGER);
+        slot = libxl__json_object_get_integer(sub_obj);
+
+        sub_obj = libxl__json_map_get("memdev", sub_map, JSON_STRING);
+        memdev = libxl__json_object_get_string(sub_obj);
+        if (!memdev) {
+            LOG(ERROR, "Cannot get backend memdev of NVDIMM #%" PRId64, slot);
+            rc = ERROR_FAIL;
+            goto out;
+        }
+        qmp_parameters_add_string(gc, &args, "path", memdev);
+        qmp_parameters_add_string(gc, &args, "property", "mem-path");
+        rc = qmp_synchronous_send(qmp, "qom-get", args, qmp_nvdimm_get_mempath,
+                                  &mem_path, qmp->timeout);
+        if (rc) {
+            LOG(ERROR, "Cannot get the backend device of NVDIMM #%" PRId64, slot);
+            goto out;
+        }
+
+        sub_obj = libxl__json_map_get("addr", sub_map, JSON_INTEGER);
+        spa = libxl__json_object_get_integer(sub_obj);
+
+        sub_obj = libxl__json_map_get("size", sub_map, JSON_INTEGER);
+        size = libxl__json_object_get_integer(sub_obj);
+
+        LOG(DEBUG,
+            "vNVDIMM #%" PRId64 ": %s, spa 0x%" PRIx64 ", size 0x%" PRIx64,
+            slot, mem_path, spa, size);
+
+        rc = libxl_nvdimm_add_device(gc, qmp->domid, mem_path, spa, size);
+        if (rc) {
+            LOG(ERROR,
+                "Failed to add NVDIMM #%" PRId64
+                "(mem_path %s, spa 0x%" PRIx64 ", size 0x%" PRIx64 ") "
+                "to domain %d (err = %d)",
+                slot, mem_path, spa, size, qmp->domid, rc);
+            goto out;
+        }
+    }
+
+ out:
+    GC_FREE;
+    return rc;
+}
+
+static int libxl__qmp_query_nvdimms(libxl__qmp_handler *qmp)
+{
+    libxl__json_object *args = NULL;
+    int rc;
+    GC_INIT(qmp->ctx);
+
+    qmp_parameters_add_string(gc, &args, "devtype", "nvdimm");
+    rc = qmp_synchronous_send(qmp, "query-memory-devices", args,
+                              qmp_register_nvdimm_callback, NULL, qmp->timeout);
+
+    GC_FREE;
+    return rc;
+}
+
 int libxl__qmp_hmp(libxl__gc *gc, int domid, const char *command_line,
                    char **output)
 {
@@ -1174,11 +1280,12 @@ int libxl__qmp_initializations(libxl__gc *gc, uint32_t domid,
 {
     const libxl_vnc_info *vnc = libxl__dm_vnc(guest_config);
     libxl__qmp_handler *qmp = NULL;
+    bool ignore_error = true;
     int ret = 0;
 
     qmp = libxl__qmp_initialize(gc, domid);
     if (!qmp)
-        return -1;
+        return ERROR_FAIL;
     ret = libxl__qmp_query_serial(qmp);
     if (!ret && vnc && vnc->passwd) {
         ret = qmp_change(gc, qmp, "vnc", "password", vnc->passwd);
@@ -1187,8 +1294,13 @@ int libxl__qmp_initializations(libxl__gc *gc, uint32_t domid,
     if (!ret) {
         ret = qmp_query_vnc(qmp);
     }
+    if (!ret && guest_config->num_vnvdimms) {
+        ret = libxl__qmp_query_nvdimms(qmp);
+        ignore_error = false;
+    }
     libxl__qmp_close(qmp);
-    return ret;
+
+    return ret ? (ignore_error ? ERROR_FAIL : ERROR_BADFAIL) : 0;
 }
 
 /*
