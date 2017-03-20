@@ -98,6 +98,7 @@ struct xc_dom_image {
     xen_pfn_t xenstore_pfn;
     xen_pfn_t shared_info_pfn;
     xen_pfn_t bootstack_pfn;
+    xen_pfn_t dm_acpi_pfn;
     xen_pfn_t pfn_alloc_end;
     xen_vaddr_t virt_alloc_end;
     xen_vaddr_t bsd_symtab_start;

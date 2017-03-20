@@ -674,6 +674,13 @@ static int alloc_magic_pages_hvm(struct xc_dom_image *dom)
                          ioreq_server_pfn(0));
         xc_hvm_param_set(xch, domid, HVM_PARAM_NR_IOREQ_SERVER_PAGES,
                          NR_IOREQ_SERVER_PAGES);
+
+        dom->dm_acpi_pfn = xc_dom_alloc_page(dom, "DM ACPI");
+        if ( dom->dm_acpi_pfn == INVALID_PFN )
+        {
+            DOMPRINTF("Could not allocate page for device model ACPI.");
+            goto error_out;
+        }
     }
 
     rc = xc_dom_alloc_segment(dom, &dom->start_info_seg,

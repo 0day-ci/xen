@@ -79,4 +79,15 @@
  */
 #define HVM_XS_OEM_STRINGS             "bios-strings/oem-%d"
 
+/* Follows are XenStore keys for DM ACPI (ACPI built by device model,
+ * e.g. QEMU).
+ *
+ * A reserved area of guest physical memory is used to pass DM
+ * ACPI. Values of following two keys specify the base physical
+ * address and length (in bytes) of the reserved area.
+ */
+#define HVM_XS_DM_ACPI_ROOT            "hvmloader/dm-acpi"
+#define HVM_XS_DM_ACPI_ADDRESS         HVM_XS_DM_ACPI_ROOT"/address"
+#define HVM_XS_DM_ACPI_LENGTH          HVM_XS_DM_ACPI_ROOT"/length"
+
 #endif /* __XEN_PUBLIC_HVM_HVM_XS_STRINGS_H__ */
