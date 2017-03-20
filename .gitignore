@@ -206,6 +206,7 @@ tools/misc/xen-hvmctx
 tools/misc/xenlockprof
 tools/misc/lowmemd
 tools/misc/xencov
+tools/misc/xen-ndctl
 tools/pkg-config/*
 tools/qemu-xen-build
 tools/xentrace/xenalyze
