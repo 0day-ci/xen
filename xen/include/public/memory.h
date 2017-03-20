@@ -444,6 +444,8 @@ struct xen_mem_access_op {
     /* xenmem_access_t */
     uint8_t access;
     domid_t domid;
+    uint16_t view_id;
+    uint16_t pad[3];
     /*
      * Number of pages for set op (or size of pfn_list for
      * XENMEM_access_op_set_access_multi)

@@ -1900,9 +1900,6 @@ int xc_altp2m_destroy_view(xc_interface *handle, domid_t domid,
 /* Switch all vCPUs of the domain to the specified altp2m view */
 int xc_altp2m_switch_to_view(xc_interface *handle, domid_t domid,
                              uint16_t view_id);
-int xc_altp2m_set_mem_access(xc_interface *handle, domid_t domid,
-                             uint16_t view_id, xen_pfn_t gfn,
-                             xenmem_access_t access);
 int xc_altp2m_change_gfn(xc_interface *handle, domid_t domid,
                          uint16_t view_id, xen_pfn_t old_gfn,
                          xen_pfn_t new_gfn);
@@ -1933,9 +1930,8 @@ int xc_mem_paging_load(xc_interface *xch, domid_t domain_id,
  * Allowed types are XENMEM_access_default, XENMEM_access_n, any combination of
  * XENMEM_access_ + (rwx), and XENMEM_access_rx2rw
  */
-int xc_set_mem_access(xc_interface *xch, domid_t domain_id,
-                      xenmem_access_t access, uint64_t first_pfn,
-                      uint32_t nr);
+int xc_set_mem_access(xc_interface *xch, domid_t domain_id, uint16_t view_id,
+                      xenmem_access_t access, uint64_t first_pfn, uint32_t nr);
 
 /*
  * Set an array of pages to their respective access in the access array.
@@ -1943,7 +1939,7 @@ int xc_set_mem_access(xc_interface *xch, domid_t domain_id,
  * The same allowed access types as for xc_set_mem_access() apply.
  */
 int xc_set_mem_access_multi(xc_interface *xch, domid_t domain_id,
-                            uint8_t *access, uint64_t *pages,
+                            uint16_t view_id, uint8_t *access, uint64_t *pages,
                             uint32_t nr);
 
 /*

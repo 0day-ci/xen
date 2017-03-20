@@ -4418,7 +4418,6 @@ static int do_altp2m_op(
     case HVMOP_altp2m_create_p2m:
     case HVMOP_altp2m_destroy_p2m:
     case HVMOP_altp2m_switch_p2m:
-    case HVMOP_altp2m_set_mem_access:
     case HVMOP_altp2m_change_gfn:
         break;
     default:
@@ -4524,15 +4523,6 @@ static int do_altp2m_op(
 
     case HVMOP_altp2m_switch_p2m:
         rc = p2m_switch_domain_altp2m_by_id(d, a.u.view.view);
-        break;
-
-    case HVMOP_altp2m_set_mem_access:
-        if ( a.u.set_mem_access.pad )
-            rc = -EINVAL;
-        else
-            rc = p2m_set_mem_access(d, _gfn(a.u.set_mem_access.gfn), 1, 0, 0,
-                                    a.u.set_mem_access.hvmmem_access,
-                                    a.u.set_mem_access.view);
         break;
 
     case HVMOP_altp2m_change_gfn:

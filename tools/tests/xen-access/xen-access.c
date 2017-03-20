@@ -475,9 +475,6 @@ int main(int argc, char *argv[])
     /* With altp2m we just create a new, restricted view of the memory */
     if ( memaccess && altp2m )
     {
-        xen_pfn_t gfn = 0;
-        unsigned long perm_set = 0;
-
         rc = xc_altp2m_set_domain_state( xch, domain_id, 1 );
         if ( rc < 0 )
         {
@@ -495,15 +492,9 @@ int main(int argc, char *argv[])
         DPRINTF("altp2m view created with id %u\n", altp2m_view_id);
         DPRINTF("Setting altp2m mem_access permissions.. ");
 
-        for(; gfn < xenaccess->max_gpfn; ++gfn)
-        {
-            rc = xc_altp2m_set_mem_access( xch, domain_id, altp2m_view_id, gfn,
-                                           default_access);
-            if ( !rc )
-                perm_set++;
-        }
-
-        DPRINTF("done! Permissions set on %lu pages.\n", perm_set);
+        rc = xc_set_mem_access(xch, domain_id, altp2m_view_id, default_access,
+                               0, xenaccess->max_gpfn);
+        DPRINTF("done!");
 
         rc = xc_altp2m_switch_to_view( xch, domain_id, altp2m_view_id );
         if ( rc < 0 )
@@ -523,14 +514,14 @@ int main(int argc, char *argv[])
     if ( memaccess && !altp2m )
     {
         /* Set the default access type and convert all pages to it */
-        rc = xc_set_mem_access(xch, domain_id, default_access, ~0ull, 0);
+        rc = xc_set_mem_access(xch, domain_id, 0, default_access, ~0ull, 0);
         if ( rc < 0 )
         {
             ERROR("Error %d setting default mem access type\n", rc);
             goto exit;
         }
 
-        rc = xc_set_mem_access(xch, domain_id, default_access, START_PFN,
+        rc = xc_set_mem_access(xch, domain_id, 0, default_access, START_PFN,
                                (xenaccess->max_gpfn - START_PFN) );
 
         if ( rc < 0 )
@@ -606,8 +597,8 @@ int main(int argc, char *argv[])
                 rc = xc_altp2m_set_domain_state(xch, domain_id, 0);
                 rc = xc_monitor_singlestep(xch, domain_id, 0);
             } else {
-                rc = xc_set_mem_access(xch, domain_id, XENMEM_access_rwx, ~0ull, 0);
-                rc = xc_set_mem_access(xch, domain_id, XENMEM_access_rwx, START_PFN,
+                rc = xc_set_mem_access(xch, domain_id, 0, XENMEM_access_rwx, ~0ull, 0);
+                rc = xc_set_mem_access(xch, domain_id, 0, XENMEM_access_rwx, START_PFN,
                                        (xenaccess->max_gpfn - START_PFN) );
             }
 
@@ -685,7 +676,7 @@ int main(int argc, char *argv[])
                 }
                 else if ( default_access != after_first_access )
                 {
-                    rc = xc_set_mem_access(xch, domain_id, after_first_access,
+                    rc = xc_set_mem_access(xch, domain_id, 0, after_first_access,
                                            req.u.mem_access.gfn, 1);
                     if (rc < 0)
                     {

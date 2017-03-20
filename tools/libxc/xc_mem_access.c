@@ -25,17 +25,19 @@
 
 int xc_set_mem_access(xc_interface *xch,
                       domid_t domain_id,
+                      uint16_t view_id,
                       xenmem_access_t access,
                       uint64_t first_pfn,
                       uint32_t nr)
 {
     xen_mem_access_op_t mao =
     {
-        .op     = XENMEM_access_op_set_access,
-        .domid  = domain_id,
-        .access = access,
-        .pfn    = first_pfn,
-        .nr     = nr
+        .op      = XENMEM_access_op_set_access,
+        .domid   = domain_id,
+        .access  = access,
+        .pfn     = first_pfn,
+        .nr      = nr,
+        .view_id = view_id
     };
 
     return do_memory_op(xch, XENMEM_access_op, &mao, sizeof(mao));
@@ -43,6 +45,7 @@ int xc_set_mem_access(xc_interface *xch,
 
 int xc_set_mem_access_multi(xc_interface *xch,
                             domid_t domain_id,
+                            uint16_t view_id,
                             uint8_t *access,
                             uint64_t *pages,
                             uint32_t nr)
@@ -59,6 +62,7 @@ int xc_set_mem_access_multi(xc_interface *xch,
         .access   = XENMEM_access_default + 1, /* Invalid value */
         .pfn      = ~0UL, /* Invalid GFN */
         .nr       = nr,
+        .view_id  = view_id,
     };
 
     if ( xc_hypercall_bounce_pre(xch, pages) ||
