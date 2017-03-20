@@ -17,9 +17,12 @@
  */
 
 #include <xen/errno.h>
+#include <xen/event.h>
 #include <xen/list.h>
 #include <xen/mm.h>
+#include <xen/paging.h>
 #include <xen/pmem.h>
+#include <xen/sched.h>
 #include <xen/spinlock.h>
 
 /*
@@ -130,8 +133,9 @@ static struct pmem *get_first_overlap(const struct list_head *list,
     return overlap;
 }
 
-static bool pmem_list_covered(const struct list_head *list,
-                              unsigned long smfn, unsigned emfn)
+static bool pmem_list_covered_ready(const struct list_head *list,
+                                    unsigned long smfn, unsigned emfn,
+                                    bool check_ready)
 {
     struct pmem *overlap;
     bool covered = false;
@@ -139,7 +143,8 @@ static bool pmem_list_covered(const struct list_head *list,
     do {
         overlap = get_first_overlap(list, smfn, emfn);
 
-        if ( !overlap || smfn < overlap->smfn )
+        if ( !overlap || smfn < overlap->smfn ||
+             (check_ready && !overlap->ready) )
             break;
 
         if ( emfn <= overlap->emfn )
@@ -153,6 +158,12 @@ static bool pmem_list_covered(const struct list_head *list,
     } while ( list );
 
     return covered;
+}
+
+static bool pmem_list_covered(const struct list_head *list,
+                              unsigned long smfn, unsigned emfn)
+{
+    return pmem_list_covered_ready(list, smfn, emfn, false);
 }
 
 static bool check_mgmt_size(unsigned long mgmt_mfns, unsigned long total_mfns)
@@ -301,3 +312,137 @@ int pmem_setup(unsigned long data_smfn, unsigned long data_emfn,
  out:
     return rc;
 }
+
+#ifdef CONFIG_X86
+
+static void pmem_assign_page(struct domain *d, struct page_info *pg,
+                             unsigned long gfn)
+{
+    pg->u.inuse.type_info = 0;
+    page_set_owner(pg, d);
+    guest_physmap_add_page(d, _gfn(gfn), _mfn(page_to_mfn(pg)), 0);
+
+    spin_lock(&d->pmem_lock);
+    page_list_add_tail(pg, &d->pmem_page_list);
+    spin_unlock(&d->pmem_lock);
+}
+
+static void pmem_unassign_page(struct domain *d, struct page_info *pg,
+                               unsigned long gfn)
+{
+    spin_lock(&d->pmem_lock);
+    page_list_del(pg, &d->pmem_page_list);
+    spin_unlock(&d->pmem_lock);
+
+    guest_physmap_remove_page(d, _gfn(gfn), _mfn(page_to_mfn(pg)), 0);
+    page_set_owner(pg, NULL);
+    pg->count_info = (pg->count_info & ~PGC_count_mask) | PGC_state_free;
+}
+
+static void pmem_unassign_pages(struct domain *d, unsigned long mfn,
+                                unsigned long gfn, unsigned long nr_mfns)
+{
+    unsigned long emfn = mfn + nr_mfns;
+
+    for ( ; mfn < emfn; mfn++, gfn++ )
+        pmem_unassign_page(d, mfn_to_page(mfn), gfn);
+}
+
+/**
+ * Map host pmem pages to a domain. Currently only HVM domain is
+ * supported.
+ *
+ * Parameters:
+ *  args: please refer to comments of struct xen_pmemmap_args in xen/pmem.h
+ *
+ * Return:
+ *  0 on success; non-zero error code on failures.
+ */
+int pmem_populate(struct xen_pmem_map_args *args)
+{
+    struct domain *d = args->domain;
+    unsigned long i = args->nr_done;
+    unsigned long mfn = args->mfn + i;
+    unsigned long emfn = args->mfn + args->nr_mfns;
+    unsigned long gfn;
+    struct page_info *page;
+    int rc = 0;
+
+    if ( unlikely(d->is_dying) )
+        return -EINVAL;
+
+    if ( !has_hvm_container_domain(d) || !paging_mode_translate(d) )
+        return -EINVAL;
+
+    spin_lock(&pmem_gregions_lock);
+    if ( !pmem_list_covered_ready(&pmem_gregions, mfn, emfn, true) )
+    {
+        spin_unlock(&pmem_regions_lock);
+        return -EINVAL;
+    }
+    spin_unlock(&pmem_gregions_lock);
+
+    for ( gfn = args->gfn + i; mfn < emfn; i++, mfn++, gfn++ )
+    {
+        if ( i != args->nr_done && hypercall_preempt_check() )
+        {
+            args->preempted = 1;
+            rc = -ERESTART;
+            break;
+        }
+
+        page = mfn_to_page(mfn);
+
+        spin_lock(&pmem_gregions_lock);
+        if ( !page_state_is(page, free) )
+        {
+            dprintk(XENLOG_DEBUG, "pmem: mfn 0x%lx not in free state\n", mfn);
+            spin_unlock(&pmem_gregions_lock);
+            rc = -EINVAL;
+            break;
+        }
+        page->count_info = PGC_state_inuse | 1;
+        spin_unlock(&pmem_gregions_lock);
+
+        pmem_assign_page(d, page, gfn);
+    }
+
+    if ( rc && rc != -ERESTART )
+        pmem_unassign_pages(d, args->mfn, args->gfn, i);
+
+    args->nr_done = i;
+    return rc;
+}
+
+int pmem_teardown(struct domain *d)
+{
+    struct page_info *pg, *next;
+    int rc = 0;
+
+    ASSERT(d->is_dying);
+    ASSERT(d != current->domain);
+
+    spin_lock(&d->pmem_lock);
+
+    page_list_for_each_safe (pg, next, &d->pmem_page_list )
+    {
+        BUG_ON(page_get_owner(pg) != d);
+        BUG_ON(page_state_is(pg, free));
+
+        page_list_del(pg, &d->pmem_page_list);
+        page_set_owner(pg, NULL);
+        pg->count_info = (pg->count_info & ~PGC_count_mask) | PGC_state_free;
+
+        if ( hypercall_preempt_check() )
+        {
+            rc = -ERESTART;
+            break;
+        }
+    }
+
+    spin_unlock(&d->pmem_lock);
+
+    return rc;
+}
+
+#endif /* CONFIG_X86 */

@@ -55,7 +55,7 @@ define(`create_domain_common', `
 			psr_cmt_op psr_cat_op soft_reset };
 	allow $1 $2:security check_context;
 	allow $1 $2:shadow enable;
-	allow $1 $2:mmu { map_read map_write adjust memorymap physmap pinpage mmuext_op updatemp };
+	allow $1 $2:mmu { map_read map_write adjust memorymap physmap pinpage mmuext_op updatemp populate_pmem_map };
 	allow $1 $2:grant setup;
 	allow $1 $2:hvm { cacheattr getparam hvmctl sethvmc
 			setparam nested altp2mhvm altp2mhvm_op dm };

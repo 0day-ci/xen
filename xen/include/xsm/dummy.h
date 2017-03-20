@@ -728,3 +728,14 @@ static XSM_INLINE int xsm_xen_version (XSM_DEFAULT_ARG uint32_t op)
         return xsm_default_action(XSM_PRIV, current->domain, NULL);
     }
 }
+
+#ifdef CONFIG_PMEM
+
+static XSM_INLINE int xsm_populate_pmem_map(XSM_DEFAULT_ARG
+                                            struct domain *d1, struct domain *d2)
+{
+    XSM_ASSERT_ACTION(XSM_TARGET);
+    return xsm_default_action(action, d1, d2);
+}
+
+#endif /* CONFIG_PMEM */

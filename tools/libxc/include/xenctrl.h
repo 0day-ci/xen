@@ -2553,6 +2553,23 @@ int xc_nvdimm_pmem_setup(xc_interface *xch,
                          unsigned long smfn, unsigned long emfn,
                          unsigned long mgmt_smfn, unsigned long mgmt_emfn);
 
+/*
+ * Map host pmem pages to a domain.
+ *
+ * Parameters:
+ *  xch:     xc interface handler
+ *  domid:   the target domain id
+ *  mfn:     start MFN of the host pmem pages to be mapped
+ *  nr_mfns: the number of host pmem pages to be mapped
+ *  gfn:     start GFN of the target guest physical pages
+ *
+ * Return:
+ *  0 on success; non-zero error code for failures.
+ */
+int xc_domain_populate_pmemmap(xc_interface *xch, uint32_t domid,
+                               unsigned long mfn, unsigned long gfn,
+                               unsigned long nr_mfns);
+
 /* Compat shims */
 #include "xenctrl_compat.h"
 

@@ -1659,6 +1659,15 @@ static int flask_xen_version (uint32_t op)
     }
 }
 
+#ifdef CONFIG_PMEM
+
+static int flask_populate_pmem_map(struct domain *d1, struct domain *d2)
+{
+    return domain_has_perm(d1, d2, SECCLASS_MMU, MMU__POPULATE_PMEM_MAP);
+}
+
+#endif /* CONFIG_PMEM */
+
 long do_flask_op(XEN_GUEST_HANDLE_PARAM(xsm_op_t) u_flask_op);
 int compat_flask_op(XEN_GUEST_HANDLE_PARAM(xsm_op_t) u_flask_op);
 
@@ -1794,6 +1803,10 @@ static struct xsm_operations flask_ops = {
     .dm_op = flask_dm_op,
 #endif
     .xen_version = flask_xen_version,
+
+#ifdef CONFIG_PMEM
+    .populate_pmem_map = flask_populate_pmem_map,
+#endif /* CONFIG_PMEM */
 };
 
 void __init flask_init(const void *policy_buffer, size_t policy_size)

@@ -36,6 +36,7 @@
 #include <xen/wait.h>
 #include <xen/guest_access.h>
 #include <xen/livepatch.h>
+#include <xen/pmem.h>
 #include <public/sysctl.h>
 #include <public/hvm/hvm_vcpu.h>
 #include <asm/regs.h>
@@ -2351,6 +2352,12 @@ int domain_relinquish_resources(struct domain *d)
         ret = pci_release_devices(d);
         if ( ret )
             return ret;
+
+#ifdef CONFIG_PMEM
+        ret = pmem_teardown(d);
+        if ( ret )
+            return ret;
+#endif /* CONFIG_PMEM */
 
         /* Tear down paging-assistance stuff. */
         ret = paging_teardown(d);

@@ -523,6 +523,7 @@ int compat_memory_op(unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) compat)
         case XENMEM_add_to_physmap:
         case XENMEM_remove_from_physmap:
         case XENMEM_access_op:
+        case XENMEM_populate_pmem_map:
             break;
 
         case XENMEM_get_vnumainfo:

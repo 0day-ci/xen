@@ -287,6 +287,9 @@ struct domain *domain_create(domid_t domid, unsigned int domcr_flags,
     INIT_PAGE_LIST_HEAD(&d->page_list);
     INIT_PAGE_LIST_HEAD(&d->xenpage_list);
 
+    spin_lock_init_prof(d, pmem_lock);
+    INIT_PAGE_LIST_HEAD(&d->pmem_page_list);
+
     spin_lock_init(&d->node_affinity_lock);
     d->node_affinity = NODE_MASK_ALL;
     d->auto_node_affinity = 1;

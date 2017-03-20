@@ -648,7 +648,19 @@ struct xen_vnuma_topology_info {
 typedef struct xen_vnuma_topology_info xen_vnuma_topology_info_t;
 DEFINE_XEN_GUEST_HANDLE(xen_vnuma_topology_info_t);
 
-/* Next available subop number is 28 */
+#define XENMEM_populate_pmem_map 28
+
+struct xen_pmem_map {
+    /* IN */
+    domid_t domid;
+    unsigned long mfn;
+    unsigned long gfn;
+    unsigned int nr_mfns;
+};
+typedef struct xen_pmem_map xen_pmem_map_t;
+DEFINE_XEN_GUEST_HANDLE(xen_pmem_map_t);
+
+/* Next available subop number is 29 */
 
 #endif /* __XEN_PUBLIC_MEMORY_H__ */
 

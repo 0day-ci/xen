@@ -336,6 +336,9 @@ struct domain
     atomic_t         shr_pages;       /* number of shared pages             */
     atomic_t         paged_pages;     /* number of paged-out pages          */
 
+    spinlock_t       pmem_lock;       /* protect all following pmem_ fields */
+    struct page_list_head pmem_page_list; /* linked list of pmem pages      */
+
     /* Scheduling. */
     void            *sched_priv;    /* scheduler-specific data */
     struct cpupool  *cpupool;

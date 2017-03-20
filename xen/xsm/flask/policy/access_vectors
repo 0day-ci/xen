@@ -385,6 +385,8 @@ class mmu
 # Allow a privileged domain to install a map of a page it does not own.  Used
 # for stub domain device models with the PV framebuffer.
     target_hack
+# XENMEM_populate_pmem_map
+    populate_pmem_map
 }
 
 # control of the paging_domctl split by subop

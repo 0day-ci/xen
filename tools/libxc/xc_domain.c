@@ -2291,6 +2291,21 @@ int xc_domain_soft_reset(xc_interface *xch,
     domctl.domain = (domid_t)domid;
     return do_domctl(xch, &domctl);
 }
+
+int xc_domain_populate_pmemmap(xc_interface *xch, uint32_t domid,
+                               unsigned long mfn, unsigned long gfn,
+                               unsigned long nr_mfns)
+{
+    struct xen_pmem_map args = {
+        .domid   = domid,
+        .mfn     = mfn,
+        .gfn     = gfn,
+        .nr_mfns = nr_mfns,
+    };
+
+    return do_memory_op(xch, XENMEM_populate_pmem_map, &args, sizeof(args));
+}
+
 /*
  * Local variables:
  * mode: C

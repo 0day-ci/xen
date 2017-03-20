@@ -23,6 +23,7 @@
 #include <xen/numa.h>
 #include <xen/mem_access.h>
 #include <xen/trace.h>
+#include <xen/pmem.h>
 #include <asm/current.h>
 #include <asm/hardirq.h>
 #include <asm/p2m.h>
@@ -1327,6 +1328,48 @@ long do_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
         break;
     }
 #endif
+
+#ifdef CONFIG_PMEM
+    case XENMEM_populate_pmem_map:
+    {
+        struct xen_pmem_map map;
+        struct xen_pmem_map_args args;
+
+        if ( copy_from_guest(&map, arg, 1) )
+            return -EFAULT;
+
+        if ( map.domid == DOMID_SELF )
+            return -EINVAL;
+
+        d = rcu_lock_domain_by_any_id(map.domid);
+        if ( !d )
+            return -EINVAL;
+
+        rc = xsm_populate_pmem_map(XSM_TARGET, curr_d, d);
+        if ( rc )
+        {
+            rcu_unlock_domain(d);
+            return rc;
+        }
+
+        args.domain = d;
+        args.mfn = map.mfn;
+        args.gfn = map.gfn;
+        args.nr_mfns = map.nr_mfns;
+        args.nr_done = start_extent;
+        args.preempted = 0;
+
+        rc = pmem_populate(&args);
+        rcu_unlock_domain(d);
+
+        if ( rc == -ERESTART && args.preempted )
+            return hypercall_create_continuation(
+                __HYPERVISOR_memory_op, "lh",
+                op | (args.nr_done << MEMOP_EXTENT_SHIFT), arg);
+
+        break;
+    }
+#endif /* CONFIG_PMEM */
 
     default:
         rc = arch_memory_op(cmd, arg);
