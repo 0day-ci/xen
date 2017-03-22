@@ -1568,6 +1568,12 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
                                                         format,
                                                         &disks[i],
                                                         colo_mode);
+                } else if (strncmp(disks[i].vdev, "nvme", 4) == 0) {
+                    flexarray_vappend(dm_args,
+                        "-drive",  GCSPRINTF("file=%s,if=none,id=nvmedisk-%d,format=%s,cache=writeback", target_path, disk, format),
+                        "-device", GCSPRINTF("nvme,drive=nvmedisk-%d,serial=%d", disk, disk),
+                        NULL);
+                    continue;
                 } else if (disk < 6 && b_info->u.hvm.hdtype == LIBXL_HDTYPE_AHCI) {
                     if (!disks[i].readwrite) {
                         LOGD(ERROR, guest_domid,

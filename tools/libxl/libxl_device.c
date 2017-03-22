@@ -532,6 +532,14 @@ int libxl__device_disk_dev_number(const char *virtpath, int *pdisk,
         if (ppartition) *ppartition = partition;
         return (8 << 8) | (disk << 4) | partition;
     }
+    if (!memcmp(virtpath, "nvme", 4)) {
+        disk = strtoul(virtpath + 4, &ep, 10);
+        if (*ep)
+            return -1;
+        if (pdisk) *pdisk = disk;
+        if (ppartition) *ppartition = 0;
+        return (1 << 28) | (disk << 8);
+    }
     return -1;
 }
 

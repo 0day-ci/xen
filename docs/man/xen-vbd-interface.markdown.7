@@ -8,12 +8,12 @@ emulated IDE, AHCI or SCSI disks.
 The abstract interface involves specifying, for each block device:
 
  * Nominal disk type: Xen virtual disk (aka xvd*, the default); SCSI
-   (sd*); IDE or AHCI (hd*).
+   (sd*); IDE or AHCI (hd*); NVMe.
 
-   For HVM guests, each whole-disk hd* and and sd* device is made
-   available _both_ via emulated IDE resp. SCSI controller, _and_ as a
-   Xen VBD.  The HVM guest is entitled to assume that the IDE or SCSI
-   disks available via the emulated IDE controller target the same
+   For HVM guests, each whole-disk hd*, sd* or nvme* device is made
+   available _both_ via emulated IDE, SCSI controller or NVMe drive
+   respectively _and_ as a Xen VBD.  The HVM guest is entitled to
+   assume that the disks available via the emulation target the same
    underlying devices as the corresponding Xen VBD (ie, multipath).
    In hd* case with hdtype=ahci, disk will be AHCI via emulated
    ich9 disk controller.
@@ -42,8 +42,7 @@ The abstract interface involves specifying, for each block device:
    treat each vbd as it would a partition or slice or LVM volume (for
    example by putting or expecting a filesystem on it).
 
-   Non-whole disk devices cannot be passed through to HVM guests via
-   the emulated IDE or SCSI controllers.
+   Only whole disk devices can be emulated for HVM guests.
 
 
 Configuration file syntax
@@ -56,6 +55,7 @@ The config file syntaxes are, for example
        d536p37  xvdtq37  Xen virtual disk 536 partition 37
        sdb3              SCSI disk 1 partition 3
        hdc2              IDE disk 2 partition 2
+       nvme0             NVMe disk 0 (whole disk only)
 
 The d*p* syntax is not supported by xm/xend.
 
@@ -78,6 +78,7 @@ encodes the information above as follows:
      8 << 8 | disk << 4 | partition      sd, disks and partitions up to 15
      3 << 8 | disk << 6 | partition      hd, disks 0..1, partitions 0..63
     22 << 8 | (disk-2) << 6 | partition  hd, disks 2..3, partitions 0..63
+    1 << 28 | disk << 8                  nvme, all disks, whole disk only
     2 << 28 onwards                      reserved for future use
    other values less than 1 << 28        deprecated / reserved
 
