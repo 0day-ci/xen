@@ -1859,6 +1859,16 @@ int libxl_device_vfb_destroy(libxl_ctx *ctx, uint32_t domid,
                              const libxl_asyncop_how *ao_how)
                              LIBXL_EXTERNAL_CALLERS_ONLY;
 
+/* 9pfs */
+int libxl_device_xen_9pfs_remove(libxl_ctx *ctx, uint32_t domid,
+                            libxl_device_xen_9pfs *xen_9pfs,
+                            const libxl_asyncop_how *ao_how)
+                             LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_xen_9pfs_destroy(libxl_ctx *ctx, uint32_t domid,
+                             libxl_device_xen_9pfs *xen_9pfs,
+                             const libxl_asyncop_how *ao_how)
+                             LIBXL_EXTERNAL_CALLERS_ONLY;
+
 /* PCI Passthrough */
 int libxl_device_pci_add(libxl_ctx *ctx, uint32_t domid,
                          libxl_device_pci *pcidev,
