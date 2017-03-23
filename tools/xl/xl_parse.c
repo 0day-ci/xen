@@ -803,6 +803,25 @@ int parse_usbdev_config(libxl_device_usbdev *usbdev, char *token)
     return 0;
 }
 
+int parse_vdispl_config(libxl_device_vdispl *vdispl, char *token)
+{
+    char *oparg;
+
+    if (MATCH_OPTION("backend", token, oparg)) {
+        vdispl->backend_domid = find_domain(oparg);
+        vdispl->backend_domname = strdup(oparg);
+    } else if (MATCH_OPTION("devId", token, oparg)) {
+        vdispl->devid = atoi(oparg);
+    } else if (MATCH_OPTION("beAlloc", token, oparg)) {
+    	vdispl->be_alloc = strtoul(oparg, NULL, 0);
+    } else {
+        fprintf(stderr, "Unknown string `%s' in vdispl spec\n", token);
+        return 1;
+    }
+
+    return 0;
+}
+
 void parse_config_data(const char *config_source,
                        const char *config_data,
                        int config_len,
@@ -812,7 +831,7 @@ void parse_config_data(const char *config_source,
     long l, vcpus = 0;
     XLU_Config *config;
     XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms,
-                   *usbctrls, *usbdevs;
+                   *usbctrls, *usbdevs, *vdispls;
     XLU_ConfigList *channels, *ioports, *irqs, *iomem, *viridian, *dtdevs;
     int num_ioports, num_irqs, num_iomem, num_cpus, num_viridian;
     int pci_power_mgmt = 0;
@@ -1385,6 +1404,29 @@ void parse_config_data(const char *config_source,
             if(!got_backend) {
                fprintf(stderr, "vtpm spec missing required backend field!\n");
                exit(1);
+            }
+            free(buf2);
+        }
+    }
+
+    if (!xlu_cfg_get_list(config, "vdispl", &vdispls, 0, 0)) {
+        d_config->num_vdispls = 0;
+        d_config->vdispls = NULL;
+        while ((buf = xlu_cfg_get_listitem(vdispls, d_config->num_vdispls)) != NULL) {
+            libxl_device_vdispl *vdispl;
+            char * buf2 = strdup(buf);
+            char *p;
+            vdispl = ARRAY_EXTEND_INIT(d_config->vdispls,
+                                       d_config->num_vdispls,
+                                       libxl_device_vdispl_init);
+            p = strtok (buf2, ",");
+            while (p != NULL)
+            {
+                while (*p == ' ') p++;
+                if (parse_vdispl_config(vdispl, p)) {
+                    exit(1);
+                }
+                p = strtok (NULL, ",");
             }
             free(buf2);
         }
