@@ -3464,6 +3464,233 @@ _hidden void libxl__bootloader_run(libxl__egc*, libxl__bootloader_state *st);
     LIBXL_DEFINE_DEVICE_REMOVE_EXT(type, type, remove, 0)               \
     LIBXL_DEFINE_DEVICE_REMOVE_EXT(type, type, destroy, 1)
 
+#define LIBXL_DEFINE_DEVICE_COMMIT(type)                                \
+    static int libxl__device_##type##_commit(libxl__egc *egc,           \
+        uint32_t domid, libxl_device_##type *type,                      \
+        flexarray_t *front, flexarray_t *back,                          \
+        libxl__ao_device *aodev, int rc)                                \
+    {                                                                   \
+        STATE_AO_GC(aodev->ao);                                         \
+        libxl__device *device;                                          \
+        xs_transaction_t t = XBT_NULL;                                  \
+        libxl_domain_config d_config;                                   \
+        libxl__domain_userdata_lock *lock = NULL;                       \
+                                                                        \
+        libxl_domain_config_init(&d_config);                            \
+                                                                        \
+        if (rc) goto out;                                               \
+                                                                        \
+        if (aodev->update_json) {                                       \
+            lock = libxl__lock_domain_userdata(gc, domid);              \
+            if (!lock) { rc = ERROR_LOCK_FAIL; goto out; }              \
+                                                                        \
+            rc = libxl__get_domain_configuration(gc, domid, &d_config); \
+            if (rc) goto out;                                           \
+                                                                        \
+            DEVICE_ADD(type, type##s, domid, type,                      \
+                       COMPARE_DEVID, &d_config);                       \
+                                                                        \
+            rc = libxl__dm_check_start(gc, &d_config, domid);           \
+            if (rc) goto out;                                           \
+        }                                                               \
+                                                                        \
+        GCNEW(device);                                                  \
+        rc = libxl__device_from_##type(gc, domid, type, device);        \
+        if ( rc != 0 ) goto out;                                        \
+                                                                        \
+        for (;;) {                                                      \
+            rc = libxl__xs_transaction_start(gc, &t);                   \
+            if (rc) goto out;                                           \
+                                                                        \
+            rc = libxl__device_exists(gc, t, device);                   \
+            if (rc < 0) goto out;                                       \
+            if (rc == 1) {                                              \
+                LOGD(ERROR, domid, "device already exists in xenstore");\
+                aodev->action = LIBXL__DEVICE_ACTION_ADD;               \
+                rc = ERROR_DEVICE_EXISTS;                               \
+                goto out;                                               \
+            }                                                           \
+                                                                        \
+            if (aodev->update_json) {                                   \
+                rc = libxl__set_domain_configuration(gc, domid,         \
+                                                     &d_config);        \
+                if (rc) goto out;                                       \
+            }                                                           \
+                                                                        \
+            libxl__device_generic_add(gc, t, device,                    \
+                libxl__xs_kvs_of_flexarray(gc, back),                   \
+                libxl__xs_kvs_of_flexarray(gc, front),                  \
+                NULL);                                                  \
+                                                                        \
+            rc = libxl__xs_transaction_commit(gc, &t);                  \
+            if (rc < 0) { rc = ERROR_FAIL; goto out; }                  \
+            if (!rc) break;                                             \
+        }                                                               \
+                                                                        \
+        aodev->dev = device;                                            \
+        aodev->action = LIBXL__DEVICE_ACTION_ADD;                       \
+        libxl__wait_device_connection(egc, aodev);                      \
+        rc = 0;                                                         \
+                                                                        \
+    out:                                                                \
+        libxl__xs_transaction_abort(gc, &t);                            \
+        if (lock) libxl__unlock_domain_userdata(lock);                  \
+        libxl_domain_config_dispose(&d_config);                         \
+        aodev->rc = rc;                                                 \
+        if(rc) aodev->callback(egc, aodev);                             \
+        return rc;                                                      \
+    }
+
+#define LIBXL_DEFINE_DEVICE_LIST_GET(type)                              \
+    libxl_device_##type *libxl_device_##type##_list(libxl_ctx *ctx,     \
+                                                    uint32_t domid,     \
+                                                    int *num)           \
+    {                                                                   \
+        GC_INIT(ctx);                                                   \
+                                                                        \
+        libxl_device_##type* types = NULL;                              \
+        libxl_device_##type* r = NULL;                                  \
+        libxl_device_##type* type;                                      \
+        char *libxl_path;                                               \
+        char** dir = NULL;                                              \
+        unsigned int ndirs = 0;                                         \
+        int rc;                                                         \
+                                                                        \
+        *num = 0;                                                       \
+                                                                        \
+        libxl_path = GCSPRINTF("%s/device/%s",                          \
+             libxl__xs_libxl_path(gc, domid), #type);                   \
+                                                                        \
+        dir = libxl__xs_directory(gc, XBT_NULL, libxl_path, &ndirs);    \
+                                                                        \
+        if (dir && ndirs) {                                             \
+            types = malloc(sizeof(*types) * ndirs);                     \
+            libxl_device_##type* end = types + ndirs;                   \
+                                                                        \
+            for(type = types; type < end; ++type, ++dir) {              \
+                const char* be_path = libxl__xs_read(gc, XBT_NULL,      \
+                GCSPRINTF("%s/%s/backend", libxl_path, *dir));          \
+                                                                        \
+                libxl_device_##type##_init(type);                       \
+                                                                        \
+                type->devid = atoi(*dir);                               \
+                                                                        \
+                rc = libxl__backendpath_parse_domid(gc, be_path,        \
+                    &type->backend_domid);                              \
+                if (rc) goto out;                                       \
+            }                                                           \
+        }                                                               \
+                                                                        \
+        *num = ndirs;                                                   \
+        r = types;                                                      \
+        types = NULL;                                                   \
+                                                                        \
+    out:                                                                \
+        if (types) {                                                    \
+            for(; type >= types; --type) {                              \
+                libxl_device_##type##_dispose(type);                    \
+            }                                                           \
+            free(types);                                                \
+        }                                                               \
+                                                                        \
+        GC_FREE;                                                        \
+                                                                        \
+        return r;                                                       \
+    }
+
+#define LIBXL_DEFINE_DEVICE_LIST_FREE(type)                             \
+    void libxl_device_##type##_list_free(libxl_device_##type* list,     \
+                                         int nr)                        \
+    {                                                                   \
+        int i;                                                          \
+        for (i = 0; i < nr; i++) {                                      \
+            libxl_device_##type##_dispose(&list[i]);                    \
+        }                                                               \
+        free(list);                                                     \
+    }
+
+#define LIBXL_DEFINE_DEVID_TO_DEVICE(type)                              \
+    int libxl_devid_to_device_##type(libxl_ctx *ctx,                    \
+                                     uint32_t domid,                    \
+                                     int devid,                         \
+                                     libxl_device_##type *type)         \
+    {                                                                   \
+        libxl_device_##type *types = NULL;                              \
+        int n, i;                                                       \
+        int rc;                                                         \
+                                                                        \
+        libxl_device_##type##_init(type);                               \
+                                                                        \
+        types = libxl_device_##type##_list(ctx, domid, &n);             \
+        if (!types) { rc = ERROR_NOTFOUND; goto out; }                  \
+                                                                        \
+        for (i = 0; i < n; ++i) {                                       \
+            if (devid == types[i].devid) {                              \
+                type->backend_domid = types[i].backend_domid;           \
+                type->devid = types[i].devid;                           \
+                rc = 0;                                                 \
+                goto out;                                               \
+            }                                                           \
+        }                                                               \
+                                                                        \
+        rc = ERROR_NOTFOUND;                                            \
+                                                                        \
+    out:                                                                \
+        if (types) {                                                    \
+            libxl_device_##type##_list_free(types, n);                  \
+        }                                                               \
+        return rc;                                                      \
+    }
+
+#define LIBXL_DEFINE_DEVICE_GETINFO(type)                               \
+    int libxl_device_##type##_getinfo(libxl_ctx *ctx,                   \
+                                      uint32_t domid,                   \
+                                      libxl_device_##type *type,        \
+                                      libxl_##type##info *info)         \
+    {                                                                   \
+        GC_INIT(ctx);                                                   \
+        char *libxl_path, *dompath, *devpath;                           \
+        char *val;                                                      \
+        int rc;                                                         \
+                                                                        \
+        libxl_##type##info_init(info);                                  \
+        dompath = libxl__xs_get_dompath(gc, domid);                     \
+        info->devid = type->devid;                                      \
+                                                                        \
+        devpath = GCSPRINTF("%s/device/"#type"/%d",                     \
+                            dompath, info->devid);                      \
+        libxl_path = GCSPRINTF("%s/device/"#type"/%d",                  \
+                               libxl__xs_libxl_path(gc, domid),         \
+                               info->devid);                            \
+        info->backend = xs_read(ctx->xsh, XBT_NULL,                     \
+                                GCSPRINTF("%s/backend", libxl_path),    \
+                                NULL);                                  \
+        if (!info->backend) { rc = ERROR_FAIL; goto out; }              \
+                                                                        \
+        rc = libxl__backendpath_parse_domid(gc, info->backend,          \
+                                            &info->backend_id);         \
+        if (rc) { goto out; }                                           \
+                                                                        \
+        val = libxl__xs_read(gc, XBT_NULL,                              \
+                             GCSPRINTF("%s/state", devpath));           \
+        info->state = val ? strtoul(val, NULL, 10) : -1;                \
+                                                                        \
+        info->frontend = xs_read(ctx->xsh, XBT_NULL,                    \
+                                 GCSPRINTF("%s/frontend", libxl_path),  \
+                                 NULL);                                 \
+        info->frontend_id = domid;                                      \
+                                                                        \
+        rc = libxl__device_##type##_getinfo(gc, ctx->xsh,               \
+                                            libxl_path, info);          \
+        if (rc) { goto out; }                                           \
+                                                                        \
+        rc = 0;                                                         \
+                                                                        \
+    out:                                                                \
+         GC_FREE;                                                       \
+         return rc;                                                     \
+    }
+
 struct libxl_device_type {
     char *type;
     int skip_attach;   /* Skip entry in domcreate_attach_devices() if 1 */
@@ -3523,6 +3750,7 @@ extern const struct libxl_device_type libxl__vtpm_devtype;
 extern const struct libxl_device_type libxl__usbctrl_devtype;
 extern const struct libxl_device_type libxl__usbdev_devtype;
 extern const struct libxl_device_type libxl__pcidev_devtype;
+extern const struct libxl_device_type libxl__vdispl_devtype;
 
 extern const struct libxl_device_type *device_type_tbl[];
 
