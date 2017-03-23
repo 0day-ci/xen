@@ -3041,12 +3041,6 @@ static struct domain *get_pg_owner(domid_t domid)
         goto out;
     }
 
-    if ( unlikely(paging_mode_translate(curr)) )
-    {
-        MEM_LOG("Cannot mix foreign mappings with translated domains");
-        goto out;
-    }
-
     switch ( domid )
     {
     case DOMID_IO:
