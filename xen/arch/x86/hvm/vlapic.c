@@ -705,6 +705,35 @@ static void vlapic_update_timer(struct vlapic *vlapic,
         is_periodic = vlapic_lvtt_period(vlapic);
         is_oneshot = vlapic_lvtt_oneshot(vlapic);
         break;
+    case APIC_TDCR:
+        is_periodic = vlapic_lvtt_period(vlapic);
+        is_oneshot = vlapic_lvtt_oneshot(vlapic);
+
+        period = (uint64_t)vlapic_get_reg(vlapic, APIC_TMICT)
+            * APIC_BUS_CYCLE_NS * vlapic->hw.timer_divisor;
+
+        /* Calculate the next time the timer should trigger an interrupt. */
+        if ( period && vlapic->timer_last_update )
+        {
+            uint64_t time_passed = hvm_get_guest_time(current)
+                - vlapic->timer_last_update;
+            if ( is_periodic )
+                time_passed %= period;
+            if ( time_passed < period )
+                delta = period - time_passed;
+        }
+
+        val = ((val & 3) | ((val & 8) >> 1)) + 1;
+        val = 1 << (val & 7);
+
+        period = (uint64_t)vlapic_get_reg(vlapic, APIC_TMICT)
+            * APIC_BUS_CYCLE_NS * val;
+
+        /* Calculate time left until next interrupt, base on the difference
+         * between the current timer_divisor and the new one */
+        delta = delta * val / vlapic->hw.timer_divisor;
+
+        break;
     default:
         BUG();
     }
@@ -848,6 +877,7 @@ static void vlapic_reg_write(struct vcpu *v,
     break;
 
     case APIC_TDCR:
+        vlapic_update_timer(vlapic, APIC_TDCR, val);
         vlapic_set_tdcr(vlapic, val & 0xb);
         HVM_DBG_LOG(DBG_LEVEL_VLAPIC_TIMER, "timer divisor is %#x",
                     vlapic->hw.timer_divisor);
