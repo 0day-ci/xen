@@ -839,9 +839,11 @@ static void vlapic_reg_write(struct vcpu *v,
         break;
 
     case APIC_LVTT:         /* LVT Timer Reg */
-        if ( (vlapic_get_reg(vlapic, offset) & APIC_TIMER_MODE_MASK) !=
-             (val & APIC_TIMER_MODE_MASK) )
+        /* Switching between tdt and periodic|one-shot reset the other mode */
+        if ( vlapic_lvtt_tdt(vlapic) !=
+             ((val & APIC_TIMER_MODE_MASK) == APIC_TIMER_MODE_TSC_DEADLINE))
         {
+            vlapic_set_reg(vlapic, APIC_TMICT, 0);
             vlapic->hw.tdt_msr = 0;
         }
         vlapic->pt.irq = val & APIC_VECTOR_MASK;
