@@ -685,6 +685,29 @@ static void check_low_mem_virq(void)
     }
 }
 
+#ifdef CONFIG_SCRUB_DEBUG
+#define PAGE_POISON 0xbad0bad0bad0bad0ULL
+static void poison_one_page(struct page_info *pg)
+{
+    mfn_t mfn = _mfn(page_to_mfn(pg));
+    uint64_t *ptr;
+
+    ptr  = map_domain_page(mfn);
+    *ptr = PAGE_POISON;
+    unmap_domain_page(ptr);
+}
+
+static void check_one_page(struct page_info *pg)
+{
+    mfn_t mfn = _mfn(page_to_mfn(pg));
+    uint64_t *ptr;
+
+    ptr  = map_domain_page(mfn);
+    ASSERT(*ptr != PAGE_POISON);
+    unmap_domain_page(ptr);
+}
+#endif /* CONFIG_SCRUB_DEBUG */
+
 static void check_and_stop_scrub(struct page_info *head)
 {
     if ( head->u.free.scrub_state & PAGE_SCRUBBING )
@@ -905,6 +928,11 @@ static struct page_info *alloc_heap_pages(
          * guest can control its own visibility of/through the cache.
          */
         flush_page_to_ram(page_to_mfn(&pg[i]));
+
+#ifdef CONFIG_SCRUB_DEBUG
+        if ( d && !is_idle_domain(d) )
+            check_one_page(&pg[i]);
+#endif
     }
 
     spin_unlock(&heap_lock);
@@ -1285,6 +1313,11 @@ static void free_heap_pages(
     {
         pg->count_info |= PGC_need_scrub;
         node_need_scrub[node] += (1UL << order);
+
+#ifdef CONFIG_SCRUB_DEBUG
+        for ( i = 0; i < (1 << order); i++ )
+            poison_one_page(&pg[i]);
+#endif
     }
 
     merge_chunks(pg, node, zone, order, 0);
