@@ -233,6 +233,10 @@ struct page_info
 #define PGC_count_width   PG_shift(9)
 #define PGC_count_mask    ((1UL<<PGC_count_width)-1)
 
+/* Page needs to be scrubbed */
+#define _PGC_need_scrub   PG_shift(10)
+#define PGC_need_scrub    PG_mask(1, 10)
+
 struct spage_info
 {
        unsigned long type_info;

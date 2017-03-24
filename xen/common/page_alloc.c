@@ -383,6 +383,8 @@ typedef struct page_list_head heap_by_zone_and_order_t[NR_ZONES][MAX_ORDER+1];
 static heap_by_zone_and_order_t *_heap[MAX_NUMNODES];
 #define heap(node, zone, order) ((*_heap[node])[zone][order])
 
+static unsigned long node_need_scrub[MAX_NUMNODES];
+
 static unsigned long *avail[MAX_NUMNODES];
 static long total_avail_pages;
 
@@ -807,7 +809,7 @@ static struct page_info *alloc_heap_pages(
     while ( j != order )
     {
         PFN_ORDER(pg) = --j;
-        page_list_add_tail(pg, &heap(node, zone, j));
+        page_list_add(pg, &heap(node, zone, j));
         pg += 1 << j;
     }
 
@@ -826,6 +828,8 @@ static struct page_info *alloc_heap_pages(
         /* Reference count must continuously be zero for free pages. */
         BUG_ON(pg[i].count_info != PGC_state_free);
         pg[i].count_info = PGC_state_inuse;
+
+        BUG_ON(test_bit(_PGC_need_scrub, &pg[i].count_info));
 
         if ( !(memflags & MEMF_no_tlbflush) )
             accumulate_tlbflush(&need_tlbflush, &pg[i],
@@ -856,6 +860,7 @@ static int reserve_offlined_page(struct page_info *head)
     int zone = page_to_zone(head), i, head_order = PFN_ORDER(head), count = 0;
     struct page_info *cur_head;
     int cur_order;
+    bool_t need_scrub = !!test_bit(_PGC_need_scrub, &head->count_info);
 
     ASSERT(spin_is_locked(&heap_lock));
 
@@ -897,7 +902,13 @@ static int reserve_offlined_page(struct page_info *head)
             {
             merge:
                 /* We don't consider merging outside the head_order. */
-                page_list_add_tail(cur_head, &heap(node, zone, cur_order));
+                if ( need_scrub )
+                {
+                    cur_head->count_info |= PGC_need_scrub;
+                    page_list_add_tail(cur_head, &heap(node, zone, cur_order));
+                }
+                else
+                    page_list_add(cur_head, &heap(node, zone, cur_order));
                 PFN_ORDER(cur_head) = cur_order;
                 cur_head += (1 << cur_order);
                 break;
@@ -925,12 +936,16 @@ static int reserve_offlined_page(struct page_info *head)
 }
 
 static bool_t can_merge(struct page_info *buddy, unsigned int node,
-                        unsigned int order)
+                        unsigned int order, bool_t need_scrub)
 {
     if ( !mfn_valid(_mfn(page_to_mfn(buddy))) ||
          !page_state_is(buddy, free) ||
          (PFN_ORDER(buddy) != order) ||
          (phys_to_nid(page_to_maddr(buddy)) != node) )
+        return 0;
+
+    if ( need_scrub !=
+         !!test_bit(_PGC_need_scrub, &buddy->count_info) )
         return 0;
 
     return 1;
@@ -939,6 +954,8 @@ static bool_t can_merge(struct page_info *buddy, unsigned int node,
 static void merge_chunks(struct page_info *pg, unsigned int node,
                          unsigned int zone, unsigned int order)
 {
+    bool_t need_scrub = !!test_bit(_PGC_need_scrub, &pg->count_info);
+
     ASSERT(spin_is_locked(&heap_lock));
 
     /* Merge chunks as far as possible. */
@@ -951,9 +968,10 @@ static void merge_chunks(struct page_info *pg, unsigned int node,
         {
             /* Merge with predecessor block? */
             buddy = pg - mask;
-            if ( !can_merge(buddy, node, order) )
+            if ( !can_merge(buddy, node, order, need_scrub) )
                 break;
 
+            pg->count_info &= ~PGC_need_scrub;
             pg = buddy;
             page_list_del(pg, &heap(node, zone, order));
         }
@@ -961,9 +979,10 @@ static void merge_chunks(struct page_info *pg, unsigned int node,
         {
             /* Merge with successor block? */
             buddy = pg + mask;
-            if ( !can_merge(buddy, node, order) )
+            if ( !can_merge(buddy, node, order, need_scrub) )
                 break;
 
+            buddy->count_info &= ~PGC_need_scrub;
             page_list_del(buddy, &heap(node, zone, order));
         }
 
@@ -971,12 +990,54 @@ static void merge_chunks(struct page_info *pg, unsigned int node,
     }
 
     PFN_ORDER(pg) = order;
-    page_list_add_tail(pg, &heap(node, zone, order));
+    if ( need_scrub )
+    {
+        pg->count_info |= PGC_need_scrub;
+        page_list_add_tail(pg, &heap(node, zone, order));
+    }
+    else
+        page_list_add(pg, &heap(node, zone, order));
+}
+
+static void scrub_free_pages(unsigned int node)
+{
+    struct page_info *pg;
+    unsigned int i, zone;
+    int order;
+
+    ASSERT(spin_is_locked(&heap_lock));
+
+    if ( !node_need_scrub[node] )
+        return;
+
+    for ( zone = 0; zone < NR_ZONES; zone++ )
+    {
+        for ( order = MAX_ORDER; order >= 0; order-- )
+        {
+            while ( !page_list_empty(&heap(node, zone, order)) )
+            {
+                /* Unscrubbed pages are always at the end of the list. */
+                pg = page_list_last(&heap(node, zone, order));
+                if ( !test_bit(_PGC_need_scrub, &pg->count_info) )
+                    break;
+
+                for ( i = 0; i < (1UL << order); i++)
+                    scrub_one_page(&pg[i]);
+
+                pg->count_info &= ~PGC_need_scrub;
+
+                page_list_del(pg, &heap(node, zone, order));
+                merge_chunks(pg, node, zone, order);
+
+                node_need_scrub[node] -= (1UL << order);
+            }
+        }
+    }
 }
 
 /* Free 2^@order set of pages. */
 static void free_heap_pages(
-    struct page_info *pg, unsigned int order)
+    struct page_info *pg, unsigned int order, bool_t need_scrub)
 {
     unsigned long mfn = page_to_mfn(pg);
     unsigned int i, node = phys_to_nid(page_to_maddr(pg)), tainted = 0;
@@ -1025,10 +1086,19 @@ static void free_heap_pages(
         midsize_alloc_zone_pages = max(
             midsize_alloc_zone_pages, total_avail_pages / MIDSIZE_ALLOC_FRAC);
 
+    if ( need_scrub && !tainted )
+    {
+        pg->count_info |= PGC_need_scrub;
+        node_need_scrub[node] += (1UL << order);
+    }
+
     merge_chunks(pg, node, zone, order);
 
     if ( tainted )
         reserve_offlined_page(pg);
+
+    if ( need_scrub )
+        scrub_free_pages(node);
 
     spin_unlock(&heap_lock);
 }
@@ -1250,7 +1320,7 @@ unsigned int online_page(unsigned long mfn, uint32_t *status)
     spin_unlock(&heap_lock);
 
     if ( (y & PGC_state) == PGC_state_offlined )
-        free_heap_pages(pg, 0);
+        free_heap_pages(pg, 0, 0);
 
     return ret;
 }
@@ -1319,7 +1389,7 @@ static void init_heap_pages(
             nr_pages -= n;
         }
 
-        free_heap_pages(pg+i, 0);
+        free_heap_pages(pg + i, 0, 0);
     }
 }
 
@@ -1646,7 +1716,7 @@ void free_xenheap_pages(void *v, unsigned int order)
 
     memguard_guard_range(v, 1 << (order + PAGE_SHIFT));
 
-    free_heap_pages(virt_to_page(v), order);
+    free_heap_pages(virt_to_page(v), order, 0);
 }
 
 #else
@@ -1700,12 +1770,9 @@ void free_xenheap_pages(void *v, unsigned int order)
     pg = virt_to_page(v);
 
     for ( i = 0; i < (1u << order); i++ )
-    {
-        scrub_one_page(&pg[i]);
         pg[i].count_info &= ~PGC_xen_heap;
-    }
 
-    free_heap_pages(pg, order);
+    free_heap_pages(pg, order, 1);
 }
 
 #endif
@@ -1814,7 +1881,7 @@ struct page_info *alloc_domheap_pages(
     if ( d && !(memflags & MEMF_no_owner) &&
          assign_pages(d, pg, order, memflags) )
     {
-        free_heap_pages(pg, order);
+        free_heap_pages(pg, order, 0);
         return NULL;
     }
     
@@ -1882,11 +1949,7 @@ void free_domheap_pages(struct page_info *pg, unsigned int order)
             scrub = 1;
         }
 
-        if ( unlikely(scrub) )
-            for ( i = 0; i < (1 << order); i++ )
-                scrub_one_page(&pg[i]);
-
-        free_heap_pages(pg, order);
+        free_heap_pages(pg, order, scrub);
     }
 
     if ( drop_dom_ref )
