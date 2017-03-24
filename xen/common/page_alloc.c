@@ -997,7 +997,7 @@ static bool_t can_merge(struct page_info *buddy, unsigned int node,
 }
 
 static void merge_chunks(struct page_info *pg, unsigned int node,
-                         unsigned int zone, unsigned int order)
+                         unsigned int zone, unsigned int order, bool_t is_frag)
 {
     bool_t need_scrub = !!test_bit(_PGC_need_scrub, &pg->count_info);
 
@@ -1022,9 +1022,12 @@ static void merge_chunks(struct page_info *pg, unsigned int node,
         }
         else
         {
-            /* Merge with successor block? */
+            /*
+             * Merge with successor block?
+             * Only un-fragmented buddy can be merged forward.
+             */
             buddy = pg + mask;
-            if ( !can_merge(buddy, node, order, need_scrub) )
+            if ( is_frag || !can_merge(buddy, node, order, need_scrub) )
                 break;
 
             buddy->count_info &= ~PGC_need_scrub;
@@ -1044,10 +1047,13 @@ static void merge_chunks(struct page_info *pg, unsigned int node,
         page_list_add(pg, &heap(node, zone, order));
 }
 
+#define SCRUB_CHUNK_ORDER  8
 bool_t scrub_free_pages()
 {
     struct page_info *pg;
     unsigned int i, zone;
+    unsigned int num_scrubbed, scrub_order, start, end;
+    bool_t preempt, is_frag;
     int order, cpu = smp_processor_id();
     nodeid_t node = cpu_to_node(cpu), local_node;
     static nodemask_t node_scrubbing;
@@ -1072,6 +1078,7 @@ bool_t scrub_free_pages()
         } while ( !cpumask_empty(&node_to_cpumask(node)) );
     }
 
+    preempt = false;
     spin_lock(&heap_lock);
 
     for ( zone = 0; zone < NR_ZONES; zone++ )
@@ -1085,19 +1092,64 @@ bool_t scrub_free_pages()
                 if ( !test_bit(_PGC_need_scrub, &pg->count_info) )
                     break;
 
-                for ( i = 0; i < (1UL << order); i++)
-                {
-                    scrub_one_page(&pg[i]);
-                    if ( softirq_pending(cpu) )
-                        goto out;
-                }
-
-                pg->count_info &= ~PGC_need_scrub;
-
                 page_list_del(pg, &heap(node, zone, order));
-                merge_chunks(pg, node, zone, order);
 
-                node_need_scrub[node] -= (1UL << order);
+                scrub_order = MIN(order, SCRUB_CHUNK_ORDER);
+                num_scrubbed = 0;
+                is_frag = false;
+                while ( num_scrubbed < (1 << order) )
+                {
+                    for ( i = 0; i < (1 << scrub_order); i++ )
+                        scrub_one_page(&pg[num_scrubbed + i]);
+
+                    num_scrubbed += (1 << scrub_order);
+                    if ( softirq_pending(cpu) )
+                    {
+                        preempt = 1;
+                        is_frag = (num_scrubbed < (1 << order));
+                        break;
+                    }
+                 }
+ 
+                start = 0;
+                end = num_scrubbed;
+
+                /* Merge clean pages */
+                pg->count_info &= ~PGC_need_scrub;
+                while ( start < end )
+                {
+                    /* 
+                     * Largest power-of-two chunk starting @start,
+                     * not greater than @end
+                     */
+                    unsigned chunk_order = flsl(end - start) - 1;
+                    struct page_info *ppg = &pg[start];
+
+                    node_need_scrub[node] -= (1 << chunk_order);
+
+                    PFN_ORDER(ppg) = chunk_order;
+                    merge_chunks(ppg, node, zone, chunk_order, is_frag);
+                    start += (1 << chunk_order);
+                }
+ 
+                /* Merge unscrubbed pages */
+                while ( end < (1 << order) )
+                {
+                    /*
+                     * Largest power-of-two chunk starting @end, not crossing
+                     * next power-of-two boundary
+                     */
+                    unsigned chunk_order = ffsl(end) - 1;
+                    struct page_info *ppg = &pg[end];
+
+                    PFN_ORDER(ppg) = chunk_order;
+                    ppg->count_info |= PGC_need_scrub;
+                    merge_chunks(ppg, node, zone, chunk_order, 1);
+                    end += (1 << chunk_order);
+                 }
+
+                if ( preempt )
+                    goto out;
             }
         }
     }
@@ -1165,7 +1217,7 @@ static void free_heap_pages(
         node_need_scrub[node] += (1UL << order);
     }
 
-    merge_chunks(pg, node, zone, order);
+    merge_chunks(pg, node, zone, order, 0);
 
     if ( tainted )
         reserve_offlined_page(pg);
