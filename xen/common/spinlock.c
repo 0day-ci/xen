@@ -129,6 +129,26 @@ static always_inline u16 observe_head(spinlock_tickets_t *t)
     return read_atomic(&t->head);
 }
 
+void _spin_lock_cb(spinlock_t *lock, void (*cb)(void *), void *data)
+{
+    spinlock_tickets_t tickets = SPINLOCK_TICKET_INC;
+    LOCK_PROFILE_VAR;
+
+    check_lock(&lock->debug);
+    tickets.head_tail = arch_fetch_and_add(&lock->tickets.head_tail,
+                                           tickets.head_tail);
+    while ( tickets.tail != observe_head(&lock->tickets) )
+    {
+        LOCK_PROFILE_BLOCK;
+        if ( cb )
+            cb(data);
+        arch_lock_relax();
+    }
+    LOCK_PROFILE_GOT;
+    preempt_disable();
+    arch_lock_acquire_barrier();
+}
+
 void _spin_lock(spinlock_t *lock)
 {
     spinlock_tickets_t tickets = SPINLOCK_TICKET_INC;

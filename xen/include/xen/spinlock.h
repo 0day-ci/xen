@@ -153,6 +153,7 @@ typedef struct spinlock {
 #define spin_lock_init(l) (*(l) = (spinlock_t)SPIN_LOCK_UNLOCKED)
 
 void _spin_lock(spinlock_t *lock);
+void _spin_lock_cb(spinlock_t *lock, void (*cond)(void *), void *data);
 void _spin_lock_irq(spinlock_t *lock);
 unsigned long _spin_lock_irqsave(spinlock_t *lock);
 
@@ -169,6 +170,8 @@ void _spin_lock_recursive(spinlock_t *lock);
 void _spin_unlock_recursive(spinlock_t *lock);
 
 #define spin_lock(l)                  _spin_lock(l)
+#define spin_lock_cb(l, c, d)         _spin_lock_cb(l, c, d)
+#define spin_lock_kick(l)             arch_lock_signal()
 #define spin_lock_irq(l)              _spin_lock_irq(l)
 #define spin_lock_irqsave(l, f)                                 \
     ({                                                          \
