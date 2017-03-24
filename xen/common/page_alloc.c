@@ -685,6 +685,18 @@ static void check_low_mem_virq(void)
     }
 }
 
+static void check_and_stop_scrub(struct page_info *head)
+{
+    if ( head->u.free.scrub_state & PAGE_SCRUBBING )
+    {
+        head->u.free.scrub_state |= PAGE_SCRUB_ABORT;
+        smp_mb();
+        spin_lock_kick();
+        while ( ACCESS_ONCE(head->u.free.scrub_state) & PAGE_SCRUB_ABORT )
+            cpu_relax();
+    }
+}
+
 /* Allocate 2^@order contiguous pages. */
 static struct page_info *alloc_heap_pages(
     unsigned int zone_lo, unsigned int zone_hi,
@@ -771,9 +783,14 @@ static struct page_info *alloc_heap_pages(
             {
                 if ( (pg = page_list_remove_head(&heap(node, zone, j))) )
                 {
-                    if ( (order == 0) || use_unscrubbed ||
-                         !test_bit(_PGC_need_scrub, &pg->count_info) )
+                    if ( !test_bit(_PGC_need_scrub, &pg[0].count_info) )
                         goto found;
+
+                    if ( (order == 0) || use_unscrubbed )
+                    {
+                        check_and_stop_scrub(pg);
+                        goto found;
+                    }
 
                     page_list_add_tail(pg, &heap(node, zone, j));
                 }
@@ -911,6 +928,8 @@ static int reserve_offlined_page(struct page_info *head)
 
     cur_head = head;
 
+    check_and_stop_scrub(head);
+
     page_list_del(head, &heap(node, zone, head_order));
 
     while ( cur_head < (head + (1 << head_order)) )
@@ -993,6 +1012,9 @@ static bool_t can_merge(struct page_info *buddy, unsigned int node,
          !!test_bit(_PGC_need_scrub, &buddy->count_info) )
         return 0;
 
+    if ( buddy->u.free.scrub_state & PAGE_SCRUBBING )
+        return 0;
+
     return 1;
 }
 
@@ -1048,12 +1070,34 @@ static void merge_chunks(struct page_info *pg, unsigned int node,
 }
 
 #define SCRUB_CHUNK_ORDER  8
+
+struct scrub_wait_state {
+    struct page_info *pg;
+    bool_t drop;
+};
+
+static void scrub_continue(void *data)
+{
+    struct scrub_wait_state *st = (struct scrub_wait_state *)data;
+
+    if ( st->drop )
+        return;
+
+    if ( st->pg->u.free.scrub_state & PAGE_SCRUB_ABORT )
+    {
+        /* There is a waiter for this chunk. Release it. */
+        st->drop = true;
+        st->pg->u.free.scrub_state = 0;
+    }
+}
+
 bool_t scrub_free_pages()
 {
     struct page_info *pg;
     unsigned int i, zone;
     unsigned int num_scrubbed, scrub_order, start, end;
     bool_t preempt, is_frag;
+    struct scrub_wait_state st;
     int order, cpu = smp_processor_id();
     nodeid_t node = cpu_to_node(cpu), local_node;
     static nodemask_t node_scrubbing;
@@ -1092,7 +1136,10 @@ bool_t scrub_free_pages()
                 if ( !test_bit(_PGC_need_scrub, &pg->count_info) )
                     break;
 
-                page_list_del(pg, &heap(node, zone, order));
+                ASSERT(!pg->u.free.scrub_state);
+                pg->u.free.scrub_state = PAGE_SCRUBBING;
+
+                spin_unlock(&heap_lock);
 
                 scrub_order = MIN(order, SCRUB_CHUNK_ORDER);
                 num_scrubbed = 0;
@@ -1100,7 +1147,15 @@ bool_t scrub_free_pages()
                 while ( num_scrubbed < (1 << order) )
                 {
                     for ( i = 0; i < (1 << scrub_order); i++ )
+                    {
                         scrub_one_page(&pg[num_scrubbed + i]);
+                        if ( ACCESS_ONCE(pg->u.free.scrub_state) & PAGE_SCRUB_ABORT )
+                        {
+                            /* Someone wants this chunk. Drop everything. */
+                            pg->u.free.scrub_state = 0;
+                            goto out_nolock;
+                        }
+                    }
 
                     num_scrubbed += (1 << scrub_order);
                     if ( softirq_pending(cpu) )
@@ -1110,7 +1165,16 @@ bool_t scrub_free_pages()
                         break;
                     }
                  }
- 
+
+                st.pg = pg;
+                st.drop = false;
+                spin_lock_cb(&heap_lock, scrub_continue, &st);
+
+                if ( st.drop )
+                    goto out;
+
+                page_list_del(pg, &heap(node, zone, order));
+
                 start = 0;
                 end = num_scrubbed;
 
@@ -1148,6 +1212,8 @@ bool_t scrub_free_pages()
                     end += (1 << chunk_order);
                  }
 
+                pg->u.free.scrub_state = 0;
+
                 if ( preempt )
                     goto out;
             }
@@ -1156,6 +1222,8 @@ bool_t scrub_free_pages()
 
  out:
     spin_unlock(&heap_lock);
+
+ out_nolock:
     node_clear(node, node_scrubbing);
     return (node_need_scrub[node] != 0);
 }
@@ -1193,6 +1261,8 @@ static void free_heap_pages(
               ? PGC_state_offlined : PGC_state_free));
         if ( page_state_is(&pg[i], offlined) )
             tainted = 1;
+
+        pg[i].u.free.scrub_state=0;
 
         /* If a page has no owner it will need no safety TLB flush. */
         pg[i].u.free.need_tlbflush = (page_get_owner(&pg[i]) != NULL);

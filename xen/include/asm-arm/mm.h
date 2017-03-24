@@ -41,6 +41,10 @@ struct page_info
         } inuse;
         /* Page is on a free list: ((count_info & PGC_count_mask) == 0). */
         struct {
+#define PAGE_SCRUBBING      (1<<1)
+#define PAGE_SCRUB_ABORT    (1<<2)
+            unsigned char scrub_state;
+
             /* Do TLBs need flushing for safety before next page use? */
             bool_t need_tlbflush;
         } free;
