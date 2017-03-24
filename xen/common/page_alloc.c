@@ -924,11 +924,61 @@ static int reserve_offlined_page(struct page_info *head)
     return count;
 }
 
+static bool_t can_merge(struct page_info *buddy, unsigned int node,
+                        unsigned int order)
+{
+    if ( !mfn_valid(_mfn(page_to_mfn(buddy))) ||
+         !page_state_is(buddy, free) ||
+         (PFN_ORDER(buddy) != order) ||
+         (phys_to_nid(page_to_maddr(buddy)) != node) )
+        return 0;
+
+    return 1;
+}
+
+static void merge_chunks(struct page_info *pg, unsigned int node,
+                         unsigned int zone, unsigned int order)
+{
+    ASSERT(spin_is_locked(&heap_lock));
+
+    /* Merge chunks as far as possible. */
+    while ( order < MAX_ORDER )
+    {
+        unsigned long mask = 1UL << order;
+        struct page_info *buddy;
+
+        if ( (page_to_mfn(pg) & mask) )
+        {
+            /* Merge with predecessor block? */
+            buddy = pg - mask;
+            if ( !can_merge(buddy, node, order) )
+                break;
+
+            pg = buddy;
+            page_list_del(pg, &heap(node, zone, order));
+        }
+        else
+        {
+            /* Merge with successor block? */
+            buddy = pg + mask;
+            if ( !can_merge(buddy, node, order) )
+                break;
+
+            page_list_del(buddy, &heap(node, zone, order));
+        }
+
+        order++;
+    }
+
+    PFN_ORDER(pg) = order;
+    page_list_add_tail(pg, &heap(node, zone, order));
+}
+
 /* Free 2^@order set of pages. */
 static void free_heap_pages(
     struct page_info *pg, unsigned int order)
 {
-    unsigned long mask, mfn = page_to_mfn(pg);
+    unsigned long mfn = page_to_mfn(pg);
     unsigned int i, node = phys_to_nid(page_to_maddr(pg)), tainted = 0;
     unsigned int zone = page_to_zone(pg);
 
@@ -975,38 +1025,7 @@ static void free_heap_pages(
         midsize_alloc_zone_pages = max(
             midsize_alloc_zone_pages, total_avail_pages / MIDSIZE_ALLOC_FRAC);
 
-    /* Merge chunks as far as possible. */
-    while ( order < MAX_ORDER )
-    {
-        mask = 1UL << order;
-
-        if ( (page_to_mfn(pg) & mask) )
-        {
-            /* Merge with predecessor block? */
-            if ( !mfn_valid(_mfn(page_to_mfn(pg-mask))) ||
-                 !page_state_is(pg-mask, free) ||
-                 (PFN_ORDER(pg-mask) != order) ||
-                 (phys_to_nid(page_to_maddr(pg-mask)) != node) )
-                break;
-            pg -= mask;
-            page_list_del(pg, &heap(node, zone, order));
-        }
-        else
-        {
-            /* Merge with successor block? */
-            if ( !mfn_valid(_mfn(page_to_mfn(pg+mask))) ||
-                 !page_state_is(pg+mask, free) ||
-                 (PFN_ORDER(pg+mask) != order) ||
-                 (phys_to_nid(page_to_maddr(pg+mask)) != node) )
-                break;
-            page_list_del(pg + mask, &heap(node, zone, order));
-        }
-
-        order++;
-    }
-
-    PFN_ORDER(pg) = order;
-    page_list_add_tail(pg, &heap(node, zone, order));
+    merge_chunks(pg, node, zone, order);
 
     if ( tainted )
         reserve_offlined_page(pg);
