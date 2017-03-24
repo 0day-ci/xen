@@ -45,13 +45,16 @@ void idle_loop(void)
         if ( cpu_is_offline(smp_processor_id()) )
             stop_cpu();
 
-        local_irq_disable();
-        if ( cpu_is_haltable(smp_processor_id()) )
+        if ( !scrub_free_pages() )
         {
-            dsb(sy);
-            wfi();
+            local_irq_disable();
+            if ( cpu_is_haltable(smp_processor_id()) )
+            {
+                dsb(sy);
+                wfi();
+            }
+            local_irq_enable();
         }
-        local_irq_enable();
 
         do_tasklet();
         do_softirq();

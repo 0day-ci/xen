@@ -1044,16 +1044,35 @@ static void merge_chunks(struct page_info *pg, unsigned int node,
         page_list_add(pg, &heap(node, zone, order));
 }
 
-static void scrub_free_pages(unsigned int node)
+bool_t scrub_free_pages()
 {
     struct page_info *pg;
     unsigned int i, zone;
-    int order;
+    int order, cpu = smp_processor_id();
+    nodeid_t node = cpu_to_node(cpu), local_node;
+    static nodemask_t node_scrubbing;
 
-    ASSERT(spin_is_locked(&heap_lock));
+    if ( node == NUMA_NO_NODE )
+        node = 0;
+    local_node = node;
 
-    if ( !node_need_scrub[node] )
-        return;
+    while ( 1 )
+    {
+        if ( node_need_scrub[node] && !node_test_and_set(node, node_scrubbing) )
+            break;
+
+        /*
+         * If local node is already being scrubbed then see if there is a
+         * memory-only node that needs scrubbing.
+         */
+        do {
+            node = cycle_node(node, node_online_map);
+            if ( node == local_node )
+                return 0;
+        } while ( !cpumask_empty(&node_to_cpumask(node)) );
+    }
+
+    spin_lock(&heap_lock);
 
     for ( zone = 0; zone < NR_ZONES; zone++ )
     {
@@ -1067,7 +1086,11 @@ static void scrub_free_pages(unsigned int node)
                     break;
 
                 for ( i = 0; i < (1UL << order); i++)
+                {
                     scrub_one_page(&pg[i]);
+                    if ( softirq_pending(cpu) )
+                        goto out;
+                }
 
                 pg->count_info &= ~PGC_need_scrub;
 
@@ -1078,6 +1101,11 @@ static void scrub_free_pages(unsigned int node)
             }
         }
     }
+
+ out:
+    spin_unlock(&heap_lock);
+    node_clear(node, node_scrubbing);
+    return (node_need_scrub[node] != 0);
 }
 
 /* Free 2^@order set of pages. */
@@ -1141,9 +1169,6 @@ static void free_heap_pages(
 
     if ( tainted )
         reserve_offlined_page(pg);
-
-    if ( need_scrub )
-        scrub_free_pages(node);
 
     spin_unlock(&heap_lock);
 }

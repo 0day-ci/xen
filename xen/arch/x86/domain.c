@@ -118,7 +118,8 @@ static void idle_loop(void)
     {
         if ( cpu_is_offline(smp_processor_id()) )
             play_dead();
-        (*pm_idle)();
+        if ( !scrub_free_pages() )
+            (*pm_idle)();
         do_tasklet();
         do_softirq();
         /*
