@@ -172,10 +172,6 @@ struct vcpu *__init alloc_dom0_vcpu0(struct domain *dom0)
                            cpumask_last(&dom0_cpus) /* so it wraps around to first pcpu */);
 }
 
-#ifdef CONFIG_SHADOW_PAGING
-bool __initdata opt_dom0_shadow;
-boolean_param("dom0_shadow", opt_dom0_shadow);
-#endif
 bool __initdata dom0_pvh;
 
 /*
@@ -196,10 +192,6 @@ static void __init parse_dom0_param(char *s)
 
         if ( !strcmp(s, "pvh") )
             dom0_pvh = true;
-#ifdef CONFIG_SHADOW_PAGING
-        else if ( !strcmp(s, "shadow") )
-            opt_dom0_shadow = true;
-#endif
 
         s = ss + 1;
     } while ( ss );
@@ -253,7 +245,7 @@ unsigned long __init dom0_compute_nr_pages(
     }
 
     need_paging = is_hvm_domain(d) ? !iommu_hap_pt_share || !paging_mode_hap(d)
-                                   : opt_dom0_shadow;
+                                   : 0;
     for ( ; ; need_paging = 0 )
     {
         nr_pages = dom0_nrpages;
