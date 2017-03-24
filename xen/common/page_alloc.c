@@ -691,17 +691,51 @@ static struct page_info *alloc_heap_pages(
     unsigned int order, unsigned int memflags,
     struct domain *d)
 {
-    unsigned int i, j, zone = 0, nodemask_retry = 0;
-    nodeid_t first_node, node = MEMF_get_node(memflags), req_node = node;
+    unsigned int i, j, zone, nodemask_retry;
+    nodeid_t first_node, node, req_node;
     unsigned long request = 1UL << order;
     struct page_info *pg;
-    nodemask_t nodemask = (d != NULL ) ? d->node_affinity : node_online_map;
-    bool_t need_tlbflush = 0;
+    nodemask_t nodemask;
+    bool_t need_scrub, need_tlbflush = 0, use_unscrubbed = 0;
     uint32_t tlbflush_timestamp = 0;
 
     /* Make sure there are enough bits in memflags for nodeID. */
     BUILD_BUG_ON((_MEMF_bits - _MEMF_node) < (8 * sizeof(nodeid_t)));
 
+    if ( unlikely(order > MAX_ORDER) )
+        return NULL;
+
+    spin_lock(&heap_lock);
+
+    /*
+     * Claimed memory is considered unavailable unless the request
+     * is made by a domain with sufficient unclaimed pages.
+     */
+    if ( (outstanding_claims + request >
+          total_avail_pages + tmem_freeable_pages()) &&
+          ((memflags & MEMF_no_refcount) ||
+           !d || d->outstanding_pages < request) )
+    {
+        spin_unlock(&heap_lock);
+        return NULL;
+    }
+
+    /*
+     * TMEM: When available memory is scarce due to tmem absorbing it, allow
+     * only mid-size allocations to avoid worst of fragmentation issues.
+     * Others try tmem pools then fail.  This is a workaround until all
+     * post-dom0-creation-multi-page allocations can be eliminated.
+     */
+    if ( ((order == 0) || (order >= 9)) &&
+         (total_avail_pages <= midsize_alloc_zone_pages) &&
+         tmem_freeable_pages() )
+        goto try_tmem;
+
+ again:
+
+    nodemask_retry = 0;
+    nodemask = (d != NULL ) ? d->node_affinity : node_online_map;
+    node = req_node = MEMF_get_node(memflags);
     if ( node == NUMA_NO_NODE )
     {
         if ( d != NULL )
@@ -719,32 +753,6 @@ static struct page_info *alloc_heap_pages(
     ASSERT(zone_lo <= zone_hi);
     ASSERT(zone_hi < NR_ZONES);
 
-    if ( unlikely(order > MAX_ORDER) )
-        return NULL;
-
-    spin_lock(&heap_lock);
-
-    /*
-     * Claimed memory is considered unavailable unless the request
-     * is made by a domain with sufficient unclaimed pages.
-     */
-    if ( (outstanding_claims + request >
-          total_avail_pages + tmem_freeable_pages()) &&
-          ((memflags & MEMF_no_refcount) ||
-           !d || d->outstanding_pages < request) )
-        goto not_found;
-
-    /*
-     * TMEM: When available memory is scarce due to tmem absorbing it, allow
-     * only mid-size allocations to avoid worst of fragmentation issues.
-     * Others try tmem pools then fail.  This is a workaround until all
-     * post-dom0-creation-multi-page allocations can be eliminated.
-     */
-    if ( ((order == 0) || (order >= 9)) &&
-         (total_avail_pages <= midsize_alloc_zone_pages) &&
-         tmem_freeable_pages() )
-        goto try_tmem;
-
     /*
      * Start with requested node, but exhaust all node memory in requested 
      * zone before failing, only calc new node value if we fail to find memory 
@@ -760,8 +768,16 @@ static struct page_info *alloc_heap_pages(
 
             /* Find smallest order which can satisfy the request. */
             for ( j = order; j <= MAX_ORDER; j++ )
+            {
                 if ( (pg = page_list_remove_head(&heap(node, zone, j))) )
-                    goto found;
+                {
+                    if ( (order == 0) || use_unscrubbed ||
+                         !test_bit(_PGC_need_scrub, &pg->count_info) )
+                        goto found;
+
+                    page_list_add_tail(pg, &heap(node, zone, j));
+                }
+            }
         } while ( zone-- > zone_lo ); /* careful: unsigned zone may wrap */
 
         if ( (memflags & MEMF_exact_node) && req_node != NUMA_NO_NODE )
@@ -800,18 +816,38 @@ static struct page_info *alloc_heap_pages(
     }
 
  not_found:
+    /*
+     * If we couldn't find clean page let's search again and this time
+     * take unscrubbed pages if available.
+     */
+    if ( !use_unscrubbed )
+    {
+        use_unscrubbed = 1;
+        goto again;
+    }
+
     /* No suitable memory blocks. Fail the request. */
     spin_unlock(&heap_lock);
     return NULL;
 
  found: 
+    need_scrub = !!test_bit(_PGC_need_scrub, &pg->count_info);
+
     /* We may have to halve the chunk a number of times. */
     while ( j != order )
     {
         PFN_ORDER(pg) = --j;
-        page_list_add(pg, &heap(node, zone, j));
+        if ( need_scrub )
+        {
+            pg->count_info |= PGC_need_scrub;
+            page_list_add_tail(pg, &heap(node, zone, j));
+        }
+        else
+            page_list_add(pg, &heap(node, zone, j));
         pg += 1 << j;
     }
+    if ( need_scrub )
+        pg->count_info |= PGC_need_scrub;
 
     ASSERT(avail[node][zone] >= request);
     avail[node][zone] -= request;
@@ -822,6 +858,15 @@ static struct page_info *alloc_heap_pages(
 
     if ( d != NULL )
         d->last_alloc_node = node;
+
+    if ( need_scrub )
+    {
+        for ( i = 0; i < (1 << order); i++ )
+            scrub_one_page(&pg[i]);
+        pg->count_info &= ~PGC_need_scrub;
+        node_need_scrub[node] -= (1 << order);
+    }
+
 
     for ( i = 0; i < (1 << order); i++ )
     {
