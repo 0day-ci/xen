@@ -1558,7 +1558,11 @@ void __init noreturn __start_xen(unsigned long mbi_p)
     if ( dom0_pvh )
     {
         domcr_flags |= DOMCRF_hvm |
-                       ((hvm_funcs.hap_supported && !opt_dom0_shadow) ?
+                       ((hvm_funcs.hap_supported
+#ifdef CONFIG_SHADOW_PAGING
+                         && !opt_dom0_shadow
+#endif
+                           ) ?
                          DOMCRF_hap : 0);
         config.emulation_flags = XEN_X86_EMU_LAPIC|XEN_X86_EMU_IOAPIC;
     }
