@@ -73,20 +73,37 @@ int emul_test_cpuid(
          : "a" (leaf), "c" (subleaf));
 
     /*
-     * The emulator doesn't itself use MOVBE, so we can always run the
-     * respective tests.
+     * Some instructions and features can be emulated without specific
+     * hardware support.  These features are unconditionally reported here,
+     * for testing and fuzzing-coverage purposes.
      */
-    if ( leaf == 1 )
-        res->c |= 1U << 22;
-
-    /*
-     * The emulator doesn't itself use ADCX/ADOX/RDPID, so we can always run
-     * the respective tests.
-     */
-    if ( leaf == 7 && subleaf == 0 )
+    switch ( leaf )
     {
-        res->b |= 1U << 19;
-        res->c |= 1U << 22;
+    case 1:
+        res->c |= 1U << 22; /* MOVBE */
+        break;
+
+    case 7:
+        switch ( subleaf )
+        {
+        case 0:
+            res->b |= 1U << 11; /* rtm */
+            res->b |= 1U << 19; /* ADCX/ADOX */
+            res->b |= 1U << 20; /* STAC/CLAC */
+            res->b |= 1U << 24; /* CLWB */
+
+            res->c |= 1U << 22; /* RDPID */
+            break;
+        }
+        break;
+
+    case 0x80000001:
+        res->c |= 1U << 4; /* cr8_legacy */
+
+        if ( ctxt->vendor == X86_VENDOR_AMD )
+            res->c |= 1U << 7; /* misalignsse */
+
+        break;
     }
 
     return X86EMUL_OKAY;
