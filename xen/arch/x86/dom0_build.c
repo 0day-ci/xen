@@ -174,7 +174,6 @@ struct vcpu *__init alloc_dom0_vcpu0(struct domain *dom0)
 
 #ifdef CONFIG_SHADOW_PAGING
 bool __initdata opt_dom0_shadow;
-boolean_param("dom0_shadow", opt_dom0_shadow);
 #endif
 bool __initdata dom0_pvh;
 
@@ -203,6 +202,9 @@ static void __init parse_dom0_param(char *s)
 
         s = ss + 1;
     } while ( ss );
+
+    if ( opt_dom0_shadow && !dom0_pvh )
+        panic("Shadow paging Dom0 only works in PVH mode");
 }
 custom_param("dom0", parse_dom0_param);
 
