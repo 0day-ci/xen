@@ -117,12 +117,14 @@ static int data_read(struct x86_emulate_ctxt *ctxt,
 }
 
 static int fuzz_read(
-    unsigned int seg,
+    enum x86_segment seg,
     unsigned long offset,
     void *p_data,
     unsigned int bytes,
     struct x86_emulate_ctxt *ctxt)
 {
+    assert((unsigned int)seg < x86_seg_none);
+
     return data_read(ctxt, "read", p_data, bytes);
 }
 
@@ -136,12 +138,14 @@ static int fuzz_read_io(
 }
 
 static int fuzz_insn_fetch(
-    unsigned int seg,
+    enum x86_segment seg,
     unsigned long offset,
     void *p_data,
     unsigned int bytes,
     struct x86_emulate_ctxt *ctxt)
 {
+    assert(seg == x86_seg_cs);
+
     return data_read(ctxt, "insn_fetch", p_data, bytes);
 }
 
@@ -201,6 +205,8 @@ static int fuzz_rep_ins(
     unsigned long *reps,
     struct x86_emulate_ctxt *ctxt)
 {
+    assert(dst_seg == x86_seg_es);
+
     return _fuzz_rep_read(ctxt, "rep_ins", reps);
 }
 
@@ -213,6 +219,9 @@ static int fuzz_rep_movs(
     unsigned long *reps,
     struct x86_emulate_ctxt *ctxt)
 {
+    assert(is_x86_user_segment(src_seg));
+    assert(dst_seg == x86_seg_es);
+
     return _fuzz_rep_read(ctxt, "rep_movs", reps);
 }
 
@@ -224,6 +233,8 @@ static int fuzz_rep_outs(
     unsigned long *reps,
     struct x86_emulate_ctxt *ctxt)
 {
+    assert(is_x86_user_segment(src_seg));
+
     return _fuzz_rep_write(ctxt, "rep_outs", reps);
 }
 
@@ -235,27 +246,37 @@ static int fuzz_rep_stos(
     unsigned long *reps,
     struct x86_emulate_ctxt *ctxt)
 {
+    /*
+     * STOS itself may only have an %es segment, but the stos() hook is reused
+     * for CLZERO.
+     */
+    assert(is_x86_user_segment(seg));
+
     return _fuzz_rep_write(ctxt, "rep_stos", reps);
 }
 
 static int fuzz_write(
-    unsigned int seg,
+    enum x86_segment seg,
     unsigned long offset,
     void *p_data,
     unsigned int bytes,
     struct x86_emulate_ctxt *ctxt)
 {
+    assert((unsigned int)seg < x86_seg_none);
+
     return maybe_fail(ctxt, "write", true);
 }
 
 static int fuzz_cmpxchg(
-    unsigned int seg,
+    enum x86_segment seg,
     unsigned long offset,
     void *old,
     void *new,
     unsigned int bytes,
     struct x86_emulate_ctxt *ctxt)
 {
+    assert((unsigned int)seg < x86_seg_none);
+
     return maybe_fail(ctxt, "cmpxchg", true);
 }
 
@@ -264,6 +285,9 @@ static int fuzz_invlpg(
     unsigned long offset,
     struct x86_emulate_ctxt *ctxt)
 {
+    /* invlpg(), unlike all other hooks, may be called with x86_seg_none. */
+    assert((unsigned int)seg <= x86_seg_none);
+
     return maybe_fail(ctxt, "invlpg", false);
 }
 
@@ -290,8 +314,7 @@ static int fuzz_read_segment(
     struct fuzz_state *s = ctxt->data;
     const struct fuzz_corpus *c = s->corpus;
 
-    if ( seg >= SEG_NUM )
-        return X86EMUL_UNHANDLEABLE;
+    assert((unsigned int)seg < x86_seg_none);
 
     *reg = c->segments[seg];
 
@@ -307,8 +330,7 @@ static int fuzz_write_segment(
     struct fuzz_corpus *c = s->corpus;
     int rc;
 
-    if ( seg >= SEG_NUM )
-        return X86EMUL_UNHANDLEABLE;
+    assert((unsigned int)seg < x86_seg_none);
 
     rc = maybe_fail(ctxt, "write_segment", true);
 
