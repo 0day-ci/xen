@@ -77,7 +77,7 @@ static int data_read(const char *why, void *dst, unsigned int bytes)
     else
         rc = maybe_fail(why, true);
 
-    if ( rc == X86EMUL_OKAY )
+    if ( rc == X86EMUL_OKAY && bytes )
     {
         memcpy(dst,  input.data + data_index, bytes);
         data_index += bytes;
