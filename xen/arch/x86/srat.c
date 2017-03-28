@@ -7,7 +7,7 @@
  * Called from acpi_numa_init while reading the SRAT and SLIT tables.
  * Assumes all memory regions belonging to a single proximity domain
  * are in one chunk. Holes between them will be included in the node.
- * 
+ *
  * Adapted for Xen: Ryan Harper <ryanh@us.ibm.com>
  */
 

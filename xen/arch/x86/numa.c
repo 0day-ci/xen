@@ -1,8 +1,8 @@
-/* 
+/*
  * Generic VM initialization for x86-64 NUMA setups.
  * Copyright 2002,2003 Andi Kleen, SuSE Labs.
  * Adapted for Xen: Ryan Harper <ryanh@us.ibm.com>
- */ 
+ */
 
 #include <xen/mm.h>
 #include <xen/string.h>
@@ -20,13 +20,6 @@
 
 static int numa_setup(char *s);
 custom_param("numa", numa_setup);
-
-#ifndef Dprintk
-#define Dprintk(x...)
-#endif
-
-/* from proto.h */
-#define round_up(x,y) ((((x)+(y))-1) & (~((y)-1)))
 
 struct node_data node_data[MAX_NUMNODES];
 
@@ -144,8 +137,9 @@ static int __init extract_lsb_from_nodes(const struct node *nodes,
     if ( nodes_used <= 1 )
         i = BITS_PER_LONG - 1;
     else
-        i = find_first_bit(&bitfield, sizeof(unsigned long)*8);
+        i = find_first_bit(&bitfield, sizeof(unsigned long) * 8);
     memnodemapsize = (memtop >> i) + 1;
+
     return i;
 }
 
@@ -173,7 +167,7 @@ int __init compute_hash_shift(struct node *nodes, int numnodes,
 }
 /* initialize NODE_DATA given nodeid and start/end */
 void __init setup_node_bootmem(nodeid_t nodeid, u64 start, u64 end)
-{ 
+{
     unsigned long start_pfn, end_pfn;
 
     start_pfn = start >> PAGE_SHIFT;
@@ -183,7 +177,7 @@ void __init setup_node_bootmem(nodeid_t nodeid, u64 start, u64 end)
     NODE_DATA(nodeid)->node_spanned_pages = end_pfn - start_pfn;
 
     node_set_online(nodeid);
-} 
+}
 
 void __init numa_init_array(void)
 {
@@ -214,7 +208,7 @@ static int __init numa_emulation(u64 start_pfn, u64 end_pfn)
 {
     int i;
     struct node nodes[MAX_NUMNODES];
-    u64 sz = ((end_pfn - start_pfn)<<PAGE_SHIFT) / numa_fake;
+    u64 sz = ((end_pfn - start_pfn) << PAGE_SHIFT) / numa_fake;
 
     /* Kludge needed for the hash function */
     if ( hweight64(sz) > 1 )
@@ -222,21 +216,22 @@ static int __init numa_emulation(u64 start_pfn, u64 end_pfn)
         u64 x = 1;
         while ( (x << 1) < sz )
             x <<= 1;
-        if ( x < sz/2 )
-            printk(KERN_ERR "Numa emulation unbalanced. Complain to maintainer\n");
+        if ( x < sz / 2 )
+            printk(KERN_ERR
+                   "Numa emulation unbalanced. Complain to maintainer\n");
         sz = x;
     }
 
     memset(&nodes,0,sizeof(nodes));
     for ( i = 0; i < numa_fake; i++ )
     {
-        nodes[i].start = (start_pfn<<PAGE_SHIFT) + i*sz;
+        nodes[i].start = (start_pfn << PAGE_SHIFT) + i * sz;
         if ( i == numa_fake - 1 )
-            sz = (end_pfn<<PAGE_SHIFT) - nodes[i].start;
+            sz = (end_pfn << PAGE_SHIFT) - nodes[i].start;
         nodes[i].end = nodes[i].start + sz;
-        printk(KERN_INFO "Faking node %d at %"PRIx64"-%"PRIx64" (%"PRIu64"MB)\n",
-               i,
-               nodes[i].start, nodes[i].end,
+        printk(KERN_INFO
+               "Faking node %d at %"PRIx64"-%"PRIx64" (%"PRIu64"MB)\n",
+               i, nodes[i].start, nodes[i].end,
                (nodes[i].end - nodes[i].start) >> 20);
         node_set_online(i);
     }
@@ -256,7 +251,7 @@ static int __init numa_emulation(u64 start_pfn, u64 end_pfn)
 #endif
 
 void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
-{ 
+{
     int i;
 
 #ifdef CONFIG_NUMA_EMU
@@ -291,7 +286,7 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
 void numa_add_cpu(int cpu)
 {
     cpumask_set_cpu(cpu, &node_to_cpumask[cpu_to_node(cpu)]);
-} 
+}
 
 void numa_set_node(int cpu, nodeid_t node)
 {
@@ -299,8 +294,8 @@ void numa_set_node(int cpu, nodeid_t node)
 }
 
 /* [numa=off] */
-static __init int numa_setup(char *opt) 
-{ 
+static __init int numa_setup(char *opt)
+{
     if ( !strncmp(opt,"off",3) )
         numa_off = 1;
     if ( !strncmp(opt,"on",2) )
@@ -323,7 +318,7 @@ static __init int numa_setup(char *opt)
 #endif
 
     return 1;
-} 
+}
 
 /*
  * Setup early cpu_to_node.
@@ -385,7 +380,7 @@ static void dump_numa(unsigned char key)
     const struct vnuma_info *vnuma;
 
     printk("'%c' pressed -> dumping numa info (now-0x%X:%08X)\n", key,
-           (u32)(now>>32), (u32)now);
+           (u32)(now >> 32), (u32)now);
 
     for_each_online_node ( i )
     {
