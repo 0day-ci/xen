@@ -119,56 +119,96 @@ static int set_isa_irq_level(struct domain *d, uint8_t isa_irq,
 }
 
 static int modified_memory(struct domain *d,
-                           struct xen_dm_op_modified_memory *data)
+                           struct xen_dm_op_modified_memory *header,
+                           xen_dm_op_buf_t* buf)
 {
-    xen_pfn_t last_pfn = data->first_pfn + data->nr - 1;
-    unsigned int iter = 0;
-    int rc = 0;
-
-    if ( (data->first_pfn > last_pfn) ||
-         (last_pfn > domain_get_maximum_gpfn(d)) )
-        return -EINVAL;
+    /* Process maximum of 256 pfns before checking for continuation */
+    const unsigned int cont_check_interval = 0x100;
+    unsigned int rem_extents =  header->nr_extents;
+    unsigned int batch_rem_pfns = cont_check_interval;
 
     if ( !paging_mode_log_dirty(d) )
         return 0;
 
-    while ( iter < data->nr )
+    if ( (buf->size / sizeof(struct xen_dm_op_modified_memory_extent)) <
+         rem_extents )
+        return -EINVAL;
+
+    while ( rem_extents > 0)
     {
-        unsigned long pfn = data->first_pfn + iter;
-        struct page_info *page;
+        struct xen_dm_op_modified_memory_extent extent;
+        unsigned int batch_nr;
+        xen_pfn_t pfn;
+        xen_pfn_t end_pfn;
+        unsigned int *pfns_already_done;
 
-        page = get_page_from_gfn(d, pfn, NULL, P2M_UNSHARE);
-        if ( page )
+        if ( copy_from_guest_offset(&extent, buf->h, rem_extents - 1, 1) )
+            return -EFAULT;
+        /*
+         * In the case of continuation, header->opaque contains the
+         * number of pfns already processed for this extent
+         */
+        pfns_already_done = &header->opaque;
+
+        if (*pfns_already_done >= extent.nr || extent.pad)
+            return -EINVAL;
+
+        pfn = extent.first_pfn + *pfns_already_done;
+        batch_nr = extent.nr - *pfns_already_done;
+
+        if ( batch_nr > batch_rem_pfns )
         {
-            mfn_t gmfn = _mfn(page_to_mfn(page));
-
-            paging_mark_dirty(d, gmfn);
-            /*
-             * These are most probably not page tables any more
-             * don't take a long time and don't die either.
-             */
-            sh_remove_shadows(d, gmfn, 1, 0);
-            put_page(page);
+           batch_nr = batch_rem_pfns;
+           *pfns_already_done += batch_nr;
+        }
+        else
+        {
+            rem_extents--;
+            *pfns_already_done = 0;
         }
 
-        iter++;
+        batch_rem_pfns -= batch_nr;
+        end_pfn = pfn + batch_nr;
+
+        if ( (pfn >= end_pfn) ||
+             (end_pfn > domain_get_maximum_gpfn(d)) )
+            return -EINVAL;
+
+        header->nr_extents = rem_extents;
+
+        while ( pfn < end_pfn )
+        {
+            struct page_info *page;
+            page = get_page_from_gfn(d, pfn, NULL, P2M_UNSHARE);
+
+            if ( page )
+            {
+                mfn_t gmfn = _mfn(page_to_mfn(page));
+
+                paging_mark_dirty(d, gmfn);
+                /*
+                 * These are most probably not page tables any more
+                 * don't take a long time and don't die either.
+                 */
+                sh_remove_shadows(d, gmfn, 1, 0);
+                put_page(page);
+            }
+            pfn++;
+        }
 
         /*
-         * Check for continuation every 256th iteration and if the
-         * iteration is not the last.
+         * Check for continuation every 256th pfn and if the
+         * pfn is not the last.
          */
-        if ( (iter < data->nr) && ((iter & 0xff) == 0) &&
-             hypercall_preempt_check() )
+        if ( (batch_rem_pfns == 0) && (rem_extents > 0) )
         {
-            data->first_pfn += iter;
-            data->nr -= iter;
+            if ( hypercall_preempt_check() )
+                return -ERESTART;
 
-            rc = -ERESTART;
-            break;
+            batch_rem_pfns = cont_check_interval;
         }
     }
-
-    return rc;
+    return 0;
 }
 
 static bool allow_p2m_type_change(p2m_type_t old, p2m_type_t new)
@@ -441,13 +481,8 @@ static int dm_op(domid_t domid,
         struct xen_dm_op_modified_memory *data =
             &op.u.modified_memory;
 
-        const_op = false;
-
-        rc = -EINVAL;
-        if ( data->pad )
-            break;
-
-        rc = modified_memory(d, data);
+        rc = modified_memory(d, data, &bufs[1]);
+        const_op = (rc != 0);
         break;
     }
 
