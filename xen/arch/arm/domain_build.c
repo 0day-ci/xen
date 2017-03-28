@@ -421,6 +421,10 @@ static int write_properties(struct domain *d, struct kernel_info *kinfo,
             }
         }
 
+        /* Don't expose the property numa to the guest */
+        if ( dt_property_name_is_equal(prop, "numa-node-id") )
+            continue;
+
         /* Don't expose the property "xen,passthrough" to the guest */
         if ( dt_property_name_is_equal(prop, "xen,passthrough") )
             continue;
@@ -1173,6 +1177,11 @@ static int handle_node(struct domain *d, struct kernel_info *kinfo,
         DT_MATCH_TYPE("memory"),
         /* The memory mapped timer is not supported by Xen. */
         DT_MATCH_COMPATIBLE("arm,armv7-timer-mem"),
+        /*
+         * NUMA info is not exposed to Dom0.
+         * So, skip distance-map infomation
+         */
+        DT_MATCH_COMPATIBLE("numa-distance-map-v1"),
         { /* sentinel */ },
     };
     static const struct dt_device_match timer_matches[] __initconst =
