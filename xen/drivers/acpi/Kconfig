@@ -4,6 +4,3 @@ config ACPI
 
 config ACPI_LEGACY_TABLES_LOOKUP
 	bool
-
-config NUMA
-	bool
