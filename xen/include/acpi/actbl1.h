@@ -949,7 +949,8 @@ enum acpi_srat_type {
 	ACPI_SRAT_TYPE_CPU_AFFINITY = 0,
 	ACPI_SRAT_TYPE_MEMORY_AFFINITY = 1,
 	ACPI_SRAT_TYPE_X2APIC_CPU_AFFINITY = 2,
-	ACPI_SRAT_TYPE_RESERVED = 3	/* 3 and greater are reserved */
+	ACPI_SRAT_TYPE_GICC_AFFINITY = 3,
+	ACPI_SRAT_TYPE_RESERVED = 4	/* 4 and greater are reserved */
 };
 
 /*
@@ -1006,6 +1007,20 @@ struct acpi_srat_x2apic_cpu_affinity {
 /* Flags for struct acpi_srat_cpu_affinity and struct acpi_srat_x2apic_cpu_affinity */
 
 #define ACPI_SRAT_CPU_ENABLED       (1)	/* 00: Use affinity structure */
+
+/* 3: GICC Affinity (ACPI 5.1) */
+
+struct acpi_srat_gicc_affinity {
+	struct acpi_subtable_header header;
+	u32 proximity_domain;
+	u32 acpi_processor_uid;
+	u32 flags;
+	u32 clock_domain;
+};
+
+/* Flags for struct acpi_srat_gicc_affinity */
+
+#define ACPI_SRAT_GICC_ENABLED     (1)  /* 00: Use affinity structure */
 
 /* Reset to default packing */
 

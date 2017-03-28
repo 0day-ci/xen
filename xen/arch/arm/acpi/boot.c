@@ -31,6 +31,7 @@
 #include <acpi/actables.h>
 #include <xen/mm.h>
 #include <xen/device_tree.h>
+#include <xen/numa.h>
 
 #include <asm/acpi.h>
 #include <asm/smp.h>
@@ -117,6 +118,7 @@ acpi_map_gic_cpu_interface(struct acpi_madt_generic_interrupt *processor)
         return;
     }
 
+    numa_set_node(enabled_cpus, acpi_get_nodeid(mpidr));
     /* map the logical cpu id to cpu MPIDR */
     cpu_logical_map(enabled_cpus) = mpidr;
 

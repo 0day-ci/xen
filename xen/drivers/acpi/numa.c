@@ -104,6 +104,21 @@ void __init acpi_table_print_srat_entry(struct acpi_subtable_header * header)
 		}
 #endif				/* ACPI_DEBUG_OUTPUT */
 		break;
+       case ACPI_SRAT_TYPE_GICC_AFFINITY:
+#ifdef ACPI_DEBUG_OUTPUT
+		{
+			struct acpi_srat_gicc_affinity *p =
+			    (struct acpi_srat_gicc_affinity *)header;
+			ACPI_DEBUG_PRINT((ACPI_DB_INFO,
+					  "SRAT Processor (acpi id[0x%04x]) in"
+					  " proximity domain %d %s\n",
+					  p->acpi_processor_uid,
+					  p->proximity_domain,
+					  (p->flags & ACPI_SRAT_GICC_ENABLED) ?
+					  "enabled" : "disabled");
+		}
+#endif                         /* ACPI_DEBUG_OUTPUT */
+               break;
 	default:
 		printk(KERN_WARNING PREFIX
 		       "Found unsupported SRAT entry (type = %#x)\n",

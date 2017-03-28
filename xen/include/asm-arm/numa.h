@@ -13,6 +13,15 @@ extern void dt_numa_process_memory_node(uint32_t nid,paddr_t start,
 extern void register_node_distance(uint8_t (fn)(nodeid_t a, nodeid_t b));
 extern void init_dt_numa_distance(void);
 extern uint8_t __node_distance(nodeid_t a, nodeid_t b);
+#ifdef CONFIG_ACPI_NUMA
+nodeid_t acpi_get_nodeid(uint64_t hwid);
+#else
+static inline nodeid_t acpi_get_nodeid(uint64_t hwid)
+{
+    return 0;
+}
+#endif /* CONFIG_ACPI_NUMA */
+
 #ifdef CONFIG_NUMA
 extern void numa_init(void);
 extern int dt_numa_init(void);

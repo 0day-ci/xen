@@ -24,7 +24,11 @@ extern int compute_memnode_shift(struct node *nodes, int numnodes,
                                  nodeid_t *nodeids, unsigned int *shift);
 extern void numa_init_array(void);
 extern bool_t srat_disabled(void);
+#ifdef CONFIG_NUMA
 extern void numa_set_node(int cpu, nodeid_t node);
+#else
+static inline void numa_set_node(int cpu, nodeid_t node) { }
+#endif
 extern void srat_detect_node(int cpu);
 extern void setup_node_bootmem(nodeid_t nodeid, paddr_t start, paddr_t end);
 extern void init_cpu_to_node(void);
