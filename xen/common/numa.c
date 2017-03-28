@@ -84,6 +84,20 @@ nodeid_t get_memblk_nodeid(int id)
     return memblk_nodeid[id];
 }
 
+void __init numa_clear_memblks(void)
+{
+    unsigned int i;
+
+    for ( i = 0; i < get_num_node_memblks(); i++ )
+    {
+        node_memblk_range[i].start = 0;
+        node_memblk_range[i].end = 0;
+        memblk_nodeid[i] = NUMA_NO_NODE;
+    }
+
+    num_node_memblks = 0;
+}
+
 int __init get_mem_nodeid(paddr_t start, paddr_t end)
 {
     unsigned int i;

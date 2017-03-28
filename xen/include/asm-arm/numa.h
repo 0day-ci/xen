@@ -24,6 +24,7 @@ static inline nodeid_t acpi_get_nodeid(uint64_t hwid)
 
 #ifdef CONFIG_NUMA
 extern void numa_init(void);
+extern bool_t arch_acpi_numa_init(void);
 extern int dt_numa_init(void);
 extern void numa_set_cpu_node(int cpu, unsigned int nid);
 extern void numa_add_cpu(int cpu);

@@ -29,6 +29,7 @@
 #include <asm/acpi.h>
 
 extern nodemask_t processor_nodes_parsed;
+extern nodemask_t memory_nodes_parsed;
 
 /* Holds CPUID to MPIDR mapping read from MADT table. */
 struct cpuid_to_hwid {
@@ -183,7 +184,7 @@ acpi_numa_gicc_affinity_init(const struct acpi_srat_gicc_affinity *pa)
            pxm, mpidr, node);
 }
 
-void __init acpi_map_uid_to_mpidr(void)
+static void __init acpi_map_uid_to_mpidr(void)
 {
     acpi_table_parse_madt(ACPI_MADT_TYPE_GENERIC_INTERRUPT,
                     acpi_parse_madt_handler, NR_CPUS);
@@ -209,6 +210,31 @@ void __init arch_table_parse_srat(void)
 {
     acpi_table_parse_srat(ACPI_SRAT_TYPE_GICC_AFFINITY,
                           acpi_parse_gicc_affinity, NR_CPUS);
+}
+
+bool_t __init arch_acpi_numa_init(void)
+{
+    int ret;
+
+    if ( !acpi_disabled )
+    {
+        /*
+         * If firmware has DT, process_memory_node() call
+         * would have added memory blocks. So reset it before
+         * ACPI numa init.
+         */
+        numa_clear_memblks();
+        nodes_clear(memory_nodes_parsed);
+        acpi_map_uid_to_mpidr();
+        ret = acpi_numa_init();
+        if ( ret || srat_disabled() )
+            return 1;
+
+        /* Register acpi node_distance handler */
+        register_node_distance(&acpi_node_distance);
+    }
+
+    return 0;
 }
 
 void __init acpi_numa_arch_fixup(void) {}

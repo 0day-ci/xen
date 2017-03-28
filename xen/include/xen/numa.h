@@ -59,4 +59,5 @@ void set_acpi_numa(bool val);
 int get_numa_fake(void);
 extern int numa_emulation(uint64_t start_pfn, uint64_t end_pfn);
 extern void numa_dummy_init(uint64_t start_pfn, uint64_t end_pfn);
+extern void numa_clear_memblks(void);
 #endif /* _XEN_NUMA_H */
