@@ -221,9 +221,9 @@ static int __init slit_valid(struct acpi_table_slit *slit)
 		for (j = 0; j < d; j++)  {
 			uint8_t val = slit->entry[d*i + j];
 			if (i == j) {
-				if (val != 10)
+				if (val != LOCAL_DISTANCE)
 					return 0;
-			} else if (val <= 10)
+			} else if (val <= LOCAL_DISTANCE)
 				return 0;
 		}
 	}
@@ -576,13 +576,13 @@ static unsigned node_to_pxm(nodeid_t n)
 	return 0;
 }
 
-uint8_t __node_distance(nodeid_t a, nodeid_t b)
+static uint8_t acpi_node_distance(nodeid_t a, nodeid_t b)
 {
 	unsigned index;
 	uint8_t slit_val;
 
 	if (!acpi_slit)
-		return a == b ? 10 : 20;
+		return a == b ? LOCAL_DISTANCE : REMOTE_DISTANCE;
 	index = acpi_slit->locality_count * node_to_pxm(a);
 	slit_val = acpi_slit->entry[index + node_to_pxm(b)];
 
@@ -591,6 +591,11 @@ uint8_t __node_distance(nodeid_t a, nodeid_t b)
 		return NUMA_NO_DISTANCE;
 	else
 		return slit_val;
+}
+
+uint8_t __node_distance(nodeid_t a, nodeid_t b)
+{
+	return acpi_node_distance(a, b);
 }
 
 EXPORT_SYMBOL(__node_distance);
