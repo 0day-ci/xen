@@ -27,6 +27,7 @@
 #include <xen/tmem_xen.h>
 #include <xen/virtual_region.h>
 #include <xen/watchdog.h>
+#include <acpi/srat.h>
 #include <public/version.h>
 #include <compat/platform.h>
 #include <compat/xen.h>

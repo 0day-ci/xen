@@ -7,8 +7,6 @@
 
 typedef uint8_t nodeid_t;
 
-extern int srat_rev;
-
 extern nodeid_t      cpu_to_node[NR_CPUS];
 extern cpumask_t     node_to_cpumask[];
 
@@ -16,8 +14,6 @@ extern cpumask_t     node_to_cpumask[];
 #define parent_node(node)        (node)
 #define node_to_first_cpu(node)  (__ffs(node_to_cpumask[node]))
 #define node_to_cpumask(node)    (node_to_cpumask[node])
-
-extern nodeid_t pxm_to_node(unsigned int pxm);
 
 #define ZONE_ALIGN (1UL << (MAX_ORDER+PAGE_SHIFT))
 

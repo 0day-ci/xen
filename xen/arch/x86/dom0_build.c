@@ -11,6 +11,7 @@
 #include <xen/sched.h>
 #include <xen/sched-if.h>
 #include <xen/softirq.h>
+#include <acpi/srat.h>
 
 #include <asm/dom0_build.h>
 #include <asm/hpet.h>

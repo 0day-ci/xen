@@ -27,6 +27,7 @@ asm(".file \"" __FILE__ "\"");
 #include <xen/guest_access.h>
 #include <xen/hypercall.h>
 #include <xen/mem_access.h>
+#include <acpi/srat.h>
 #include <asm/current.h>
 #include <asm/asm_defns.h>
 #include <asm/page.h>

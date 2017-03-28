@@ -25,7 +25,6 @@ extern int compute_memnode_shift(struct node *nodes, int numnodes,
 extern void numa_init_array(void);
 extern bool_t srat_disabled(void);
 extern void numa_set_node(int cpu, nodeid_t node);
-extern nodeid_t acpi_setup_node(unsigned int pxm);
 extern void srat_detect_node(int cpu);
 extern void setup_node_bootmem(nodeid_t nodeid, paddr_t start, paddr_t end);
 extern void init_cpu_to_node(void);

@@ -8,6 +8,7 @@
 #include <xen/guest_access.h>
 #include <xen/iocap.h>
 #include <xen/serial.h>
+#include <acpi/srat.h>
 #include <asm/current.h>
 #include <asm/io_apic.h>
 #include <asm/msi.h>

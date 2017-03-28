@@ -30,6 +30,7 @@
 #include <xen/pci.h>
 #include <xen/pci_regs.h>
 #include <xen/keyhandler.h>
+#include <acpi/srat.h>
 #include <asm/msi.h>
 #include <asm/irq.h>
 #include <asm/hvm/vmx/vmx.h>

@@ -63,6 +63,8 @@ TYPE_SAFE(unsigned long, mfn);
 #undef mfn_t
 #endif
 
+extern paddr_t mem_hotplug;
+
 static inline mfn_t mfn_add(mfn_t mfn, unsigned long i)
 {
     return _mfn(mfn_x(mfn) + i);
