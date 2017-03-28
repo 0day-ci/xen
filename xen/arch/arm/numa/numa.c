@@ -22,6 +22,7 @@
 #include <xen/numa.h>
 #include <asm/acpi.h>
 #include <xen/errno.h>
+#include <xen/pfn.h>
 
 static uint8_t (*node_distance_fn)(nodeid_t a, nodeid_t b);
 
@@ -164,7 +165,12 @@ void __init numa_init(void)
     if ( !ret )
         ret = numa_initmem_init(ram_start, ram_end);
 
+    if ( !ret )
+        return;
+
 no_numa:
+    numa_dummy_init(PFN_UP(ram_start),PFN_DOWN(ram_end));
+
     return;
 }
 
