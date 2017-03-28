@@ -120,43 +120,6 @@ static int __init acpi_parse_slit(struct acpi_table_header *table)
 }
 
 static int __init
-acpi_parse_x2apic_affinity(struct acpi_subtable_header *header,
-			   const unsigned long end)
-{
-	const struct acpi_srat_x2apic_cpu_affinity *processor_affinity
-		= container_of(header, struct acpi_srat_x2apic_cpu_affinity,
-			       header);
-
-	if (!header)
-		return -EINVAL;
-
-	acpi_table_print_srat_entry(header);
-
-	/* let architecture-dependent part to do it */
-	acpi_numa_x2apic_affinity_init(processor_affinity);
-
-	return 0;
-}
-
-static int __init
-acpi_parse_processor_affinity(struct acpi_subtable_header *header,
-			      const unsigned long end)
-{
-	const struct acpi_srat_cpu_affinity *processor_affinity
-		= container_of(header, struct acpi_srat_cpu_affinity, header);
-
-	if (!header)
-		return -EINVAL;
-
-	acpi_table_print_srat_entry(header);
-
-	/* let architecture-dependent part to do it */
-	acpi_numa_processor_affinity_init(processor_affinity);
-
-	return 0;
-}
-
-static int __init
 acpi_parse_memory_affinity(struct acpi_subtable_header *header,
 			   const unsigned long end)
 {
@@ -197,13 +160,11 @@ int __init acpi_numa_init(void)
 {
 	/* SRAT: Static Resource Affinity Table */
 	if (!acpi_table_parse(ACPI_SIG_SRAT, acpi_parse_srat)) {
-		acpi_table_parse_srat(ACPI_SRAT_TYPE_X2APIC_CPU_AFFINITY,
-				      acpi_parse_x2apic_affinity, 0);
-		acpi_table_parse_srat(ACPI_SRAT_TYPE_CPU_AFFINITY,
-				      acpi_parse_processor_affinity, 0);
 		acpi_table_parse_srat(ACPI_SRAT_TYPE_MEMORY_AFFINITY,
 				      acpi_parse_memory_affinity,
 				      NR_NODE_MEMBLKS);
+		/* This call handles architecture dependant SRAT */
+		arch_table_parse_srat();
 	}
 
 	/* SLIT: System Locality Information Table */

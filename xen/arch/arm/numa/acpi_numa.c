@@ -82,6 +82,11 @@ void __init acpi_map_uid_to_mpidr(void)
                     acpi_parse_madt_handler, NR_CPUS);
 }
 
+void __init arch_table_parse_srat(void)
+{
+    return;
+}
+
 void __init acpi_numa_arch_fixup(void) {}
 
 /*

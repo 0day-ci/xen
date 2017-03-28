@@ -95,7 +95,13 @@ void acpi_numa_slit_init (struct acpi_table_slit *slit);
 void acpi_numa_processor_affinity_init(const struct acpi_srat_cpu_affinity *);
 void acpi_numa_x2apic_affinity_init(const struct acpi_srat_x2apic_cpu_affinity *);
 void acpi_numa_memory_affinity_init(const struct acpi_srat_mem_affinity *);
+#ifdef CONFIG_ACPI_NUMA
 void acpi_numa_arch_fixup(void);
+void arch_table_parse_srat(void);
+#else
+static inline void acpi_numa_arch_fixup(void) { }
+static inline void arch_table_parse_srat(void) { }
+#endif
 
 #ifdef CONFIG_ACPI_HOTPLUG_CPU
 /* Arch dependent functions for cpu hotplug support */

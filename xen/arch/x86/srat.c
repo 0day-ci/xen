@@ -214,3 +214,47 @@ uint8_t __node_distance(nodeid_t a, nodeid_t b)
 }
 
 EXPORT_SYMBOL(__node_distance);
+
+static int __init
+acpi_parse_x2apic_affinity(struct acpi_subtable_header *header,
+			   const unsigned long end)
+{
+	const struct acpi_srat_x2apic_cpu_affinity *processor_affinity
+		= container_of(header, struct acpi_srat_x2apic_cpu_affinity,
+			       header);
+
+	if (!header)
+		return -EINVAL;
+
+	acpi_table_print_srat_entry(header);
+
+	/* let architecture-dependent part to do it */
+	acpi_numa_x2apic_affinity_init(processor_affinity);
+
+	return 0;
+}
+
+static int __init
+acpi_parse_processor_affinity(struct acpi_subtable_header *header,
+			      const unsigned long end)
+{
+	const struct acpi_srat_cpu_affinity *processor_affinity
+		= container_of(header, struct acpi_srat_cpu_affinity, header);
+
+	if (!header)
+		return -EINVAL;
+
+	acpi_table_print_srat_entry(header);
+
+	acpi_numa_processor_affinity_init(processor_affinity);
+
+	return 0;
+}
+
+void __init arch_table_parse_srat(void)
+{
+	acpi_table_parse_srat(ACPI_SRAT_TYPE_X2APIC_CPU_AFFINITY,
+			      acpi_parse_x2apic_affinity, 0);
+	acpi_table_parse_srat(ACPI_SRAT_TYPE_CPU_AFFINITY,
+			      acpi_parse_processor_affinity, 0);
+}
