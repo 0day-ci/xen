@@ -29,6 +29,7 @@
 #include <xen/timer.h>
 #include <xen/irq.h>
 #include <xen/console.h>
+#include <xen/numa.h>
 #include <asm/cpuerrata.h>
 #include <asm/gic.h>
 #include <asm/psci.h>
@@ -106,6 +107,7 @@ static void __init dt_smp_init_cpus(void)
         [0 ... NR_CPUS - 1] = MPIDR_INVALID
     };
     bool_t bootcpu_valid = 0;
+    nodeid_t *cpu_to_nodemap;
     int rc;
 
     mpidr = boot_cpu_data.mpidr.bits & MPIDR_HWID_MASK;
@@ -117,11 +119,18 @@ static void __init dt_smp_init_cpus(void)
         return;
     }
 
+    cpu_to_nodemap = xzalloc_array(nodeid_t, NR_CPUS);
+    if ( !cpu_to_nodemap )
+    {
+        printk(XENLOG_WARNING "Failed to allocate memory for cpu_to_nodemap\n");
+        return;
+    }
+
     dt_for_each_child_node( cpus, cpu )
     {
         const __be32 *prop;
         u64 addr;
-        u32 reg_len;
+        u32 reg_len, nid;
         register_t hwid;
 
         if ( !dt_device_type_is_equal(cpu, "cpu") )
@@ -145,6 +154,15 @@ static void __init dt_smp_init_cpus(void)
                    dt_node_full_name(cpu));
             continue;
         }
+
+        if ( !dt_property_read_u32(cpu, "numa-node-id", &nid) )
+        {
+            printk(XENLOG_WARNING "cpu node `%s`: numa-node-id not found\n",
+                   dt_node_full_name(cpu));
+            nid = 0;
+        }
+
+        cpu_to_nodemap[cpuidx] = nid;
 
         addr = dt_read_number(prop, dt_n_addr_cells(cpu));
 
@@ -224,6 +242,7 @@ static void __init dt_smp_init_cpus(void)
     {
         printk(XENLOG_WARNING "DT missing boot CPU MPIDR[23:0]\n"
                "Using only 1 CPU\n");
+        xfree(cpu_to_nodemap);
         return;
     }
 
@@ -233,7 +252,10 @@ static void __init dt_smp_init_cpus(void)
             continue;
         cpumask_set_cpu(i, &cpu_possible_map);
         cpu_logical_map(i) = tmp_map[i];
+        numa_set_cpu_node(i, cpu_to_nodemap[i]);
     }
+
+    xfree(cpu_to_nodemap);
 }
 
 void __init smp_init_cpus(void)
@@ -313,6 +335,7 @@ void start_secondary(unsigned long boot_phys_offset,
      */
     smp_wmb();
 
+    numa_add_cpu(cpuid);
     /* Now report this CPU is up */
     cpumask_set_cpu(cpuid, &cpu_online_map);
 

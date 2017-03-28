@@ -14,10 +14,34 @@ extern uint8_t __node_distance(nodeid_t a, nodeid_t b);
 #ifdef CONFIG_NUMA
 extern void numa_init(void);
 extern int dt_numa_init(void);
+extern void numa_set_cpu_node(int cpu, unsigned int nid);
+extern void numa_add_cpu(int cpu);
+
+extern nodeid_t      cpu_to_node[NR_CPUS];
+extern cpumask_t     node_to_cpumask[];
+/* Simple perfect hash to map pdx to node numbers */
+extern unsigned int memnode_shift;
+extern uint8_t *memnodemap;
+
+#define cpu_to_node(cpu)         (cpu_to_node[cpu])
+#define parent_node(node)        (node)
+#define node_to_first_cpu(node)  (__ffs(node_to_cpumask[node]))
+#define node_to_cpumask(node)    (node_to_cpumask[node])
+
 #else
 static inline void numa_init(void)
 {
     return;
+}
+
+static inline void numa_set_cpu_node(int cpu, unsigned int nid)
+{
+    return;
+}
+
+static inline void numa_add_cpu(int cpu)
+{
+     return;
 }
 
 /* Fake one node for now. See also node_online_map. */
