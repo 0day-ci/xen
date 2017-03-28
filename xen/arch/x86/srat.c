@@ -153,7 +153,7 @@ static void __init bad_srat(void)
 {
 	int i;
 	printk(KERN_ERR "SRAT: SRAT not used.\n");
-	acpi_numa = -1;
+	set_acpi_numa(0);
 	for (i = 0; i < MAX_LOCAL_APIC; i++)
 		apicid_to_node[i] = NUMA_NO_NODE;
 	for (i = 0; i < ARRAY_SIZE(pxm2node); i++)
@@ -232,7 +232,7 @@ acpi_numa_x2apic_affinity_init(const struct acpi_srat_x2apic_cpu_affinity *pa)
 
 	apicid_to_node[pa->apic_id] = node;
 	node_set(node, processor_nodes_parsed);
-	acpi_numa = 1;
+	set_acpi_numa(1);
 	printk(KERN_INFO "SRAT: PXM %u -> APIC %08x -> Node %u\n",
 	       pxm, pa->apic_id, node);
 }
@@ -265,7 +265,7 @@ acpi_numa_processor_affinity_init(const struct acpi_srat_cpu_affinity *pa)
 	}
 	apicid_to_node[pa->apic_id] = node;
 	node_set(node, processor_nodes_parsed);
-	acpi_numa = 1;
+	set_acpi_numa(1);
 	printk(KERN_INFO "SRAT: PXM %u -> APIC %02x -> Node %u\n",
 	       pxm, pa->apic_id, node);
 }
@@ -418,7 +418,7 @@ static int __init srat_parse_region(struct acpi_subtable_header *header,
 	    (ma->flags & ACPI_SRAT_MEM_NON_VOLATILE))
 		return 0;
 
-	if (numa_off)
+	if (is_numa_off())
 		printk(KERN_INFO "SRAT: %013"PRIx64"-%013"PRIx64"\n",
 		       ma->base_address, ma->base_address + ma->length - 1);
 
@@ -433,7 +433,7 @@ void __init srat_parse_regions(uint64_t addr)
 	uint64_t mask;
 	unsigned int i;
 
-	if (acpi_disabled || acpi_numa < 0 ||
+	if (acpi_disabled || (get_acpi_numa() == 0) ||
 	    acpi_table_parse(ACPI_SIG_SRAT, acpi_parse_srat))
 		return;
 
@@ -462,7 +462,7 @@ int __init acpi_scan_nodes(uint64_t start, uint64_t end)
 	for (i = 0; i < MAX_NUMNODES; i++)
 		cutoff_node(i, start, end);
 
-	if (acpi_numa <= 0)
+	if (get_acpi_numa() == 0)
 		return -1;
 
 	if (!nodes_cover_memory()) {

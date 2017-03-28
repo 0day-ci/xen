@@ -18,4 +18,7 @@
   (((d)->vcpu != NULL && (d)->vcpu[0] != NULL) \
    ? vcpu_to_node((d)->vcpu[0]) : NUMA_NO_NODE)
 
+bool is_numa_off(void);
+bool get_acpi_numa(void);
+void set_acpi_numa(bool val);
 #endif /* _XEN_NUMA_H */

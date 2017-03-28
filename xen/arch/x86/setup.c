@@ -241,7 +241,7 @@ void srat_detect_node(int cpu)
     node_set_online(node);
     numa_set_node(cpu, node);
 
-    if ( opt_cpu_info && acpi_numa > 0 )
+    if ( opt_cpu_info && get_acpi_numa() )
         printk("CPU %d APIC %d -> Node %d\n", cpu, apicid, node);
 }
 

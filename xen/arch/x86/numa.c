@@ -42,12 +42,27 @@ cpumask_t __read_mostly node_to_cpumask[MAX_NUMNODES];
 
 nodemask_t __read_mostly node_online_map = { { [0] = 1UL } };
 
-bool numa_off = 0;
-s8 acpi_numa = 0;
+static bool numa_off = 0;
+static bool acpi_numa = 1;
 
-int srat_disabled(void)
+bool is_numa_off(void)
 {
-    return numa_off || acpi_numa < 0;
+    return numa_off;
+}
+
+bool get_acpi_numa(void)
+{
+    return acpi_numa;
+}
+
+void set_acpi_numa(bool_t val)
+{
+    acpi_numa = val;
+}
+
+bool srat_disabled(void)
+{
+    return numa_off || acpi_numa == 0;
 }
 
 /*
@@ -202,13 +217,17 @@ void __init numa_init_array(void)
 
 #ifdef CONFIG_NUMA_EMU
 static int __initdata numa_fake = 0;
+static int get_numa_fake(void)
+{
+    return numa_fake;
+}
 
 /* Numa emulation */
 static int __init numa_emulation(uint64_t start_pfn, uint64_t end_pfn)
 {
     int i;
     struct node nodes[MAX_NUMNODES];
-    uint64_t sz = ((end_pfn - start_pfn) << PAGE_SHIFT) / numa_fake;
+    uint64_t sz = ((end_pfn - start_pfn) << PAGE_SHIFT) / get_numa_fake();
 
     /* Kludge needed for the hash function */
     if ( hweight64(sz) > 1 )
@@ -223,10 +242,10 @@ static int __init numa_emulation(uint64_t start_pfn, uint64_t end_pfn)
     }
 
     memset(&nodes,0,sizeof(nodes));
-    for ( i = 0; i < numa_fake; i++ )
+    for ( i = 0; i < get_numa_fake(); i++ )
     {
         nodes[i].start = (start_pfn << PAGE_SHIFT) + i * sz;
-        if ( i == numa_fake - 1 )
+        if ( i == get_numa_fake() - 1 )
             sz = (end_pfn << PAGE_SHIFT) - nodes[i].start;
         nodes[i].end = nodes[i].start + sz;
         printk(KERN_INFO
@@ -235,7 +254,7 @@ static int __init numa_emulation(uint64_t start_pfn, uint64_t end_pfn)
                (nodes[i].end - nodes[i].start) >> 20);
         node_set_online(i);
     }
-    if ( compute_memnode_shift(nodes, numa_fake, NULL, &memnode_shift) )
+    if ( compute_memnode_shift(nodes, get_numa_fake(), NULL, &memnode_shift) )
     {
         memnode_shift = 0;
         printk(KERN_ERR "No NUMA hash function found. Emulation disabled.\n");
@@ -254,18 +273,18 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
     int i;
 
 #ifdef CONFIG_NUMA_EMU
-    if ( numa_fake && !numa_emulation(start_pfn, end_pfn) )
+    if ( get_numa_fake() && !numa_emulation(start_pfn, end_pfn) )
         return;
 #endif
 
 #ifdef CONFIG_ACPI_NUMA
-    if ( !numa_off && !acpi_scan_nodes((uint64_t)start_pfn << PAGE_SHIFT,
+    if ( !is_numa_off() && !acpi_scan_nodes((uint64_t)start_pfn << PAGE_SHIFT,
          (uint64_t)end_pfn << PAGE_SHIFT) )
         return;
 #endif
 
     printk(KERN_INFO "%s\n",
-           numa_off ? "NUMA turned off" : "No NUMA configuration found");
+           is_numa_off() ? "NUMA turned off" : "No NUMA configuration found");
 
     printk(KERN_INFO "Faking a node at %016"PRIx64"-%016"PRIx64"\n",
            (uint64_t)start_pfn << PAGE_SHIFT,
@@ -312,7 +331,7 @@ static int __init numa_setup(char *opt)
     if ( !strncmp(opt,"noacpi",6) )
     {
         numa_off = 0;
-        acpi_numa = -1;
+        acpi_numa = 0;
     }
 #endif
 
