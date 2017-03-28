@@ -70,9 +70,74 @@ void numa_failed(void)
     init_cpu_to_node();
 }
 
+int __init arch_sanitize_nodes_memory(void)
+{
+    nodemask_t mem_nodes_parsed;
+    int bank, nodeid;
+    struct node *nd;
+    paddr_t start, size, end;
+
+    nodes_clear(mem_nodes_parsed);
+    for ( bank = 0 ; bank < bootinfo.mem.nr_banks; bank++ )
+    {
+        start = bootinfo.mem.bank[bank].start;
+        size = bootinfo.mem.bank[bank].size;
+        end = start + size;
+
+        nodeid = get_mem_nodeid(start, end);
+        if ( nodeid >= NUMA_NO_NODE )
+        {
+            printk(XENLOG_WARNING
+                   "NUMA: node for mem bank start 0x%lx - 0x%lx not found\n",
+                   start, end);
+
+            return 0;
+        }
+
+        nd = get_numa_node(nodeid);
+        if ( !node_test_and_set(nodeid, mem_nodes_parsed) )
+        {
+            nd->start = start;
+            nd->end = end;
+        }
+        else
+        {
+            if ( start < nd->start )
+                nd->start = start;
+            if ( nd->end < end )
+                nd->end = end;
+        }
+    }
+
+    return 1;
+}
+
+static bool_t __init numa_initmem_init(paddr_t ram_start, paddr_t ram_end)
+{
+    int i;
+    struct node *nd;
+    /*
+     * In arch_sanitize_nodes_memory() we update nodes[] with properly.
+     * Hence we reset the nodes[] before calling numa_scan_nodes().
+     */
+    for ( i = 0; i < MAX_NUMNODES; i++ )
+    {
+        nd = get_numa_node(i);
+        nd->start = 0;
+        nd->end = 0;
+    }
+
+    if ( !numa_scan_nodes(ram_start, ram_end) )
+            return 0;
+
+    return 1;
+}
+
 void __init numa_init(void)
 {
-    int ret = 0;
+    int ret = 0, bank;
+    paddr_t ram_start = ~0;
+    paddr_t ram_end = 0;
 
     nodes_clear(processor_nodes_parsed);
     init_cpu_to_node();
@@ -86,6 +151,18 @@ void __init numa_init(void)
     ret = dt_numa_init();
     if ( ret )
         printk(XENLOG_WARNING "DT NUMA init failed\n");
+
+    for ( bank = 0 ; bank < bootinfo.mem.nr_banks; bank++ )
+    {
+        paddr_t bank_start = bootinfo.mem.bank[bank].start;
+        paddr_t bank_end = bank_start + bootinfo.mem.bank[bank].size;
+
+        ram_start = min(ram_start, bank_start);
+        ram_end = max(ram_end, bank_end);
+    }
+
+    if ( !ret )
+        ret = numa_initmem_init(ram_start, ram_end);
 
 no_numa:
     return;

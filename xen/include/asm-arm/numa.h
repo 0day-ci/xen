@@ -1,6 +1,8 @@
 #ifndef __ARCH_ARM_NUMA_H
 #define __ARCH_ARM_NUMA_H
 
+#include <xen/mm.h>
+
 typedef uint8_t nodeid_t;
 
 /* Limit number of NUMA nodes supported to 4 */
@@ -27,6 +29,23 @@ extern uint8_t *memnodemap;
 #define parent_node(node)        (node)
 #define node_to_first_cpu(node)  (__ffs(node_to_cpumask[node]))
 #define node_to_cpumask(node)    (node_to_cpumask[node])
+
+static inline __attribute__((pure)) nodeid_t phys_to_nid(paddr_t addr)
+{
+    return memnodemap[paddr_to_pdx(addr) >> memnode_shift];
+}
+
+struct node_data {
+    unsigned long node_start_pfn;
+    unsigned long node_spanned_pages;
+};
+
+extern struct node_data node_data[];
+#define NODE_DATA(nid)          (&(node_data[nid]))
+
+#define node_start_pfn(nid)     (NODE_DATA(nid)->node_start_pfn)
+#define node_spanned_pages(nid) (NODE_DATA(nid)->node_spanned_pages)
+#define node_end_pfn(nid)       (NODE_DATA(nid)->node_start_pfn + \
 
 #else
 static inline void numa_init(void)

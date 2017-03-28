@@ -38,6 +38,7 @@ extern nodeid_t *get_memblk_nodeid_map(void);
 extern struct node *get_node_memblk_range(int memblk);
 extern struct node *get_memblk(int memblk);
 extern int numa_add_memblk(nodeid_t nodeid, paddr_t start, uint64_t size);
+extern int get_mem_nodeid(paddr_t start, paddr_t end);
 extern int get_num_node_memblks(void);
 extern int arch_sanitize_nodes_memory(void);
 extern void numa_failed(void);
