@@ -23,9 +23,8 @@
 
 static struct acpi_table_slit *__read_mostly acpi_slit;
 
-static nodemask_t __initdata memory_nodes_parsed;
-static nodemask_t __initdata processor_nodes_parsed;
-static struct node __initdata nodes[MAX_NUMNODES];
+extern nodemask_t processor_nodes_parsed;
+extern nodemask_t memory_nodes_parsed;
 
 /*
  * Keep BIOS's CPU2node information, should not be used for memory allocaion
@@ -43,48 +42,7 @@ static struct pxm2node __read_mostly pxm2node[MAX_NUMNODES] =
 
 static unsigned node_to_pxm(nodeid_t n);
 
-static int num_node_memblks;
-static struct node node_memblk_range[NR_NODE_MEMBLKS];
-static nodeid_t memblk_nodeid[NR_NODE_MEMBLKS];
 static __initdata DECLARE_BITMAP(memblk_hotplug, NR_NODE_MEMBLKS);
-
-static struct node *get_numa_node(int id)
-{
-	return &nodes[id];
-}
-
-static nodeid_t get_memblk_nodeid(int id)
-{
-	return memblk_nodeid[id];
-}
-
-static nodeid_t *get_memblk_nodeid_map(void)
-{
-	return &memblk_nodeid[0];
-}
-
-static struct node *get_node_memblk_range(int memblk)
-{
-	return &node_memblk_range[memblk];
-}
-
-static int get_num_node_memblks(void)
-{
-	return num_node_memblks;
-}
-
-static int __init numa_add_memblk(nodeid_t nodeid, paddr_t start, uint64_t size)
-{
-	if (nodeid >= NR_NODE_MEMBLKS)
-		return -EINVAL;
-
-	node_memblk_range[num_node_memblks].start = start;
-	node_memblk_range[num_node_memblks].end = start + size;
-	memblk_nodeid[num_node_memblks] = nodeid;
-	num_node_memblks++;
-
-	return 0;
-}
 
 static inline bool node_found(unsigned int idx, unsigned int pxm)
 {
@@ -156,54 +114,7 @@ nodeid_t acpi_setup_node(unsigned int pxm)
 	return node;
 }
 
-int valid_numa_range(paddr_t start, paddr_t end, nodeid_t node)
-{
-	int i;
-
-	for (i = 0; i < get_num_node_memblks(); i++) {
-		struct node *nd = get_node_memblk_range(i);
-
-		if (nd->start <= start && nd->end > end &&
-		    get_memblk_nodeid(i) == node)
-			return 1;
-	}
-
-	return 0;
-}
-
-static int __init conflicting_memblks(paddr_t start, paddr_t end)
-{
-	int i;
-
-	for (i = 0; i < get_num_node_memblks(); i++) {
-		struct node *nd = get_node_memblk_range(i);
-		if (nd->start == nd->end)
-			continue;
-		if (nd->end > start && nd->start < end)
-			return i;
-		if (nd->end == end && nd->start == start)
-			return i;
-	}
-	return -1;
-}
-
-static void __init cutoff_node(int i, paddr_t start, paddr_t end)
-{
-	struct node *nd = get_numa_node(i);
-
-	if (nd->start < start) {
-		nd->start = start;
-		if (nd->end < nd->start)
-			nd->start = nd->end;
-	}
-	if (nd->end > end) {
-		nd->end = end;
-		if (nd->start > nd->end)
-			nd->start = nd->end;
-	}
-}
-
-static void __init numa_failed(void)
+void __init numa_failed(void)
 {
 	int i;
 	printk(KERN_ERR "SRAT: SRAT not used.\n");
@@ -419,7 +330,7 @@ acpi_numa_memory_affinity_init(const struct acpi_srat_mem_affinity *ma)
 
 /* Sanity check to catch more bad SRATs (they are amazingly common).
    Make sure the PXMs cover all memory. */
-static int __init arch_sanitize_nodes_memory(void)
+int __init arch_sanitize_nodes_memory(void)
 {
 	int i;
 
@@ -514,61 +425,6 @@ void __init srat_parse_regions(uint64_t addr)
 	}
 
 	pfn_pdx_hole_setup(mask >> PAGE_SHIFT);
-}
-
-/* Use the information discovered above to actually set up the nodes. */
-int __init numa_scan_nodes(uint64_t start, uint64_t end)
-{
-	int i;
-	nodemask_t all_nodes_parsed;
-	struct node *memblks;
-	nodeid_t *nodeids;
-
-	/* First clean up the node list */
-	for (i = 0; i < MAX_NUMNODES; i++)
-		cutoff_node(i, start, end);
-
-	if (get_acpi_numa() == 0)
-		return -1;
-
-	if (!arch_sanitize_nodes_memory()) {
-		numa_failed();
-		return -1;
-	}
-
-	memblks = get_node_memblk_range(0);
-	nodeids = get_memblk_nodeid_map();
-	if (compute_memnode_shift(node_memblk_range, num_node_memblks,
-				  memblk_nodeid, &memnode_shift)) {
-		memnode_shift = 0;
-		printk(KERN_ERR
-		     "SRAT: No NUMA node hash function found. Contact maintainer\n");
-		numa_failed();
-		return -1;
-	}
-
-	nodes_or(all_nodes_parsed, memory_nodes_parsed, processor_nodes_parsed);
-
-	/* Finally register nodes */
-	for_each_node_mask(i, all_nodes_parsed)
-	{
-		struct node *nd = get_numa_node(i);
-		uint64_t size = nd->end - nd->start;
-
-		if ( size == 0 )
-			printk(KERN_WARNING "SRAT: Node %u has no memory. "
-			       "BIOS Bug or mis-configured hardware?\n", i);
-
-		setup_node_bootmem(i, nd->start, nd->end);
-	}
-	for (i = 0; i < nr_cpu_ids; i++) {
-		if (cpu_to_node[i] == NUMA_NO_NODE)
-			continue;
-		if (!node_isset(cpu_to_node[i], processor_nodes_parsed))
-			numa_set_node(i, NUMA_NO_NODE);
-	}
-	numa_init_array();
-	return 0;
 }
 
 static unsigned node_to_pxm(nodeid_t n)

@@ -13,6 +13,7 @@
 #define NUMA_NO_DISTANCE 0xFF
 
 #define MAX_NUMNODES    (1 << NODES_SHIFT)
+#define NR_NODE_MEMBLKS (MAX_NUMNODES * 2)
 
 struct node {
     paddr_t start;
@@ -28,6 +29,19 @@ extern nodeid_t acpi_setup_node(unsigned int pxm);
 extern void srat_detect_node(int cpu);
 extern void setup_node_bootmem(nodeid_t nodeid, paddr_t start, paddr_t end);
 extern void init_cpu_to_node(void);
+extern int valid_numa_range(paddr_t start, paddr_t end, nodeid_t node);
+extern int conflicting_memblks(paddr_t start, paddr_t end);
+extern void cutoff_node(int i, paddr_t start, paddr_t end);
+extern struct node *get_numa_node(int id);
+extern nodeid_t get_memblk_nodeid(int memblk);
+extern nodeid_t *get_memblk_nodeid_map(void);
+extern struct node *get_node_memblk_range(int memblk);
+extern struct node *get_memblk(int memblk);
+extern int numa_add_memblk(nodeid_t nodeid, paddr_t start, uint64_t size);
+extern int get_num_node_memblks(void);
+extern int arch_sanitize_nodes_memory(void);
+extern void numa_failed(void);
+extern int numa_scan_nodes(uint64_t start, uint64_t end);
 
 #define vcpu_to_node(v) (cpu_to_node((v)->processor))
 

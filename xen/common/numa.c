@@ -32,6 +32,8 @@
 static int numa_setup(char *s);
 custom_param("numa", numa_setup);
 
+nodemask_t __initdata memory_nodes_parsed;
+nodemask_t __initdata processor_nodes_parsed;
 struct node_data node_data[MAX_NUMNODES];
 
 /* Mapping from pdx to node id */
@@ -47,6 +49,10 @@ cpumask_t __read_mostly node_to_cpumask[MAX_NUMNODES];
 
 static bool numa_off = 0;
 static bool acpi_numa = 1;
+static int num_node_memblks;
+static struct node node_memblk_range[NR_NODE_MEMBLKS];
+static nodeid_t memblk_nodeid[NR_NODE_MEMBLKS];
+static struct node __initdata nodes[MAX_NUMNODES];
 
 bool is_numa_off(void)
 {
@@ -66,6 +72,91 @@ void set_acpi_numa(bool_t val)
 bool srat_disabled(void)
 {
     return numa_off || acpi_numa == 0;
+}
+
+struct node *get_numa_node(int id)
+{
+    return &nodes[id];
+}
+
+nodeid_t get_memblk_nodeid(int id)
+{
+    return memblk_nodeid[id];
+}
+
+nodeid_t *get_memblk_nodeid_map(void)
+{
+    return &memblk_nodeid[0];
+}
+
+struct node *get_node_memblk_range(int memblk)
+{
+    return &node_memblk_range[memblk];
+}
+
+int get_num_node_memblks(void)
+{
+    return num_node_memblks;
+}
+
+int __init numa_add_memblk(nodeid_t nodeid, paddr_t start, uint64_t size)
+{
+    if (nodeid >= NR_NODE_MEMBLKS)
+        return -EINVAL;
+
+    node_memblk_range[num_node_memblks].start = start;
+    node_memblk_range[num_node_memblks].end = start + size;
+    memblk_nodeid[num_node_memblks] = nodeid;
+    num_node_memblks++;
+
+    return 0;
+}
+
+int valid_numa_range(paddr_t start, paddr_t end, nodeid_t node)
+{
+    int i;
+
+    for (i = 0; i < get_num_node_memblks(); i++) {
+        struct node *nd = get_node_memblk_range(i);
+
+        if (nd->start <= start && nd->end > end &&
+            get_memblk_nodeid(i) == node)
+            return 1;
+    }
+
+    return 0;
+}
+
+int __init conflicting_memblks(paddr_t start, paddr_t end)
+{
+    int i;
+
+    for (i = 0; i < get_num_node_memblks(); i++) {
+        struct node *nd = get_node_memblk_range(i);
+        if (nd->start == nd->end)
+            continue;
+        if (nd->end > start && nd->start < end)
+            return i;
+        if (nd->end == end && nd->start == start)
+            return i;
+    }
+    return -1;
+}
+
+void __init cutoff_node(int i, paddr_t start, paddr_t end)
+{
+    struct node *nd = get_numa_node(i);
+
+    if (nd->start < start) {
+        nd->start = start;
+        if (nd->end < nd->start)
+            nd->start = nd->end;
+    }
+    if (nd->end > end) {
+        nd->end = end;
+        if (nd->start > nd->end)
+            nd->start = nd->end;
+    }
 }
 
 /*
@@ -304,6 +395,61 @@ void numa_add_cpu(int cpu)
 void numa_set_node(int cpu, nodeid_t node)
 {
     cpu_to_node[cpu] = node;
+}
+
+/* Use the information discovered above to actually set up the nodes. */
+int __init numa_scan_nodes(uint64_t start, uint64_t end)
+{
+    int i;
+    nodemask_t all_nodes_parsed;
+    struct node *memblks;
+    nodeid_t *nodeids;
+
+    /* First clean up the node list */
+    for (i = 0; i < MAX_NUMNODES; i++)
+        cutoff_node(i, start, end);
+
+    if (get_acpi_numa() == 0)
+        return -1;
+
+    if (!arch_sanitize_nodes_memory()) {
+        numa_failed();
+        return -1;
+    }
+
+    memblks = get_node_memblk_range(0);
+    nodeids = get_memblk_nodeid_map();
+    if (compute_memnode_shift(node_memblk_range, num_node_memblks,
+                  memblk_nodeid, &memnode_shift)) {
+        memnode_shift = 0;
+        printk(KERN_ERR
+             "SRAT: No NUMA node hash function found. Contact maintainer\n");
+        numa_failed();
+        return -1;
+    }
+
+    nodes_or(all_nodes_parsed, memory_nodes_parsed, processor_nodes_parsed);
+
+    /* Finally register nodes */
+    for_each_node_mask(i, all_nodes_parsed)
+    {
+        struct node *nd = get_numa_node(i);
+        uint64_t size = nd->end - nd->start;
+
+        if ( size == 0 )
+            printk(KERN_WARNING "SRAT: Node %u has no memory. "
+                   "BIOS Bug or mis-configured hardware?\n", i);
+
+        setup_node_bootmem(i, nd->start, nd->end);
+    }
+    for (i = 0; i < nr_cpu_ids; i++) {
+        if (cpu_to_node[i] == NUMA_NO_NODE)
+            continue;
+        if (!node_isset(cpu_to_node[i], processor_nodes_parsed))
+            numa_set_node(i, NUMA_NO_NODE);
+    }
+    numa_init_array();
+    return 0;
 }
 
 /* [numa=off] */
