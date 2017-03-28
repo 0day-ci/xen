@@ -23,12 +23,12 @@
 
 static struct acpi_table_slit *__read_mostly acpi_slit;
 
-static nodemask_t memory_nodes_parsed __initdata;
-static nodemask_t processor_nodes_parsed __initdata;
-static struct node nodes[MAX_NUMNODES] __initdata;
+static nodemask_t __initdata memory_nodes_parsed;
+static nodemask_t __initdata processor_nodes_parsed;
+static struct node __initdata nodes[MAX_NUMNODES];
 
 struct pxm2node {
-	unsigned pxm;
+	unsigned int pxm;
 	nodeid_t node;
 };
 static struct pxm2node __read_mostly pxm2node[MAX_NUMNODES] =
@@ -41,15 +41,15 @@ static struct node node_memblk_range[NR_NODE_MEMBLKS];
 static nodeid_t memblk_nodeid[NR_NODE_MEMBLKS];
 static __initdata DECLARE_BITMAP(memblk_hotplug, NR_NODE_MEMBLKS);
 
-static inline bool_t node_found(unsigned idx, unsigned pxm)
+static inline bool node_found(unsigned idx, unsigned pxm)
 {
 	return ((pxm2node[idx].pxm == pxm) &&
 		(pxm2node[idx].node != NUMA_NO_NODE));
 }
 
-nodeid_t pxm_to_node(unsigned pxm)
+nodeid_t pxm_to_node(unsigned int pxm)
 {
-	unsigned i;
+	unsigned int i;
 
 	if ((pxm < ARRAY_SIZE(pxm2node)) && node_found(pxm, pxm))
 		return pxm2node[pxm].node;
@@ -64,9 +64,9 @@ nodeid_t pxm_to_node(unsigned pxm)
 nodeid_t setup_node(unsigned pxm)
 {
 	nodeid_t node;
-	unsigned idx;
-	static bool_t warned;
-	static unsigned nodes_found;
+	unsigned int idx;
+	static bool warned;
+	static unsigned int nodes_found;
 
 	BUILD_BUG_ON(MAX_NUMNODES >= NUMA_NO_NODE);
 
@@ -103,7 +103,7 @@ nodeid_t setup_node(unsigned pxm)
 	return node;
 }
 
-int valid_numa_range(u64 start, u64 end, nodeid_t node)
+int valid_numa_range(paddr_t start, paddr_t end, nodeid_t node)
 {
 	int i;
 
@@ -118,7 +118,7 @@ int valid_numa_range(u64 start, u64 end, nodeid_t node)
 	return 0;
 }
 
-static __init int conflicting_memblks(u64 start, u64 end)
+static int __init conflicting_memblks(paddr_t start, paddr_t end)
 {
 	int i;
 
@@ -134,7 +134,7 @@ static __init int conflicting_memblks(u64 start, u64 end)
 	return -1;
 }
 
-static __init void cutoff_node(int i, u64 start, u64 end)
+static void __init cutoff_node(int i, paddr_t start, paddr_t end)
 {
 	struct node *nd = &nodes[i];
 	if (nd->start < start) {
@@ -149,7 +149,7 @@ static __init void cutoff_node(int i, u64 start, u64 end)
 	}
 }
 
-static __init void bad_srat(void)
+static void __init bad_srat(void)
 {
 	int i;
 	printk(KERN_ERR "SRAT: SRAT not used.\n");
@@ -167,13 +167,13 @@ static __init void bad_srat(void)
  * distance than the others.
  * Do some quick checks here and only use the SLIT if it passes.
  */
-static __init int slit_valid(struct acpi_table_slit *slit)
+static int __init slit_valid(struct acpi_table_slit *slit)
 {
 	int i, j;
 	int d = slit->locality_count;
 	for (i = 0; i < d; i++) {
 		for (j = 0; j < d; j++)  {
-			u8 val = slit->entry[d*i + j];
+			uint8_t val = slit->entry[d*i + j];
 			if (i == j) {
 				if (val != 10)
 					return 0;
@@ -274,7 +274,7 @@ acpi_numa_processor_affinity_init(const struct acpi_srat_cpu_affinity *pa)
 void __init
 acpi_numa_memory_affinity_init(const struct acpi_srat_mem_affinity *ma)
 {
-	u64 start, end;
+	uint64_t start, end;
 	unsigned pxm;
 	nodeid_t node;
 	int i;
@@ -311,8 +311,8 @@ acpi_numa_memory_affinity_init(const struct acpi_srat_mem_affinity *ma)
 	if (i < 0)
 		/* everything fine */;
 	else if (memblk_nodeid[i] == node) {
-		bool_t mismatch = !(ma->flags & ACPI_SRAT_MEM_HOT_PLUGGABLE) !=
-		                  !test_bit(i, memblk_hotplug);
+		bool mismatch = !(ma->flags & ACPI_SRAT_MEM_HOT_PLUGGABLE) !=
+		                !test_bit(i, memblk_hotplug);
 
 		printk("%sSRAT: PXM %u (%"PRIx64"-%"PRIx64") overlaps with itself (%"PRIx64"-%"PRIx64")\n",
 		       mismatch ? KERN_ERR : KERN_WARNING, pxm, start, end,
@@ -401,7 +401,7 @@ static int __init nodes_cover_memory(void)
 
 void __init acpi_numa_arch_fixup(void) {}
 
-static u64 __initdata srat_region_mask;
+static uint64_t __initdata srat_region_mask;
 
 static int __init srat_parse_region(struct acpi_subtable_header *header,
 				    const unsigned long end)
@@ -428,9 +428,9 @@ static int __init srat_parse_region(struct acpi_subtable_header *header,
 	return 0;
 }
 
-void __init srat_parse_regions(u64 addr)
+void __init srat_parse_regions(uint64_t addr)
 {
-	u64 mask;
+	uint64_t mask;
 	unsigned int i;
 
 	if (acpi_disabled || acpi_numa < 0 ||
@@ -453,7 +453,7 @@ void __init srat_parse_regions(u64 addr)
 }
 
 /* Use the information discovered above to actually set up the nodes. */
-int __init acpi_scan_nodes(u64 start, u64 end)
+int __init acpi_scan_nodes(uint64_t start, uint64_t end)
 {
 	int i;
 	nodemask_t all_nodes_parsed;
@@ -485,7 +485,7 @@ int __init acpi_scan_nodes(u64 start, u64 end)
 	/* Finally register nodes */
 	for_each_node_mask(i, all_nodes_parsed)
 	{
-		u64 size = nodes[i].end - nodes[i].start;
+		uint64_t size = nodes[i].end - nodes[i].start;
 		if ( size == 0 )
 			printk(KERN_WARNING "SRAT: Node %u has no memory. "
 			       "BIOS Bug or mis-configured hardware?\n", i);
@@ -514,10 +514,10 @@ static unsigned node_to_pxm(nodeid_t n)
 	return 0;
 }
 
-u8 __node_distance(nodeid_t a, nodeid_t b)
+uint8_t __node_distance(nodeid_t a, nodeid_t b)
 {
 	unsigned index;
-	u8 slit_val;
+	uint8_t slit_val;
 
 	if (!acpi_slit)
 		return a == b ? 10 : 20;

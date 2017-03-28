@@ -1,7 +1,7 @@
 #ifndef __ARCH_ARM_NUMA_H
 #define __ARCH_ARM_NUMA_H
 
-typedef u8 nodeid_t;
+typedef uint8_t nodeid_t;
 
 /* Fake one node for now. See also node_online_map. */
 #define cpu_to_node(cpu) 0

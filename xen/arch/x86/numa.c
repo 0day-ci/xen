@@ -24,12 +24,12 @@ custom_param("numa", numa_setup);
 struct node_data node_data[MAX_NUMNODES];
 
 /* Mapping from pdx to node id */
-int memnode_shift;
+unsigned int memnode_shift;
 static typeof(*memnodemap) _memnodemap[64];
 unsigned long memnodemapsize;
-u8 *memnodemap;
+uint8_t *memnodemap;
 
-nodeid_t cpu_to_node[NR_CPUS] __read_mostly = {
+nodeid_t __read_mostly cpu_to_node[NR_CPUS] = {
     [0 ... NR_CPUS-1] = NUMA_NO_NODE
 };
 /*
@@ -38,11 +38,11 @@ nodeid_t cpu_to_node[NR_CPUS] __read_mostly = {
 nodeid_t apicid_to_node[MAX_LOCAL_APIC] = {
     [0 ... MAX_LOCAL_APIC-1] = NUMA_NO_NODE
 };
-cpumask_t node_to_cpumask[MAX_NUMNODES] __read_mostly;
+cpumask_t __read_mostly node_to_cpumask[MAX_NUMNODES];
 
 nodemask_t __read_mostly node_online_map = { { [0] = 1UL } };
 
-bool_t numa_off = 0;
+bool numa_off = 0;
 s8 acpi_numa = 0;
 
 int srat_disabled(void)
@@ -166,7 +166,7 @@ int __init compute_hash_shift(struct node *nodes, int numnodes,
     return shift;
 }
 /* initialize NODE_DATA given nodeid and start/end */
-void __init setup_node_bootmem(nodeid_t nodeid, u64 start, u64 end)
+void __init setup_node_bootmem(nodeid_t nodeid, paddr_t start, paddr_t end)
 {
     unsigned long start_pfn, end_pfn;
 
@@ -201,19 +201,19 @@ void __init numa_init_array(void)
 }
 
 #ifdef CONFIG_NUMA_EMU
-static int numa_fake __initdata = 0;
+static int __initdata numa_fake = 0;
 
 /* Numa emulation */
-static int __init numa_emulation(u64 start_pfn, u64 end_pfn)
+static int __init numa_emulation(uint64_t start_pfn, uint64_t end_pfn)
 {
     int i;
     struct node nodes[MAX_NUMNODES];
-    u64 sz = ((end_pfn - start_pfn) << PAGE_SHIFT) / numa_fake;
+    uint64_t sz = ((end_pfn - start_pfn) << PAGE_SHIFT) / numa_fake;
 
     /* Kludge needed for the hash function */
     if ( hweight64(sz) > 1 )
     {
-        u64 x = 1;
+        uint64_t x = 1;
         while ( (x << 1) < sz )
             x <<= 1;
         if ( x < sz / 2 )
@@ -260,8 +260,8 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
 #endif
 
 #ifdef CONFIG_ACPI_NUMA
-    if ( !numa_off && !acpi_scan_nodes((u64)start_pfn << PAGE_SHIFT,
-         (u64)end_pfn << PAGE_SHIFT) )
+    if ( !numa_off && !acpi_scan_nodes((uint64_t)start_pfn << PAGE_SHIFT,
+         (uint64_t)end_pfn << PAGE_SHIFT) )
         return;
 #endif
 
@@ -269,8 +269,8 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
            numa_off ? "NUMA turned off" : "No NUMA configuration found");
 
     printk(KERN_INFO "Faking a node at %016"PRIx64"-%016"PRIx64"\n",
-           (u64)start_pfn << PAGE_SHIFT,
-           (u64)end_pfn << PAGE_SHIFT);
+           (uint64_t)start_pfn << PAGE_SHIFT,
+           (uint64_t)end_pfn << PAGE_SHIFT);
     /* setup dummy node covering all memory */
     memnode_shift = BITS_PER_LONG - 1;
     memnodemap = _memnodemap;
@@ -279,8 +279,8 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
     for ( i = 0; i < nr_cpu_ids; i++ )
         numa_set_node(i, 0);
     cpumask_copy(&node_to_cpumask[0], cpumask_of(0));
-    setup_node_bootmem(0, (u64)start_pfn << PAGE_SHIFT,
-                    (u64)end_pfn << PAGE_SHIFT);
+    setup_node_bootmem(0, (paddr_t)start_pfn << PAGE_SHIFT,
+                    (paddr_t)end_pfn << PAGE_SHIFT);
 }
 
 void numa_add_cpu(int cpu)
@@ -294,7 +294,7 @@ void numa_set_node(int cpu, nodeid_t node)
 }
 
 /* [numa=off] */
-static __init int numa_setup(char *opt)
+static int __init numa_setup(char *opt)
 {
     if ( !strncmp(opt,"off",3) )
         numa_off = 1;
@@ -339,7 +339,7 @@ void __init init_cpu_to_node(void)
 
     for ( i = 0; i < nr_cpu_ids; i++ )
     {
-        u32 apicid = x86_cpu_to_apicid[i];
+        uint32_t apicid = x86_cpu_to_apicid[i];
         if ( apicid == BAD_APICID )
             continue;
         node = apicid < MAX_LOCAL_APIC ? apicid_to_node[apicid] : NUMA_NO_NODE;
@@ -380,7 +380,7 @@ static void dump_numa(unsigned char key)
     const struct vnuma_info *vnuma;
 
     printk("'%c' pressed -> dumping numa info (now-0x%X:%08X)\n", key,
-           (u32)(now >> 32), (u32)now);
+           (uint32_t)(now >> 32), (uint32_t)now);
 
     for_each_online_node ( i )
     {
@@ -507,7 +507,7 @@ static void dump_numa(unsigned char key)
     rcu_read_unlock(&domlist_read_lock);
 }
 
-static __init int register_numa_trigger(void)
+static int __init register_numa_trigger(void)
 {
     register_keyhandler('u', dump_numa, "dump NUMA info", 1);
     return 0;
