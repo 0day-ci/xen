@@ -298,7 +298,7 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
 #endif
 
 #ifdef CONFIG_ACPI_NUMA
-    if ( !is_numa_off() && !acpi_scan_nodes((uint64_t)start_pfn << PAGE_SHIFT,
+    if ( !is_numa_off() && !numa_scan_nodes((uint64_t)start_pfn << PAGE_SHIFT,
          (uint64_t)end_pfn << PAGE_SHIFT) )
         return;
 #endif

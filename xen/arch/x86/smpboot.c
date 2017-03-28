@@ -959,7 +959,7 @@ int cpu_add(uint32_t apic_id, uint32_t acpi_id, uint32_t pxm)
 
     if ( !srat_disabled() )
     {
-        nodeid_t node = setup_node(pxm);
+        nodeid_t node = acpi_setup_node(pxm);
 
         if ( node == NUMA_NO_NODE )
         {
