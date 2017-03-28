@@ -268,20 +268,9 @@ static int __init numa_emulation(uint64_t start_pfn, uint64_t end_pfn)
 }
 #endif
 
-void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
+static void __init numa_dummy_init(unsigned long start_pfn, unsigned long end_pfn)
 {
     int i;
-
-#ifdef CONFIG_NUMA_EMU
-    if ( get_numa_fake() && !numa_emulation(start_pfn, end_pfn) )
-        return;
-#endif
-
-#ifdef CONFIG_ACPI_NUMA
-    if ( !is_numa_off() && !acpi_scan_nodes((uint64_t)start_pfn << PAGE_SHIFT,
-         (uint64_t)end_pfn << PAGE_SHIFT) )
-        return;
-#endif
 
     printk(KERN_INFO "%s\n",
            is_numa_off() ? "NUMA turned off" : "No NUMA configuration found");
@@ -299,6 +288,22 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
     cpumask_copy(&node_to_cpumask[0], cpumask_of(0));
     setup_node_bootmem(0, (paddr_t)start_pfn << PAGE_SHIFT,
                     (paddr_t)end_pfn << PAGE_SHIFT);
+}
+
+void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
+{
+#ifdef CONFIG_NUMA_EMU
+    if ( get_numa_fake() && !numa_emulation(start_pfn, end_pfn) )
+        return;
+#endif
+
+#ifdef CONFIG_ACPI_NUMA
+    if ( !is_numa_off() && !acpi_scan_nodes((uint64_t)start_pfn << PAGE_SHIFT,
+         (uint64_t)end_pfn << PAGE_SHIFT) )
+        return;
+#endif
+
+    numa_dummy_init(start_pfn, end_pfn);
 }
 
 void numa_add_cpu(int cpu)
