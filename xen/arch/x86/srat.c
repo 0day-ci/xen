@@ -41,7 +41,45 @@ static struct node node_memblk_range[NR_NODE_MEMBLKS];
 static nodeid_t memblk_nodeid[NR_NODE_MEMBLKS];
 static __initdata DECLARE_BITMAP(memblk_hotplug, NR_NODE_MEMBLKS);
 
-static inline bool node_found(unsigned idx, unsigned pxm)
+static struct node *get_numa_node(int id)
+{
+	return &nodes[id];
+}
+
+static nodeid_t get_memblk_nodeid(int id)
+{
+	return memblk_nodeid[id];
+}
+
+static nodeid_t *get_memblk_nodeid_map(void)
+{
+	return &memblk_nodeid[0];
+}
+
+static struct node *get_node_memblk_range(int memblk)
+{
+	return &node_memblk_range[memblk];
+}
+
+static int get_num_node_memblks(void)
+{
+	return num_node_memblks;
+}
+
+static int __init numa_add_memblk(nodeid_t nodeid, paddr_t start, uint64_t size)
+{
+	if (nodeid >= NR_NODE_MEMBLKS)
+		return -EINVAL;
+
+	node_memblk_range[num_node_memblks].start = start;
+	node_memblk_range[num_node_memblks].end = start + size;
+	memblk_nodeid[num_node_memblks] = nodeid;
+	num_node_memblks++;
+
+	return 0;
+}
+
+static inline bool node_found(unsigned int idx, unsigned int pxm)
 {
 	return ((pxm2node[idx].pxm == pxm) &&
 		(pxm2node[idx].node != NUMA_NO_NODE));
@@ -107,11 +145,11 @@ int valid_numa_range(paddr_t start, paddr_t end, nodeid_t node)
 {
 	int i;
 
-	for (i = 0; i < num_node_memblks; i++) {
-		struct node *nd = &node_memblk_range[i];
+	for (i = 0; i < get_num_node_memblks(); i++) {
+		struct node *nd = get_node_memblk_range(i);
 
 		if (nd->start <= start && nd->end > end &&
-			memblk_nodeid[i] == node )
+		    get_memblk_nodeid(i) == node)
 			return 1;
 	}
 
@@ -122,8 +160,8 @@ static int __init conflicting_memblks(paddr_t start, paddr_t end)
 {
 	int i;
 
-	for (i = 0; i < num_node_memblks; i++) {
-		struct node *nd = &node_memblk_range[i];
+	for (i = 0; i < get_num_node_memblks(); i++) {
+		struct node *nd = get_node_memblk_range(i);
 		if (nd->start == nd->end)
 			continue;
 		if (nd->end > start && nd->start < end)
@@ -136,7 +174,8 @@ static int __init conflicting_memblks(paddr_t start, paddr_t end)
 
 static void __init cutoff_node(int i, paddr_t start, paddr_t end)
 {
-	struct node *nd = &nodes[i];
+	struct node *nd = get_numa_node(i);
+
 	if (nd->start < start) {
 		nd->start = start;
 		if (nd->end < nd->start)
@@ -278,6 +317,7 @@ acpi_numa_memory_affinity_init(const struct acpi_srat_mem_affinity *ma)
 	unsigned pxm;
 	nodeid_t node;
 	int i;
+	struct node *memblk;
 
 	if (srat_disabled())
 		return;
@@ -288,7 +328,7 @@ acpi_numa_memory_affinity_init(const struct acpi_srat_mem_affinity *ma)
 	if (!(ma->flags & ACPI_SRAT_MEM_ENABLED))
 		return;
 
-	if (num_node_memblks >= NR_NODE_MEMBLKS)
+	if (get_num_node_memblks() >= NR_NODE_MEMBLKS)
 	{
 		dprintk(XENLOG_WARNING,
                 "Too many numa entry, try bigger NR_NODE_MEMBLKS \n");
@@ -310,27 +350,31 @@ acpi_numa_memory_affinity_init(const struct acpi_srat_mem_affinity *ma)
 	i = conflicting_memblks(start, end);
 	if (i < 0)
 		/* everything fine */;
-	else if (memblk_nodeid[i] == node) {
+	else if (get_memblk_nodeid(i) == node) {
 		bool mismatch = !(ma->flags & ACPI_SRAT_MEM_HOT_PLUGGABLE) !=
 		                !test_bit(i, memblk_hotplug);
 
+		memblk = get_node_memblk_range(i);
+
 		printk("%sSRAT: PXM %u (%"PRIx64"-%"PRIx64") overlaps with itself (%"PRIx64"-%"PRIx64")\n",
 		       mismatch ? KERN_ERR : KERN_WARNING, pxm, start, end,
-		       node_memblk_range[i].start, node_memblk_range[i].end);
+		       memblk->start, memblk->end);
 		if (mismatch) {
 			bad_srat();
 			return;
 		}
 	} else {
+		memblk = get_node_memblk_range(i);
+
 		printk(KERN_ERR
 		       "SRAT: PXM %u (%"PRIx64"-%"PRIx64") overlaps with PXM %u (%"PRIx64"-%"PRIx64")\n",
-		       pxm, start, end, node_to_pxm(memblk_nodeid[i]),
-		       node_memblk_range[i].start, node_memblk_range[i].end);
+		       pxm, start, end, node_to_pxm(get_memblk_nodeid(i)),
+		       memblk->start, memblk->end);
 		bad_srat();
 		return;
 	}
 	if (!(ma->flags & ACPI_SRAT_MEM_HOT_PLUGGABLE)) {
-		struct node *nd = &nodes[node];
+		struct node *nd = get_numa_node(node);
 
 		if (!node_test_and_set(node, memory_nodes_parsed)) {
 			nd->start = start;
@@ -346,15 +390,17 @@ acpi_numa_memory_affinity_init(const struct acpi_srat_mem_affinity *ma)
 	       node, pxm, start, end,
 	       ma->flags & ACPI_SRAT_MEM_HOT_PLUGGABLE ? " (hotplug)" : "");
 
-	node_memblk_range[num_node_memblks].start = start;
-	node_memblk_range[num_node_memblks].end = end;
-	memblk_nodeid[num_node_memblks] = node;
+	if (numa_add_memblk(node, start, ma->length)) {
+		printk(KERN_ERR "SRAT: node-id %u out of range\n", node);
+		bad_srat();
+		return;
+	}
+
 	if (ma->flags & ACPI_SRAT_MEM_HOT_PLUGGABLE) {
-		__set_bit(num_node_memblks, memblk_hotplug);
+		__set_bit(get_num_node_memblks(), memblk_hotplug);
 		if (end > mem_hotplug)
 			mem_hotplug = end;
 	}
-	num_node_memblks++;
 }
 
 /* Sanity check to catch more bad SRATs (they are amazingly common).
@@ -377,17 +423,21 @@ static int __init nodes_cover_memory(void)
 		do {
 			found = 0;
 			for_each_node_mask(j, memory_nodes_parsed)
-				if (start < nodes[j].end
-				    && end > nodes[j].start) {
-					if (start >= nodes[j].start) {
-						start = nodes[j].end;
+			{
+		                struct node *nd = get_numa_node(j);
+
+				if (start < nd->end
+				    && end > nd->start) {
+					if (start >= nd->start) {
+						start = nd->end;
 						found = 1;
 					}
-					if (end <= nodes[j].end) {
-						end = nodes[j].start;
+					if (end <= nd->end) {
+						end = nd->start;
 						found = 1;
 					}
 				}
+			}
 		} while (found && start < end);
 
 		if (start < end) {
@@ -457,6 +507,8 @@ int __init acpi_scan_nodes(uint64_t start, uint64_t end)
 {
 	int i;
 	nodemask_t all_nodes_parsed;
+	struct node *memblks;
+	nodeid_t *nodeids;
 
 	/* First clean up the node list */
 	for (i = 0; i < MAX_NUMNODES; i++)
@@ -470,6 +522,8 @@ int __init acpi_scan_nodes(uint64_t start, uint64_t end)
 		return -1;
 	}
 
+	memblks = get_node_memblk_range(0);
+	nodeids = get_memblk_nodeid_map();
 	if (compute_memnode_shift(node_memblk_range, num_node_memblks,
 				  memblk_nodeid, &memnode_shift)) {
 		memnode_shift = 0;
@@ -484,12 +538,14 @@ int __init acpi_scan_nodes(uint64_t start, uint64_t end)
 	/* Finally register nodes */
 	for_each_node_mask(i, all_nodes_parsed)
 	{
-		uint64_t size = nodes[i].end - nodes[i].start;
+		struct node *nd = get_numa_node(i);
+		uint64_t size = nd->end - nd->start;
+
 		if ( size == 0 )
 			printk(KERN_WARNING "SRAT: Node %u has no memory. "
 			       "BIOS Bug or mis-configured hardware?\n", i);
 
-		setup_node_bootmem(i, nodes[i].start, nodes[i].end);
+		setup_node_bootmem(i, nd->start, nd->end);
 	}
 	for (i = 0; i < nr_cpu_ids; i++) {
 		if (cpu_to_node[i] == NUMA_NO_NODE)
