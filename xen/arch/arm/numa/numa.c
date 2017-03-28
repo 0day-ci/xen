@@ -23,6 +23,7 @@
 #include <asm/acpi.h>
 #include <xen/errno.h>
 #include <xen/pfn.h>
+#include <acpi/srat.h>
 
 static uint8_t (*node_distance_fn)(nodeid_t a, nodeid_t b);
 
@@ -69,6 +70,11 @@ void numa_failed(void)
     init_dt_numa_distance();
     node_distance_fn = NULL;
     init_cpu_to_node();
+
+#ifdef CONFIG_ACPI_NUMA
+    set_acpi_numa(0);
+    reset_pxm2node();
+#endif
 }
 
 int __init arch_sanitize_nodes_memory(void)
