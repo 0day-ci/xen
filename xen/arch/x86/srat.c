@@ -27,6 +27,13 @@ static nodemask_t __initdata memory_nodes_parsed;
 static nodemask_t __initdata processor_nodes_parsed;
 static struct node __initdata nodes[MAX_NUMNODES];
 
+/*
+ * Keep BIOS's CPU2node information, should not be used for memory allocaion
+ */
+nodeid_t apicid_to_node[MAX_LOCAL_APIC] = {
+    [0 ... MAX_LOCAL_APIC-1] = NUMA_NO_NODE
+};
+
 struct pxm2node {
 	unsigned int pxm;
 	nodeid_t node;
