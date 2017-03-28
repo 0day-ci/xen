@@ -13,6 +13,7 @@
 #include <xen/init.h>
 #include <xen/device_tree.h>
 #include <xen/libfdt/libfdt.h>
+#include <xen/efi.h>
 #include <xsm/xsm.h>
 #include <asm/setup.h>
 
@@ -146,6 +147,9 @@ static void __init process_memory_node(const void *fdt, int node,
     const __be32 *cell;
     paddr_t start, size;
     u32 reg_cells = address_cells + size_cells;
+#ifdef CONFIG_NUMA
+    uint32_t nid;
+#endif
 
     if ( address_cells < 1 || size_cells < 1 )
     {
@@ -154,24 +158,36 @@ static void __init process_memory_node(const void *fdt, int node,
         return;
     }
 
+#ifdef CONFIG_NUMA
+    nid = device_tree_get_u32(fdt, node, "numa-node-id", NR_NODE_MEMBLKS);
+#endif
     prop = fdt_get_property(fdt, node, "reg", NULL);
     if ( !prop )
     {
         printk("fdt: node `%s': missing `reg' property\n", name);
+#ifdef CONFIG_NUMA
+	numa_failed();
+#endif
         return;
     }
 
     cell = (const __be32 *)prop->data;
     banks = fdt32_to_cpu(prop->len) / (reg_cells * sizeof (u32));
 
-    for ( i = 0; i < banks && bootinfo.mem.nr_banks < NR_MEM_BANKS; i++ )
+    for ( i = 0; i < banks; i++ )
     {
         device_tree_get_reg(&cell, address_cells, size_cells, &start, &size);
         if ( !size )
             continue;
-        bootinfo.mem.bank[bootinfo.mem.nr_banks].start = start;
-        bootinfo.mem.bank[bootinfo.mem.nr_banks].size = size;
-        bootinfo.mem.nr_banks++;
+        if ( !efi_enabled(EFI_BOOT) && bootinfo.mem.nr_banks < NR_MEM_BANKS )
+        {
+            bootinfo.mem.bank[bootinfo.mem.nr_banks].start = start;
+            bootinfo.mem.bank[bootinfo.mem.nr_banks].size = size;
+            bootinfo.mem.nr_banks++;
+        }
+#ifdef CONFIG_NUMA
+        dt_numa_process_memory_node(nid, start, size);
+#endif
     }
 }
 

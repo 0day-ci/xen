@@ -23,6 +23,12 @@
 #include <asm/acpi.h>
 
 extern nodemask_t processor_nodes_parsed;
+static bool_t dt_numa = 1;
+
+void numa_failed(void)
+{
+    dt_numa = 0;
+}
 
 void __init numa_init(void)
 {
@@ -30,6 +36,9 @@ void __init numa_init(void)
 
     nodes_clear(processor_nodes_parsed);
     if ( is_numa_off() )
+        goto no_numa;
+
+    if ( !dt_numa )
         goto no_numa;
 
     ret = dt_numa_init();

@@ -6,6 +6,8 @@ typedef uint8_t nodeid_t;
 /* Limit number of NUMA nodes supported to 4 */
 #define NODES_SHIFT 2
 
+extern void dt_numa_process_memory_node(uint32_t nid,paddr_t start,
+                                        paddr_t size);
 #ifdef CONFIG_NUMA
 extern void numa_init(void);
 extern int dt_numa_init(void);
