@@ -62,8 +62,20 @@ static void __init device_tree_get_reg(const __be32 **cell, u32 address_cells,
     *size = dt_next_cell(size_cells, cell);
 }
 
-static u32 __init device_tree_get_u32(const void *fdt, int node,
-                                      const char *prop_name, u32 dflt)
+bool_t __init device_tree_type_matches(const void *fdt, int node,
+                                       const char *match)
+{
+    const void *prop;
+
+    prop = fdt_getprop(fdt, node, "device_type", NULL);
+    if ( prop == NULL )
+        return 0;
+
+    return strcmp(prop, match) == 0 ? 1 : 0;
+}
+
+u32 __init device_tree_get_u32(const void *fdt, int node,
+                               const char *prop_name, u32 dflt)
 {
     const struct fdt_property *prop;
 

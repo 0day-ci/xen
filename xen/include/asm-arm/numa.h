@@ -6,7 +6,15 @@ typedef uint8_t nodeid_t;
 /* Limit number of NUMA nodes supported to 4 */
 #define NODES_SHIFT 2
 
-#ifndef CONFIG_NUMA
+#ifdef CONFIG_NUMA
+extern void numa_init(void);
+extern int dt_numa_init(void);
+#else
+static inline void numa_init(void)
+{
+    return;
+}
+
 /* Fake one node for now. See also node_online_map. */
 #define cpu_to_node(cpu) 0
 #define node_to_cpumask(node)   (cpu_online_map)
