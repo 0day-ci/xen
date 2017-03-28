@@ -4,3 +4,7 @@ config ACPI
 
 config ACPI_LEGACY_TABLES_LOOKUP
 	bool
+
+config ACPI_NUMA
+	def_bool y
+	depends on ACPI && NUMA
