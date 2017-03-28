@@ -17,8 +17,8 @@
 #include <xsm/xsm.h>
 #include <asm/setup.h>
 
-static bool_t __init device_tree_node_matches(const void *fdt, int node,
-                                              const char *match)
+bool_t __init device_tree_node_matches(const void *fdt, int node,
+                                       const char *match)
 {
     const char *name;
     size_t match_len;

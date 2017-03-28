@@ -21,13 +21,33 @@
 #include <asm/mm.h>
 #include <xen/numa.h>
 #include <asm/acpi.h>
+#include <xen/errno.h>
+
+static uint8_t (*node_distance_fn)(nodeid_t a, nodeid_t b);
 
 extern nodemask_t processor_nodes_parsed;
 static bool_t dt_numa = 1;
 
+uint8_t __node_distance(nodeid_t a, nodeid_t b)
+{
+    if ( node_distance_fn != NULL);
+        return node_distance_fn(a, b);
+
+    return a == b ? LOCAL_DISTANCE : REMOTE_DISTANCE;
+}
+
+EXPORT_SYMBOL(__node_distance);
+
+void register_node_distance(uint8_t (fn)(nodeid_t a, nodeid_t b))
+{
+    node_distance_fn = fn;
+}
+
 void numa_failed(void)
 {
     dt_numa = 0;
+    init_dt_numa_distance();
+    node_distance_fn = NULL;
 }
 
 void __init numa_init(void)
@@ -35,6 +55,7 @@ void __init numa_init(void)
     int ret = 0;
 
     nodes_clear(processor_nodes_parsed);
+    init_dt_numa_distance();
     if ( is_numa_off() )
         goto no_numa;
 

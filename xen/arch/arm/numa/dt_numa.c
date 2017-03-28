@@ -27,6 +27,48 @@
 extern nodemask_t processor_nodes_parsed;
 extern nodemask_t memory_nodes_parsed;
 
+static uint8_t node_distance[MAX_NUMNODES][MAX_NUMNODES];
+
+static uint8_t dt_node_distance(nodeid_t nodea, nodeid_t nodeb)
+{
+    if ( nodea >= MAX_NUMNODES || nodeb >= MAX_NUMNODES )
+        return nodea == nodeb ? LOCAL_DISTANCE : REMOTE_DISTANCE;
+
+    return node_distance[nodea][nodeb];
+}
+
+static int dt_numa_set_distance(uint32_t nodea, uint32_t nodeb,
+                                uint32_t distance)
+{
+   /* node_distance is uint8_t. Ensure distance is less than 255 */
+   if ( nodea >= MAX_NUMNODES || nodeb >= MAX_NUMNODES || distance > 255 )
+       return -EINVAL;
+
+   node_distance[nodea][nodeb] = distance;
+
+   return 0;
+}
+
+void init_dt_numa_distance(void)
+{
+    int i, j;
+
+    for ( i = 0; i < MAX_NUMNODES; i++ )
+    {
+        for ( j = 0; j < MAX_NUMNODES; j++ )
+        {
+            /*
+             * Initialize distance 10 for local distance and
+             * 20 for remote distance.
+             */
+            if ( i  == j )
+                node_distance[i][j] = LOCAL_DISTANCE;
+            else
+                node_distance[i][j] = REMOTE_DISTANCE;
+        }
+    }
+}
+
 /*
  * Even though we connect cpus to numa domains later in SMP
  * init, we need to know the node ids now for all cpus.
@@ -44,6 +86,76 @@ static int __init dt_numa_process_cpu_node(const void *fdt, int node,
         printk(XENLOG_WARNING "NUMA: Node id %u exceeds maximum value\n", nid);
     else
         node_set(nid, processor_nodes_parsed);
+
+    return 0;
+}
+
+static int __init dt_numa_parse_distance_map(const void *fdt, int node,
+                                             const char *name,
+                                             uint32_t address_cells,
+                                             uint32_t size_cells)
+{
+    const struct fdt_property *prop;
+    const __be32 *matrix;
+    int entry_count, len, i;
+
+    printk(XENLOG_INFO "NUMA: parsing numa-distance-map\n");
+
+    prop = fdt_get_property(fdt, node, "distance-matrix", &len);
+    if ( !prop )
+    {
+        printk(XENLOG_WARNING
+               "NUMA: No distance-matrix property in distance-map\n");
+
+        return -EINVAL;
+    }
+
+    if ( len % sizeof(uint32_t) != 0 )
+    {
+         printk(XENLOG_WARNING
+                "distance-matrix in node is not a multiple of u32\n");
+
+        return -EINVAL;
+    }
+
+    entry_count = len / sizeof(uint32_t);
+    if ( entry_count <= 0 )
+    {
+        printk(XENLOG_WARNING "NUMA: Invalid distance-matrix\n");
+
+        return -EINVAL;
+    }
+
+    matrix = (const __be32 *)prop->data;
+    for ( i = 0; i + 2 < entry_count; i += 3 )
+    {
+        uint32_t nodea, nodeb, distance;
+
+        nodea = dt_read_number(matrix, 1);
+        matrix++;
+        nodeb = dt_read_number(matrix, 1);
+        matrix++;
+        distance = dt_read_number(matrix, 1);
+        matrix++;
+
+        if ( dt_numa_set_distance(nodea, nodeb, distance) )
+        {
+            printk(XENLOG_WARNING
+                   "NUMA: node-id out of range in distance matrix for [node%d -> node%d]\n",
+                   nodea, nodeb);
+            return -EINVAL;
+
+        }
+        printk(XENLOG_INFO "NUMA: distance[node%d -> node%d] = %d\n",
+               nodea, nodeb, distance);
+
+        /*
+         * Set default distance of node B->A same as A->B.
+         * No need to check for return value of numa_set_distance.
+         */
+        if ( nodeb > nodea )
+            dt_numa_set_distance(nodeb, nodea, distance);
+    }
 
     return 0;
 }
@@ -92,12 +204,33 @@ void __init dt_numa_process_memory_node(uint32_t nid, paddr_t start,
     return;
 }
 
+static int __init dt_numa_scan_distance_node(const void *fdt, int node,
+                                             const char *name, int depth,
+                                             uint32_t address_cells,
+                                             uint32_t size_cells, void *data)
+{
+    if ( device_tree_node_matches(fdt, node, "numa-distance-map-v1") )
+        return dt_numa_parse_distance_map(fdt, node, name, address_cells,
+                                          size_cells);
+
+    return 0;
+}
+
 int __init dt_numa_init(void)
 {
     int ret;
 
     ret = device_tree_for_each_node((void *)device_tree_flattened,
                                     dt_numa_scan_cpu_node, NULL);
+    if ( ret )
+        return ret;
+
+    ret = device_tree_for_each_node((void *)device_tree_flattened,
+                                    dt_numa_scan_distance_node, NULL);
+
+    if ( !ret )
+        register_node_distance(&dt_node_distance);
+
     return ret;
 }
 
