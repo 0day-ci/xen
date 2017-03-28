@@ -22,8 +22,8 @@ struct node {
     paddr_t end;
 };
 
-extern int compute_hash_shift(struct node *nodes, int numnodes,
-                              nodeid_t *nodeids);
+extern int compute_memnode_shift(struct node *nodes, int numnodes,
+                                 nodeid_t *nodeids, unsigned int *shift);
 extern nodeid_t pxm_to_node(unsigned int pxm);
 
 #define ZONE_ALIGN (1UL << (MAX_ORDER+PAGE_SHIFT))
