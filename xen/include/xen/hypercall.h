@@ -19,6 +19,8 @@
 #include <asm/hypercall.h>
 #include <xsm/xsm.h>
 
+extern void __sanitizer_cov_trace_pc(void);
+
 extern long
 do_sched_op(
     int cmd,

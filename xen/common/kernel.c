@@ -238,6 +238,8 @@ void __init do_initcalls(void)
 
 # define DO(fn) long do_##fn
 
+void __sanitizer_cov_trace_pc(void) { return; }
+
 #endif
 
 /*
