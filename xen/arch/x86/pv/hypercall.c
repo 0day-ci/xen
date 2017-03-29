@@ -79,6 +79,7 @@ static const hypercall_table_t pv_hypercall_table[] = {
 #endif
     HYPERCALL(xenpmu_op),
     COMPAT_CALL(dm_op),
+    HYPERCALL(domain_id),
     HYPERCALL(mca),
     HYPERCALL(arch_1),
 };

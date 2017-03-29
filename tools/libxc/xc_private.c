@@ -530,6 +530,12 @@ int xc_version(xc_interface *xch, int cmd, void *arg)
     return rc;
 }
 
+int xc_domid(xc_interface *xch)
+{
+    return xencall0(xch->xcall, __HYPERVISOR_domain_id);
+}
+
+
 unsigned long xc_make_page_below_4G(
     xc_interface *xch, uint32_t domid, unsigned long mfn)
 {

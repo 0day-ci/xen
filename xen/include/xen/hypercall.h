@@ -83,6 +83,9 @@ do_xen_version(
     XEN_GUEST_HANDLE_PARAM(void) arg);
 
 extern long
+do_domain_id(void);
+
+extern long
 do_console_io(
     int cmd,
     int count,

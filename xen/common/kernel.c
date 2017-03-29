@@ -431,6 +431,12 @@ DO(xen_version)(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
     return -ENOSYS;
 }
 
+DO(domain_id)(void)
+{
+    struct domain *d = current->domain;
+    return d->domain_id;
+}
+
 DO(nmi_op)(unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
 {
     struct xennmi_callback cb;
