@@ -109,12 +109,14 @@ struct mca_summary {
     int         eipv;   /* meaningful on #MC */
     bool        uc;     /* UC flag */
     bool        pcc;    /* PCC flag */
+    bool        lmce;   /* LMCE flag (Intel only) */
     bool        recoverable; /* software error recoverable flag */
 };
 
 DECLARE_PER_CPU(struct mca_banks *, poll_bankmask);
 DECLARE_PER_CPU(struct mca_banks *, no_cmci_banks);
 DECLARE_PER_CPU(struct mca_banks *, mce_clear_banks);
+DECLARE_PER_CPU(bool, mce_in_process);
 
 extern bool cmci_support;
 extern bool is_mc_panic;

@@ -42,6 +42,13 @@ DEFINE_PER_CPU_READ_MOSTLY(struct mca_banks *, poll_bankmask);
 DEFINE_PER_CPU_READ_MOSTLY(struct mca_banks *, no_cmci_banks);
 DEFINE_PER_CPU_READ_MOSTLY(struct mca_banks *, mce_clear_banks);
 
+/*
+ * Flag to indicate that at least one non-local MCE on this CPU has
+ * not been completed handled. It's set by mcheck_cmn_handler() and
+ * cleared by mce_softirq().
+ */
+static DEFINE_PER_CPU(bool, nonlocal_mce_in_progress);
+
 static void intpose_init(void);
 static void mcinfo_clear(struct mc_info *);
 struct mca_banks *mca_allbanks;
@@ -186,7 +193,29 @@ static struct mce_softirq_barrier mce_trap_bar;
  */
 static DEFINE_SPINLOCK(mce_logout_lock);
 
+/*
+ * 'severity_cpu' is used in both mcheck_cmn_handler() and mce_softirq().
+ *
+ * When handling broadcasting MCE, MCE barriers take effect to prevent
+ * 'severity_cpu' being modified in one function on one CPU and accessed
+ * in another on a different CPU.
+ *
+ * When handling LMCE, mce_barrier_enter() and mce_barrier_exit() are
+ * effectively NOP, so it's possible that mcheck_cmn_handler() is handling
+ * a LMCE on CPUx while mce_softirq() is handling another LMCE on CPUy.
+ * If both are modifying 'severity_cpu', they may interfere with each
+ * other. Therefore, it's better for mcheck_cmn_handler() and mce_softirq()
+ * to avoid accessing 'severity_cpu' when handling LMCE, unless other
+ * approaches are taken to avoid the above interference.
+ */
 static atomic_t severity_cpu = ATOMIC_INIT(-1);
+/*
+ * The following two global variables are used only in mcheck_cmn_handler().
+ * Because there can be at most one MCE (including LMCE) outstanding
+ * in the hardware platform, we don't need to worry about the above
+ * interference, where two code paths handing different MCE's access
+ * the same global variables.
+ */
 static atomic_t found_error = ATOMIC_INIT(0);
 static cpumask_t mce_fatal_cpus;
 
@@ -395,6 +424,7 @@ mcheck_mca_logout(enum mca_source who, struct mca_banks *bankmask,
         sp->errcnt = errcnt;
         sp->ripv = (gstatus & MCG_STATUS_RIPV) != 0;
         sp->eipv = (gstatus & MCG_STATUS_EIPV) != 0;
+        sp->lmce = (gstatus & MCG_STATUS_LMCE) != 0;
         sp->uc = uc;
         sp->pcc = pcc;
         sp->recoverable = recover;
@@ -458,6 +488,7 @@ void mcheck_cmn_handler(const struct cpu_user_regs *regs)
     uint64_t gstatus;
     mctelem_cookie_t mctc = NULL;
     struct mca_summary bs;
+    bool lmce;
 
     mce_spin_lock(&mce_logout_lock);
 
@@ -466,6 +497,10 @@ void mcheck_cmn_handler(const struct cpu_user_regs *regs)
             sizeof(long) * BITS_TO_LONGS(clear_bank->num));
     }
     mctc = mcheck_mca_logout(MCA_MCE_SCAN, bankmask, &bs, clear_bank);
+
+    lmce = bs.lmce;
+    if (!lmce)
+        this_cpu(nonlocal_mce_in_progress) = true;
 
     if (bs.errcnt) {
         /*
@@ -488,8 +523,9 @@ void mcheck_cmn_handler(const struct cpu_user_regs *regs)
         }
         atomic_set(&found_error, 1);
 
-        /* The last CPU will be take check/clean-up etc */
-        atomic_set(&severity_cpu, smp_processor_id());
+        /* The last CPU will be take check/clean-up etc. */
+        if (!lmce)
+            atomic_set(&severity_cpu, smp_processor_id());
 
         mce_printk(MCE_CRITICAL, "MCE: clear_bank map %lx on CPU%d\n",
                 *((unsigned long*)clear_bank), smp_processor_id());
@@ -501,16 +537,16 @@ void mcheck_cmn_handler(const struct cpu_user_regs *regs)
     }
     mce_spin_unlock(&mce_logout_lock);
 
-    mce_barrier_enter(&mce_trap_bar);
+    mce_barrier_enter(&mce_trap_bar, lmce);
     if ( mctc != NULL && mce_urgent_action(regs, mctc))
         cpumask_set_cpu(smp_processor_id(), &mce_fatal_cpus);
-    mce_barrier_exit(&mce_trap_bar);
+    mce_barrier_exit(&mce_trap_bar, lmce);
 
     /*
      * Wait until everybody has processed the trap.
      */
-    mce_barrier_enter(&mce_trap_bar);
-    if (atomic_read(&severity_cpu) == smp_processor_id())
+    mce_barrier_enter(&mce_trap_bar, lmce);
+    if (lmce || atomic_read(&severity_cpu) == smp_processor_id())
     {
         /* According to SDM, if no error bank found on any cpus,
          * something unexpected happening, we can't do any
@@ -527,16 +563,16 @@ void mcheck_cmn_handler(const struct cpu_user_regs *regs)
         }
         atomic_set(&found_error, 0);
     }
-    mce_barrier_exit(&mce_trap_bar);
+    mce_barrier_exit(&mce_trap_bar, lmce);
 
     /* Clear flags after above fatal check */
-    mce_barrier_enter(&mce_trap_bar);
+    mce_barrier_enter(&mce_trap_bar, lmce);
     gstatus = mca_rdmsr(MSR_IA32_MCG_STATUS);
     if ((gstatus & MCG_STATUS_MCIP) != 0) {
         mce_printk(MCE_CRITICAL, "MCE: Clear MCIP@ last step");
         mca_wrmsr(MSR_IA32_MCG_STATUS, 0);
     }
-    mce_barrier_exit(&mce_trap_bar);
+    mce_barrier_exit(&mce_trap_bar, lmce);
 
     raise_softirq(MACHINE_CHECK_SOFTIRQ);
 }
@@ -1700,38 +1736,61 @@ static void mce_softirq(void)
 {
     int cpu = smp_processor_id();
     unsigned int workcpu;
+    /*
+     * On platforms supporting broadcasting MCE, if there is a
+     * non-local MCE waiting for process on this CPU, it implies other
+     * CPUs received the same MCE as well. Therefore, mce_softirq()
+     * will be launched on other CPUs as well and compete with this
+     * mce_softirq() to handle all MCE's on all CPUs. In that case, we
+     * should use MCE barriers to sync with other CPUs. Otherwise, we
+     * do not need to wait for other CPUs.
+     */
+    bool nowait = !this_cpu(nonlocal_mce_in_progress);
 
     mce_printk(MCE_VERBOSE, "CPU%d enter softirq\n", cpu);
 
-    mce_barrier_enter(&mce_inside_bar);
+    mce_barrier_enter(&mce_inside_bar, nowait);
 
     /*
-     * Everybody is here. Now let's see who gets to do the
-     * recovery work. Right now we just see if there's a CPU
-     * that did not have any problems, and pick that one.
-     *
-     * First, just set a default value: the last CPU who reaches this
-     * will overwrite the value and become the default.
+     * When LMCE is being handled and no non-local MCE is waiting for
+     * process, mce_softirq() does not need to set 'severity_cpu'. And
+     * it should not, because the modification in this function may
+     * interfere with the simultaneous modification in mce_cmn_handler()
+     * on another CPU.
      */
-
-    atomic_set(&severity_cpu, cpu);
-
-    mce_barrier_enter(&mce_severity_bar);
-    if (!mctelem_has_deferred(cpu))
+    if (!nowait) {
+        /*
+         * Everybody is here. Now let's see who gets to do the
+         * recovery work. Right now we just see if there's a CPU
+         * that did not have any problems, and pick that one.
+         *
+         * First, just set a default value: the last CPU who reaches this
+         * will overwrite the value and become the default.
+         */
         atomic_set(&severity_cpu, cpu);
-    mce_barrier_exit(&mce_severity_bar);
 
-    /* We choose severity_cpu for further processing */
-    if (atomic_read(&severity_cpu) == cpu) {
+        mce_barrier_enter(&mce_severity_bar, nowait);
+        if (!mctelem_has_deferred(cpu))
+            atomic_set(&severity_cpu, cpu);
+        mce_barrier_exit(&mce_severity_bar, nowait);
+    }
+
+    /*
+     * Either no non-local MCE is being handled, or this CPU is chose as
+     * severity_cpu for further processing ...
+     */
+    if (nowait || atomic_read(&severity_cpu) == cpu) {
 
         mce_printk(MCE_VERBOSE, "CPU%d handling errors\n", cpu);
 
         /* Step1: Fill DOM0 LOG buffer, vMCE injection buffer and
          * vMCE MSRs virtualization buffer
          */
-        for_each_online_cpu(workcpu) {
-            mctelem_process_deferred(workcpu, mce_delayed_action);
-        }
+        if (nowait)
+            mctelem_process_deferred(cpu, mce_delayed_action);
+        else
+            for_each_online_cpu(workcpu)
+                mctelem_process_deferred(workcpu, mce_delayed_action);
 
         /* Step2: Send Log to DOM0 through vIRQ */
         if (dom0_vmce_enabled()) {
@@ -1740,7 +1799,14 @@ static void mce_softirq(void)
         }
     }
 
-    mce_barrier_exit(&mce_inside_bar);
+    mce_barrier_exit(&mce_inside_bar, nowait);
+
+    /*
+     * At this point, either the only LMCE has been handled, or all MCE's
+     * on this CPU waiting for process have been handled on this CPU (if
+     * it was chose as severity_cpu) or by mce_softirq() on another CPU.
+     */
+    this_cpu(nonlocal_mce_in_progress) = false;
 }
 
 /* Machine Check owner judge algorithm:
