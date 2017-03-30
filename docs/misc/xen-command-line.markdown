@@ -525,7 +525,7 @@ also slow in responding to load changes.
 The default value of `1 sec` is rather long.
 
 ### credit2\_runqueue
-> `= cpu | core | socket | node | all`
+> `= cpu | core | socket | node | all | custom`
 
 > Default: `socket`
 
@@ -543,6 +543,12 @@ Available alternatives, with their meaning, are:
 * `node`: one runqueue per each NUMA node of the host;
 * `all`: just one runqueue shared by all the logical pCPUs of
          the host
+* `custom`: one runqueue per subset. Example:
+            credit2_runqueue=[[0,1,4,5][2,3,6,7][8,9,12,13][10,11,14,15]]
+                - pCPUs 0, 1, 4 and 5 belong to runqueue 0
+                - pCPUs 2, 3, 6 and 7 belong to runqueue 1
+                - pCPUs 8, 9, 12 and 13 belong to runqueue 2
+                - pCPUs 10, 11, 14 and 15 belong to runqueue 3
 
 ### dbgp
 > `= ehci[ <integer> | @pci<bus>:<slot>.<func> ]`

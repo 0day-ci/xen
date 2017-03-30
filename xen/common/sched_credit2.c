@@ -321,6 +321,15 @@ integer_param("credit2_balance_over", opt_overload_balance_tolerance);
  *           (logical) processors of the host belong. This will happen if
  *           the opt_runqueue parameter is set to 'all'.
  *
+ * - custom: meaning that there will be one runqueue per subset being passed as
+ *           parameter to credit2_runqueue as shown in below example.
+ *           Example:
+ *           credit2_runqueue=[[cpu0,cpu1][cpu3][cpu4,cpu5]]
+ *           The example mentioned states :
+ *               cpu0 and cpu1 belongs to runqueue 0
+ *               cpu3 belongs to runqueue 1
+ *               cpu4 and cpu5 belongs to runqueue 2
+ *
  * Depending on the value of opt_runqueue, therefore, cpus that are part of
  * either the same physical core, the same physical socket, the same NUMA
  * node, or just all of them, will be put together to form runqueues.
@@ -330,18 +339,60 @@ integer_param("credit2_balance_over", opt_overload_balance_tolerance);
 #define OPT_RUNQUEUE_SOCKET 2
 #define OPT_RUNQUEUE_NODE   3
 #define OPT_RUNQUEUE_ALL    4
+#define OPT_RUNQUEUE_CUSTOM 5
 static const char *const opt_runqueue_str[] = {
     [OPT_RUNQUEUE_CPU] = "cpu",
     [OPT_RUNQUEUE_CORE] = "core",
     [OPT_RUNQUEUE_SOCKET] = "socket",
     [OPT_RUNQUEUE_NODE] = "node",
-    [OPT_RUNQUEUE_ALL] = "all"
+    [OPT_RUNQUEUE_ALL] = "all",
+    [OPT_RUNQUEUE_CUSTOM] = "custom"
 };
 static int __read_mostly opt_runqueue = OPT_RUNQUEUE_SOCKET;
+
+static int __read_mostly custom_cpu_runqueue[NR_CPUS];
+
+#define GETTOKEN( token, len, start, end )               \
+{                                                        \
+    char _tmp[len+1];                                    \
+    int _i;                                              \
+    safe_strcpy(_tmp, start);                            \
+    _tmp[len] = '\0';                                    \
+    for ( _i = 0; _tmp[_i] != '\0'; _i++ )               \
+        token = ( ( token * 10 ) + ( _tmp[_i] - '0' ) ); \
+}
+
+static inline int trim(const char *c, char *t, char elem)
+{
+    int l = strlen(c);
+    const char *x = c ;
+    int i = 0;
+    if ( !c || !t )
+        return -1;
+    while ( *x != '\0' && i < l )
+    {
+        if ( *x != elem )
+            t[i++] = *x;
+        x++;
+    }
+    t[i] = '\0';
+    return 0;
+}
+
+static inline int getlen(char *start, char *end)
+{
+    if ( ( start ) && ( end ) && ( end > start ) )
+        return end-start;
+    else
+        return -1;
+}
 
 static void parse_credit2_runqueue(const char *s)
 {
     unsigned int i;
+    const char *s_end = NULL;
+    char m[strlen(s)];
+    char *_s = NULL;
 
     for ( i = 0; i < ARRAY_SIZE(opt_runqueue_str); i++ )
     {
@@ -351,7 +402,115 @@ static void parse_credit2_runqueue(const char *s)
             return;
         }
     }
+/*
+     * At this stage we are either unknown value of credit2_runqueue or we can
+     * consider it to be custom cpu. Lets try parsing the same.
+     * Resetting the custom_cpu_runqueue for future use. Only the non-negative
+     * entries will be valid. The index 'i' in custom_cpu_runqueue will store
+     * the specific runqueue it belongs to.
+     * Example:
+     *     If custom_cpu_runqueue[3] == 2
+     *     Then, it means that cpu 3 belong to runqueue 2.
+     *     If custom_cpu_runqueue[4] == -1
+     *     Then, it means that cpu 4 doesn't belong to any runqueue.
+     */
+    for ( i = 0; i < nr_cpu_ids; i++ )
+        custom_cpu_runqueue[i] = -1;
 
+    /*
+     * Format [[0,1,4,5][2,3,6,7][8,9,12,13][10,11,14,15]]
+     */
+    i = 0;
+
+    /* In case user have spaces included in the input */
+    if ( trim(s, m, ' ') != 0 )
+    {
+        printk( "WARNING : %s[%d] trim failed.\n", __func__, __LINE__ );
+        goto errReturn;
+    }
+    /* Starting to parse and get the cpu information on trimmed data */
+    _s = m;
+    s_end = _s + strlen(_s);
+
+    /* The start and should always be in format of '[..]' */
+    if ( ( '[' == *_s ) && ( ']' == *(s_end-1)) )
+    {
+        char *start = NULL, *end = NULL;
+        int cpu_added_to_runqueue = 0;
+        _s++;
+        while ( ( _s != NULL ) && ( _s < s_end ) )
+        {
+            char *token_sub_str = NULL;
+            start = strstr(_s, "[");
+            end = strstr(_s, "]");
+            /* Validation checks for '[' and ']' to properly parse the entries
+            */
+            if ( ( !start && !end ) || ( ( end == ( s_end -1 ) ) && start ) )
+                goto errReturn;
+            /* Check for last entry */
+            else if ( !start && ( end == ( s_end -1 ) ) )
+                goto nextSet;
+
+            /* If we have [] as entry, move to nextSet */
+            if ( getlen ( start, end ) < 1 )
+                goto nextSet;
+            /* Start to parse the actual value */
+            start++;
+            /*
+             * find token within the subset
+             */
+            do
+            {
+                int token = 0;
+                int len = 0;
+                /* Get cpu ids separated by ',' within each set */
+                token_sub_str = strpbrk(start, ",");
+                if ( ( !token_sub_str && start < end ) ||
+                    ( token_sub_str > end && token_sub_str > start ) )
+                    len = getlen(start, end);
+                else
+                    len = getlen(start, token_sub_str);
+
+                if ( len <= 0 )
+                    continue;
+                /* GETTOKEN will get return the parse and populate the cpu in
+                 * token
+                 */
+                GETTOKEN(token, len, start , end );
+
+                if ( token >= nr_cpu_ids)
+                    goto errReturn;
+                /* If not set already */
+                if ( custom_cpu_runqueue[token] == -1 )
+                {
+                    custom_cpu_runqueue[token] = i;
+                    cpu_added_to_runqueue = 1;
+                }
+                else
+                    goto errReturn;
+
+                if ( !token_sub_str || token_sub_str > end )
+                    goto nextSet;
+
+                start = ++token_sub_str;
+            } while ( start < end );
+nextSet:
+            if ( cpu_added_to_runqueue )
+            {
+                i++;
+                cpu_added_to_runqueue = 0;
+            }
+
+            _s = ++end;
+        }
+        opt_runqueue = OPT_RUNQUEUE_CUSTOM;
+        return;
+    }
+errReturn:
+    /* Resetting in case of failure, so that we don't mess-up during any failure
+     * due to wrong or spurious pattern passed by user.
+     */
+    opt_runqueue = OPT_RUNQUEUE_SOCKET;
     printk("WARNING, unrecognized value of credit2_runqueue option!\n");
 }
 custom_param("credit2_runqueue", parse_credit2_runqueue);
@@ -660,6 +819,15 @@ cpu_to_runqueue(struct csched2_private *prv, unsigned int cpu)
 {
     struct csched2_runqueue_data *rqd;
     unsigned int rqi;
+
+    if ( opt_runqueue == OPT_RUNQUEUE_CUSTOM )
+    {
+        if ( custom_cpu_runqueue[cpu] != -1 )
+        {
+            BUG_ON(custom_cpu_runqueue[cpu] >= nr_cpu_ids);
+            return custom_cpu_runqueue[cpu];
+        }
+    }
 
     for ( rqi = 0; rqi < nr_cpu_ids; rqi++ )
     {
