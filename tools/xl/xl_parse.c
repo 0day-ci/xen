@@ -1763,6 +1763,12 @@ skip_usbdev:
         break;
     }
 
+    if (c_info->type == LIBXL_DOMAIN_TYPE_HVM &&
+        !xlu_cfg_get_long(config, "pvh", &l, 0) && l) {
+        b_info->device_model_version = LIBXL_DEVICE_MODEL_VERSION_NONE;
+        goto skip_device_model;
+    }
+
     /* parse device model arguments, this works for pv, hvm and stubdom */
     if (!xlu_cfg_get_string (config, "device_model", &buf, 0)) {
         fprintf(stderr,
@@ -1791,8 +1797,10 @@ skip_usbdev:
         } else if (!strcmp(buf, "qemu-xen")) {
             b_info->device_model_version
                 = LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN;
-        } else if (!strcmp(buf, "none")) {
+        } else if (c_info->type == LIBXL_DOMAIN_TYPE_HVM &&
+                   !strcmp(buf, "none")) {
             b_info->device_model_version = LIBXL_DEVICE_MODEL_VERSION_NONE;
+            goto skip_device_model;
         } else {
             fprintf(stderr,
                     "Unknown device_model_version \"%s\" specified\n", buf);
@@ -1829,6 +1837,8 @@ skip_usbdev:
     parse_extra_args(_hvm);
 
 #undef parse_extra_args
+
+skip_device_model:
 
     /* If we've already got vfb=[] for PV guest then ignore top level
      * VNC config. */

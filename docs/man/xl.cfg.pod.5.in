@@ -1170,6 +1170,11 @@ expose unexpected bugs in the guest, or find bugs in Xen, so it is
 possible to disable this feature.  Use of out of sync page tables,
 when Xen thinks it appropriate, is the default.
 
+=item B<pvh=BOOLEAN>
+
+Don't use any device model. This requires a kernel capable of booting
+without emulated devices. Default is 0.
+
 =item B<shadow_memory=MBYTES>
 
 Number of megabytes to set aside for shadowing guest pagetable pages
@@ -1930,7 +1935,7 @@ This device-model is still the default for NetBSD dom0.
 =item B<none>
 
 Don't use any device model. This requires a kernel capable of booting
-without emulated devices.
+without emulated devices. This is a synonym for L</"pvh"> option above.
 
 =back
 
