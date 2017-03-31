@@ -2374,13 +2374,27 @@ int hvm_set_cr4(unsigned long value, bool_t may_defer)
     return X86EMUL_OKAY;
 }
 
+enum hvm_segmentation_mode hvm_seg_mode(
+    const struct vcpu *v, enum x86_segment seg,
+    const struct segment_register *cs)
+{
+    if ( !(v->arch.hvm_vcpu.guest_cr[0] & X86_CR0_PE) )
+        return hvm_seg_mode_real;
+
+    if ( hvm_long_mode_active(v) &&
+         (is_x86_system_segment(seg) || cs->attr.fields.l) )
+        return hvm_seg_mode_long;
+
+    return hvm_seg_mode_prot;
+}
+
 bool_t hvm_virtual_to_linear_addr(
     enum x86_segment seg,
     const struct segment_register *reg,
     unsigned long offset,
     unsigned int bytes,
     enum hvm_access_type access_type,
-    unsigned int addr_size,
+    enum hvm_segmentation_mode seg_mode,
     unsigned long *linear_addr)
 {
     unsigned long addr = offset, last_byte;
@@ -2394,8 +2408,9 @@ bool_t hvm_virtual_to_linear_addr(
      */
     ASSERT(seg < x86_seg_none);
 
-    if ( !(current->arch.hvm_vcpu.guest_cr[0] & X86_CR0_PE) )
+    switch ( seg_mode )
     {
+    case hvm_seg_mode_real:
         /*
          * REAL MODE: Don't bother with segment access checks.
          * Certain of them are not done in native real mode anyway.
@@ -2404,11 +2419,11 @@ bool_t hvm_virtual_to_linear_addr(
         last_byte = (uint32_t)addr + bytes - !!bytes;
         if ( last_byte < addr )
             goto out;
-    }
-    else if ( addr_size != 64 )
-    {
+        break;
+
+    case hvm_seg_mode_prot:
         /*
-         * COMPATIBILITY MODE: Apply segment checks and add base.
+         * PROTECTED/COMPATIBILITY MODE: Apply segment checks and add base.
          */
 
         /*
@@ -2454,9 +2469,9 @@ bool_t hvm_virtual_to_linear_addr(
         }
         else if ( (last_byte > reg->limit) || (last_byte < offset) )
             goto out; /* last byte is beyond limit or wraps 0xFFFFFFFF */
-    }
-    else
-    {
+        break;
+
+    case hvm_seg_mode_long:
         /*
          * User segments are always treated as present.  System segment may
          * not be, and also incur limit checks.
@@ -2476,6 +2491,11 @@ bool_t hvm_virtual_to_linear_addr(
         if ( !is_canonical_address(addr) || last_byte < addr ||
              !is_canonical_address(last_byte) )
             goto out;
+        break;
+
+    default:
+        ASSERT_UNREACHABLE();
+        goto out;
     }
 
     /* All checks ok. */
@@ -3024,7 +3044,7 @@ void hvm_task_switch(
             sp = regs->sp -= opsz;
         if ( hvm_virtual_to_linear_addr(x86_seg_ss, &segr, sp, opsz,
                                         hvm_access_write,
-                                        16 << segr.attr.fields.db,
+                                        hvm_seg_mode_prot,
                                         &linear_addr) )
         {
             rc = hvm_copy_to_guest_linear(linear_addr, &errcode, opsz, 0,
@@ -3600,14 +3620,13 @@ void hvm_ud_intercept(struct cpu_user_regs *regs)
         const struct segment_register *cs = &ctxt.seg_reg[x86_seg_cs];
         uint32_t walk = (ctxt.seg_reg[x86_seg_ss].attr.fields.dpl == 3)
             ? PFEC_user_mode : 0;
+        enum hvm_segmentation_mode seg_mode = hvm_seg_mode(cur, x86_seg_cs, cs);
         unsigned long addr;
         char sig[5]; /* ud2; .ascii "xen" */
 
         if ( hvm_virtual_to_linear_addr(x86_seg_cs, cs, regs->rip,
                                         sizeof(sig), hvm_access_insn_fetch,
-                                        (hvm_long_mode_active(cur) &&
-                                         cs->attr.fields.l) ? 64 :
-                                        cs->attr.fields.db ? 32 : 16, &addr) &&
+                                        seg_mode, &addr) &&
              (hvm_fetch_from_guest_linear(sig, addr, sizeof(sig),
                                           walk, NULL) == HVMCOPY_okay) &&
              (memcmp(sig, "\xf\xbxen", sizeof(sig)) == 0) )

@@ -508,6 +508,7 @@ static int hvmemul_virtual_to_linear(
     struct hvm_emulate_ctxt *hvmemul_ctxt,
     unsigned long *linear)
 {
+    enum hvm_segmentation_mode seg_mode;
     struct segment_register *reg;
     int okay;
     unsigned long max_reps = 4096;
@@ -517,6 +518,9 @@ static int hvmemul_virtual_to_linear(
         *linear = offset;
         return X86EMUL_OKAY;
     }
+
+    seg_mode = hvm_seg_mode(
+        current, seg, hvmemul_get_seg_reg(x86_seg_cs, hvmemul_ctxt));
 
     /*
      * If introspection has been enabled for this domain, and we're emulating
@@ -548,8 +552,7 @@ static int hvmemul_virtual_to_linear(
         ASSERT(offset >= ((*reps - 1) * bytes_per_rep));
         okay = hvm_virtual_to_linear_addr(
             seg, reg, offset - (*reps - 1) * bytes_per_rep,
-            *reps * bytes_per_rep, access_type,
-            hvmemul_ctxt->ctxt.addr_size, linear);
+            *reps * bytes_per_rep, access_type, seg_mode, linear);
         *linear += (*reps - 1) * bytes_per_rep;
         if ( hvmemul_ctxt->ctxt.addr_size != 64 )
             *linear = (uint32_t)*linear;
@@ -557,8 +560,8 @@ static int hvmemul_virtual_to_linear(
     else
     {
         okay = hvm_virtual_to_linear_addr(
-            seg, reg, offset, *reps * bytes_per_rep, access_type,
-            hvmemul_ctxt->ctxt.addr_size, linear);
+            seg, reg, offset, *reps * bytes_per_rep,
+            access_type, seg_mode, linear);
     }
 
     if ( okay )
@@ -2068,14 +2071,16 @@ void hvm_emulate_init_per_insn(
     hvmemul_ctxt->insn_buf_eip = hvmemul_ctxt->ctxt.regs->rip;
     if ( !insn_bytes )
     {
+        enum hvm_segmentation_mode seg_mode =
+            hvm_seg_mode(curr, x86_seg_cs, &hvmemul_ctxt->seg_reg[x86_seg_cs]);
+
         hvmemul_ctxt->insn_buf_bytes =
             hvm_get_insn_bytes(curr, hvmemul_ctxt->insn_buf) ?:
             (hvm_virtual_to_linear_addr(x86_seg_cs,
                                         &hvmemul_ctxt->seg_reg[x86_seg_cs],
                                         hvmemul_ctxt->insn_buf_eip,
                                         sizeof(hvmemul_ctxt->insn_buf),
-                                        hvm_access_insn_fetch,
-                                        hvmemul_ctxt->ctxt.addr_size,
+                                        hvm_access_insn_fetch, seg_mode,
                                         &addr) &&
              hvm_fetch_from_guest_linear(hvmemul_ctxt->insn_buf, addr,
                                          sizeof(hvmemul_ctxt->insn_buf),

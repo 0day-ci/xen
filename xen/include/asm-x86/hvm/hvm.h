@@ -460,6 +460,16 @@ void hvm_task_switch(
     uint16_t tss_sel, enum hvm_task_switch_reason taskswitch_reason,
     int32_t errcode);
 
+enum hvm_segmentation_mode {
+    hvm_seg_mode_real,
+    hvm_seg_mode_prot,
+    hvm_seg_mode_long,
+};
+
+enum hvm_segmentation_mode hvm_seg_mode(
+    const struct vcpu *v, enum x86_segment seg,
+    const struct segment_register *cs);
+
 enum hvm_access_type {
     hvm_access_insn_fetch,
     hvm_access_none,
@@ -472,7 +482,7 @@ bool_t hvm_virtual_to_linear_addr(
     unsigned long offset,
     unsigned int bytes,
     enum hvm_access_type access_type,
-    unsigned int addr_size,
+    enum hvm_segmentation_mode seg_mode,
     unsigned long *linear_addr);
 
 void *hvm_map_guest_frame_rw(unsigned long gfn, bool_t permanent,

@@ -144,6 +144,7 @@ static int hvm_translate_virtual_addr(
     struct sh_emulate_ctxt *sh_ctxt,
     unsigned long *linear)
 {
+    enum hvm_segmentation_mode seg_mode;
     const struct segment_register *reg;
     int okay;
 
@@ -151,8 +152,10 @@ static int hvm_translate_virtual_addr(
     if ( IS_ERR(reg) )
         return -PTR_ERR(reg);
 
+    seg_mode = hvm_seg_mode(current, seg, hvm_get_seg_reg(x86_seg_cs, sh_ctxt));
+
     okay = hvm_virtual_to_linear_addr(
-        seg, reg, offset, bytes, access_type, sh_ctxt->ctxt.addr_size, linear);
+        seg, reg, offset, bytes, access_type, seg_mode, linear);
 
     if ( !okay )
     {
