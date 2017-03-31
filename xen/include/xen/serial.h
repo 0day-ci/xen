@@ -20,6 +20,8 @@ void serial_set_rx_handler(int handle, serial_rx_fn fn);
 
 /* Number of characters we buffer for a polling receiver. */
 #define serial_rxbufsz 32
+#define MAX_CMDLINE_LENGTH 512
+#define MAX_PARAM_VALUE_LENGTH 16
 
 /* Number of characters we buffer for an interrupt-driven transmitter. */
 extern unsigned int serial_txbufsz;

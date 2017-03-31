@@ -39,10 +39,26 @@
  * can be specified in place of a numeric baud rate. Polled mode is specified
  * by requesting irq 0.
  */
-static char __initdata opt_com1[30] = "";
-static char __initdata opt_com2[30] = "";
+static char __initdata opt_com1[MAX_CMDLINE_LENGTH] = "";
+static char __initdata opt_com2[MAX_CMDLINE_LENGTH] = "";
 string_param("com1", opt_com1);
 string_param("com2", opt_com2);
+
+typedef enum e_serial_param_type {
+    BAUD=0,
+    BRIDGEBDF,
+    CLOCKHZ,
+    DATABITS,
+    DEVICE,
+    IO_BASE,
+    IRQ,
+    PARITY,
+    PORTBDF,
+    REG_SHIFT,
+    REG_WIDTH,
+    STOPBITS,
+    __MAX_SERIAL_PARAM /* introduce more parameters before this line */
+} serial_param_type;
 
 static struct ns16550 {
     int baud, clock_hz, data_bits, parity, stop_bits, fifo_size, irq;
@@ -77,6 +93,29 @@ static struct ns16550 {
     const struct ns16550_config_param *param; /* Points into .init.*! */
 #endif
 } ns16550_com[2] = { { 0 } };
+
+struct serial_param_var
+{
+    char *sp_name;
+    serial_param_type sp_type;
+};
+
+/* enum struct keeping a table of all accepted parameter names
+ * for parsing cmdline for serial port com1 and com2 */
+static struct serial_param_var sp_vars[] = {
+    {"baud", BAUD},
+    {"bridge", BRIDGEBDF},
+    {"clock_hz", CLOCKHZ},
+    {"data_bits", DATABITS},
+    {"dev", DEVICE},
+    {"io_base", IO_BASE},
+    {"irq", IRQ},
+    {"parity", PARITY},
+    {"port", PORTBDF},
+    {"reg_shift", REG_SHIFT},
+    {"reg_width", REG_WIDTH},
+    {"stop_bits", STOPBITS},
+};
 
 #ifdef CONFIG_HAS_PCI
 struct ns16550_config {
@@ -1084,26 +1123,70 @@ pci_uart_config(struct ns16550 *uart, bool_t skip_amt, unsigned int idx)
 }
 #endif
 
+/* used to parse name value pairs and return which value it is
+ * along with pointer for the extracted value - ext_value */
+static serial_param_type get_token_value(char *token, char *ext_value)
+{
+    char *param_name;
+    int i;
+
+    param_name = strsep(&token, "=");
+    if ( param_name == NULL )
+        return __MAX_SERIAL_PARAM;
+    /* token has the param value after the equal to sign */
+    strlcpy(ext_value, token, MAX_PARAM_VALUE_LENGTH);
+
+    /* linear search for the parameter */
+    for ( i = 0; i < ARRAY_SIZE(sp_vars); i++ )
+    {
+        if ( strcmp(sp_vars[i].sp_name, param_name) == 0 )
+            return sp_vars[i].sp_type;
+    }
+
+    return __MAX_SERIAL_PARAM;
+}
+
 #define PARSE_ERR(_f, _a...)                 \
     do {                                     \
         printk( "ERROR: " _f "\n" , ## _a ); \
         return;                              \
     } while ( 0 )
 
-static void __init ns16550_parse_port_config(
-    struct ns16550 *uart, const char *conf)
+#define PARSE_ERR_RET(_f, _a...)             \
+    do {                                     \
+        printk( "ERROR: " _f "\n" , ## _a ); \
+        return 1;                            \
+    } while ( 0 )
+
+
+int parse_positional(struct ns16550 *uart, char **str)
 {
     int baud;
+    const char *conf;
+    char *name_val_pos;
 
-    /* No user-specified configuration? */
-    if ( (conf == NULL) || (*conf == '\0') )
+    conf = (const char *)*str;
+    name_val_pos = strchr(*str, '=');
+
+    /* finding the end of the positional parameters */
+    if (name_val_pos)
     {
-        /* Some platforms may automatically probe the UART configuartion. */
-        if ( uart->baud != 0 )
-            goto config_parsed;
-        return;
+        while (name_val_pos > *str)
+        {
+            name_val_pos--; /* working backwards from the = sign */
+            if (*name_val_pos == ',')
+            {
+                *name_val_pos = '\0';
+                name_val_pos++;
+                break;
+            }
+        }
     }
 
+    *str = name_val_pos;
+    if (conf == *str) return 0; /* when there are no positional parameters */
+
+    /* parse positional parameters here */
     if ( strncmp(conf, "auto", 4) == 0 )
     {
         uart->baud = BAUD_AUTO;
@@ -1133,13 +1216,13 @@ static void __init ns16550_parse_port_config(
         if ( strncmp(conf, "pci", 3) == 0 )
         {
             if ( pci_uart_config(uart, 1/* skip AMT */, uart - ns16550_com) )
-                return;
+                return 0;
             conf += 3;
         }
         else if ( strncmp(conf, "amt", 3) == 0 )
         {
             if ( pci_uart_config(uart, 0, uart - ns16550_com) )
-                return;
+                return 0;
             conf += 3;
         }
         else
@@ -1158,7 +1241,7 @@ static void __init ns16550_parse_port_config(
         conf = parse_pci(conf, NULL, &uart->ps_bdf[0],
                          &uart->ps_bdf[1], &uart->ps_bdf[2]);
         if ( !conf )
-            PARSE_ERR("Bad port PCI coordinates");
+            PARSE_ERR_RET("Bad port PCI coordinates");
         uart->ps_bdf_enable = 1;
     }
 
@@ -1166,10 +1249,121 @@ static void __init ns16550_parse_port_config(
     {
         if ( !parse_pci(conf, NULL, &uart->pb_bdf[0],
                         &uart->pb_bdf[1], &uart->pb_bdf[2]) )
-            PARSE_ERR("Bad bridge PCI coordinates");
+            PARSE_ERR_RET("Bad bridge PCI coordinates");
         uart->pb_bdf_enable = 1;
     }
 #endif
+
+    return 0;
+}
+
+int parse_namevalue_pairs(char *str, struct ns16550 *uart)
+{
+    serial_param_type parsed_param;
+    char *token, *start;
+    char param_value[MAX_PARAM_VALUE_LENGTH];
+    bool dev_set;
+
+    dev_set = 0;
+    start = str;
+
+    while (start != NULL) /* strsep gives NULL when there are no tokens found */
+    {
+        /* when no tokens are found, start will be NULL */
+        token = strsep(&start, ",");
+
+        parsed_param = get_token_value(token, param_value);
+        switch(parsed_param)
+        {
+            case BAUD:
+                uart->baud = simple_strtoul(param_value, NULL, 0);
+                break;
+            case BRIDGEBDF:
+                if ( !parse_pci(param_value, NULL, &uart->ps_bdf[0],
+                        &uart->ps_bdf[1], &uart->ps_bdf[2]))
+                    PARSE_ERR_RET("Bad port PCI coordinates\n");
+                uart->ps_bdf_enable = 1;
+                break;
+            case CLOCKHZ:
+                uart->clock_hz = (simple_strtoul(param_value, NULL, 0) << 4);
+                break;
+            case DEVICE:
+                if ((strncmp(param_value, "pci", 3) == 0))
+                {
+                    pci_uart_config(uart, 1/* skip AMT */, uart - ns16550_com);
+                    dev_set = 1;
+                }
+                else if (strncmp(param_value, "amt", 3) == 0)
+                {
+                    pci_uart_config(uart, 0, uart - ns16550_com);
+                    dev_set = 1;
+                }
+                break;
+            case IO_BASE:
+                if (dev_set == 1)
+                    PARSE_ERR_RET("Can't use io_base with dev=pci or dev=amt options\n");
+                uart->io_base = simple_strtoul(param_value, NULL, 0);
+                break;
+            case IRQ:
+                uart->irq = simple_strtoul(param_value, NULL, 0);
+                break;
+            case DATABITS:
+                uart->data_bits = simple_strtoul(param_value, NULL, 0);
+                break;
+            case PARITY:
+                uart->parity = parse_parity_char(*param_value);
+                break;
+            case PORTBDF:
+                if ( !parse_pci(param_value, NULL, &uart->pb_bdf[0],
+                        &uart->pb_bdf[1], &uart->pb_bdf[2]))
+                    PARSE_ERR_RET("Bad port PCI coordinates\n");
+                uart->pb_bdf_enable = 1;
+                break;
+            case STOPBITS:
+                uart->stop_bits = simple_strtoul(param_value, NULL, 0);
+                break;
+            case REG_WIDTH:
+                uart->reg_width = simple_strtoul(param_value, NULL, 0);
+                break;
+            case REG_SHIFT:
+                uart->reg_shift = simple_strtoul(param_value, NULL, 0);
+                break;
+            default:
+                printk("Invalid parameter: %s\n", token);
+                break;
+        }
+    }
+
+    return 0;
+}
+
+static void __init ns16550_parse_port_config(
+    struct ns16550 *uart, const char *conf)
+{
+    char cmdline[MAX_CMDLINE_LENGTH];
+    char *str;
+
+    /* No user-specified configuration? */
+    if ( (conf == NULL) || (*conf == '\0') )
+    {
+        /* Some platforms may automatically probe the UART configuartion. */
+        if ( uart->baud != 0 )
+            goto config_parsed;
+        return;
+    }
+
+    strlcpy(cmdline, conf, MAX_CMDLINE_LENGTH);
+    str = cmdline; /* good idea to use another pointer and keep cmdline alone */
+
+    /* parse positional parameters and get pointer for name-value pairs */
+    if ( parse_positional(uart, &str) )
+        return;
+
+    if ( (str == NULL) || (*str == '\0') )
+        goto config_parsed;
+
+    if ( parse_namevalue_pairs(str, uart) )
+        return;
 
  config_parsed:
     /* Sanity checks. */
@@ -1178,6 +1372,8 @@ static void __init ns16550_parse_port_config(
         PARSE_ERR("Baud rate %d outside supported range.", uart->baud);
     if ( (uart->data_bits < 5) || (uart->data_bits > 8) )
         PARSE_ERR("%d data bits are unsupported.", uart->data_bits);
+    if ( (uart->reg_width != 1) && (uart->reg_width != 4) )
+        PARSE_ERR("red_width accepted values: 1 or 4.");
     if ( (uart->stop_bits < 1) || (uart->stop_bits > 2) )
         PARSE_ERR("%d stop bits are unsupported.", uart->stop_bits);
     if ( uart->io_base == 0 )
