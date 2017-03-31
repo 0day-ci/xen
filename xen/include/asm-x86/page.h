@@ -375,6 +375,10 @@ perms_strictly_increased(uint32_t old_flags, uint32_t new_flags)
 
 #define PAGE_ALIGN(x) (((x) + PAGE_SIZE - 1) & PAGE_MASK)
 
+static inline void invalidate_icache(void)
+{
+}
+
 #endif /* __X86_PAGE_H__ */
 
 /*

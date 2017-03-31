@@ -162,6 +162,8 @@ static void populate_physmap(struct memop_args *a)
     if ( unlikely(!d->creation_finished) )
         a->memflags |= MEMF_no_tlbflush;
 
+    a->memflags |= MEMF_no_icache_flush;
+
     for ( i = a->nr_done; i < a->nr_extents; i++ )
     {
         if ( i != a->nr_done && hypercall_preempt_check() )
@@ -253,6 +255,10 @@ static void populate_physmap(struct memop_args *a)
 out:
     if ( need_tlbflush )
         filtered_flush_tlb_mask(tlbflush_timestamp);
+
+    if ( a->memflags & MEMF_no_icache_flush )
+        invalidate_icache();
+
     a->nr_done = i;
 }
 
