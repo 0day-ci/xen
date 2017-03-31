@@ -5382,6 +5382,7 @@ int ptwr_do_page_fault(struct vcpu *v, unsigned long addr,
         .ctxt = {
             .regs = regs,
             .vendor = d->arch.cpuid->x86_vendor,
+            .lma = true,
             .addr_size = is_pv_32bit_domain(d) ? 32 : BITS_PER_LONG,
             .sp_size   = is_pv_32bit_domain(d) ? 32 : BITS_PER_LONG,
         },
@@ -5536,6 +5537,7 @@ int mmio_ro_do_page_fault(struct vcpu *v, unsigned long addr,
     struct x86_emulate_ctxt ctxt = {
         .regs = regs,
         .vendor = v->domain->arch.cpuid->x86_vendor,
+        .lma = true,
         .addr_size = addr_size,
         .sp_size = addr_size,
         .data = &mmio_ro_ctxt

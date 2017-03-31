@@ -649,6 +649,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data_p, size_t size)
     struct cpu_user_regs regs = {};
     struct x86_emulate_ctxt ctxt = {
         .regs = &regs,
+        .lma = sizeof(void *) == 8,
         .addr_size = 8 * sizeof(void *),
         .sp_size = 8 * sizeof(void *),
     };

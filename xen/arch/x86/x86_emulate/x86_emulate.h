@@ -457,6 +457,9 @@ struct x86_emulate_ctxt
     /* Set this if writes may have side effects. */
     bool force_writeback;
 
+    /* Long mode active? */
+    bool lma;
+
     /* Caller data that can be used by x86_emulate_ops' routines. */
     void *data;
 
