@@ -467,10 +467,21 @@ static struct feat_props l3_cdp_props = {
 };
 
 /* L2 CAT ops */
+static void l2_cat_write_msr(unsigned int cos, uint32_t val,
+                             enum cbm_type type, struct feat_node *feat)
+{
+    if ( feat->cos_reg_val[cos] != val )
+    {
+        feat->cos_reg_val[cos] = val;
+        wrmsrl(MSR_IA32_PSR_L2_MASK(cos), val);
+    }
+}
+
 static struct feat_props l2_cat_props = {
     .cos_num = 1,
     .get_feat_info = cat_get_feat_info,
     .get_val = cat_get_val,
+    .write_msr = l2_cat_write_msr,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
