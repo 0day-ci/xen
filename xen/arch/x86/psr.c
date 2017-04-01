@@ -720,7 +720,82 @@ static int find_cos(const uint32_t val[], unsigned int array_len,
                     const struct psr_socket_info *info,
                     spinlock_t *ref_lock)
 {
+    unsigned int cos, i;
+    const unsigned int *ref = info->cos_ref;
+    const struct feat_node *feat;
+    unsigned int cos_max;
+
     ASSERT(spin_is_locked(ref_lock));
+
+    /* cos_max is the one of the feature which is being set. */
+    feat = info->features[feat_type];
+    if ( !feat )
+        return -ENOENT;
+
+    cos_max = feat->props->cos_max;
+
+    for ( cos = 0; cos <= cos_max; cos++ )
+    {
+        const uint32_t *val_ptr = val;
+        bool found = false;
+
+        if ( cos && !ref[cos] )
+            continue;
+
+        /*
+         * If fail to find cos in below loop, need find whole feature array
+         * again from beginning.
+         */
+        for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
+        {
+            uint32_t default_val = 0;
+
+            feat = info->features[i];
+            if ( !feat )
+                continue;
+
+            /*
+             * COS ID 0 always stores the default value so input 0 to get
+             * default value.
+             */
+            feat->props->get_val(feat, 0, &default_val);
+
+            /*
+             * Compare value according to feature array order.
+             * We must follow this order because value array is assembled
+             * as this order.
+             */
+            if ( cos > feat->props->cos_max )
+            {
+                /*
+                 * If cos is bigger than feature's cos_max, the val should be
+                 * default value. Otherwise, it fails to find a COS ID. So we
+                 * have to exit find flow.
+                 */
+                if ( val[0] != default_val )
+                    return -EINVAL;
+
+                found = true;
+            }
+            else
+            {
+                if ( val[0] == feat->cos_reg_val[cos] )
+                    found = true;
+            }
+
+            /* If fail to match, go to next cos to compare. */
+            if ( !found )
+                break;
+
+            val_ptr += feat->props->cos_num;
+            if ( val_ptr - val > array_len )
+                return -ENOSPC;
+        }
+
+        /* For this COS ID all entries in the values array do match. Use it. */
+        if ( found )
+            return cos;
+    }
 
     return -ENOENT;
 }
