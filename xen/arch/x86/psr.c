@@ -470,6 +470,7 @@ static struct feat_props l3_cdp_props = {
 static struct feat_props l2_cat_props = {
     .cos_num = 1,
     .get_feat_info = cat_get_feat_info,
+    .get_val = cat_get_val,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
