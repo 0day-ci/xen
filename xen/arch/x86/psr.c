@@ -51,6 +51,14 @@
 
 #define PSR_ASSOC_REG_SHIFT 32
 
+/*
+ * Every PSR feature uses some COS registers for each COS ID, e.g. CDP uses 2
+ * COS registers (DATA and CODE) for one COS ID, but CAT uses 1 COS register.
+ * We use below macro as the max number of COS registers used by all features.
+ * So far, it is 2 which means CDP's COS registers number.
+ */
+#define PSR_MAX_COS_NUM 2
+
 enum psr_feat_type {
     PSR_SOCKET_L3_CAT,
     PSR_SOCKET_L3_CDP,
@@ -94,6 +102,13 @@ struct feat_node {
         unsigned int cos_max;
         unsigned int cbm_len;
 
+        /*
+         * An array to save all 'enum cbm_type' values of the feature. It is
+         * used with cos_num together to get/write a feature's COS registers
+         * values one by one.
+         */
+        enum cbm_type type[PSR_MAX_COS_NUM];
+
         /* get_feat_info is used to get feature HW info. */
         bool (*get_feat_info)(const struct feat_node *feat,
                               uint32_t data[], unsigned int array_len);
@@ -104,7 +119,7 @@ struct feat_node {
 
         /* write_msr is used to write out feature MSR register. */
         void (*write_msr)(unsigned int cos, uint32_t val,
-                          struct feat_node *feat);
+                          enum cbm_type type, struct feat_node *feat);
     } *props;
 
     uint32_t cos_reg_val[MAX_COS_REG_CNT];
@@ -292,6 +307,8 @@ static void cat_init_feature(const struct cpuid_leaf *regs,
         /* cos=0 is reserved as default cbm(all bits within cbm_len are 1). */
         feat->cos_reg_val[0] = cat_default_val(feat->props->cbm_len);
 
+        feat->props->type[0] = PSR_CBM_TYPE_L3;
+
         /*
          * To handle cpu offline and then online case, we need restore MSRs to
          * default values.
@@ -319,6 +336,9 @@ static void cat_init_feature(const struct cpuid_leaf *regs,
         /* cos=0 is reserved as default cbm(all bits within cbm_len are 1). */
         get_cdp_code(feat, 0) = cat_default_val(feat->props->cbm_len);
         get_cdp_data(feat, 0) = cat_default_val(feat->props->cbm_len);
+
+        feat->props->type[0] = PSR_CBM_TYPE_L3_DATA;
+        feat->props->type[1] = PSR_CBM_TYPE_L3_CODE;
 
         /*
          * To handle cpu offline and then online case, we need restore MSRs to
@@ -373,7 +393,7 @@ static void cat_get_val(const struct feat_node *feat, unsigned int cos,
 
 /* L3 CAT ops */
 static void l3_cat_write_msr(unsigned int cos, uint32_t val,
-                             struct feat_node *feat)
+                             enum cbm_type type, struct feat_node *feat)
 {
     if ( feat->cos_reg_val[cos] != val )
     {
@@ -410,10 +430,28 @@ static void l3_cdp_get_val(const struct feat_node *feat, unsigned int cos,
         *val = get_cdp_code(feat, cos);
 }
 
+static void l3_cdp_write_msr(unsigned int cos, uint32_t val,
+                             enum cbm_type type, struct feat_node *feat)
+{
+    /* Data */
+    if ( type == PSR_CBM_TYPE_L3_DATA && get_cdp_data(feat, cos) != val )
+    {
+        get_cdp_data(feat, cos) = val;
+        wrmsrl(MSR_IA32_PSR_L3_MASK_DATA(cos), val);
+    }
+    /* Code */
+    if ( type == PSR_CBM_TYPE_L3_CODE && get_cdp_code(feat, cos) != val )
+    {
+        get_cdp_code(feat, cos) = val;
+        wrmsrl(MSR_IA32_PSR_L3_MASK_CODE(cos), val);
+    }
+}
+
 static struct feat_props l3_cdp_props = {
     .cos_num = 2,
     .get_feat_info = l3_cdp_get_feat_info,
     .get_val = l3_cdp_get_val,
+    .write_msr = l3_cdp_write_msr,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
@@ -741,7 +779,7 @@ static int gather_val_array(uint32_t val[],
                             const struct psr_socket_info *info,
                             unsigned int old_cos)
 {
-    unsigned int i;
+    unsigned int i, j;
 
     if ( !val )
         return -EINVAL;
@@ -764,8 +802,13 @@ static int gather_val_array(uint32_t val[],
         if ( cos > feat->props->cos_max )
             cos = 0;
 
-        /* Value getting order is same as feature array. */
-        feat->props->get_val(feat, cos, 0, &val[0]);
+        /*
+         * Value getting order is same as feature array.
+         * For CDP, it has two COS values to get. We get them in this order:
+         * DATA is first, CODE is second.
+         */
+        for ( j = 0; j < feat->props->cos_num; j++ )
+            feat->props->get_val(feat, cos, feat->props->type[j], &val[j]);
 
         array_len -= feat->props->cos_num;
 
@@ -812,10 +855,64 @@ static int insert_val_to_array(uint32_t val[],
     if ( !psr_check_cbm(feat->props->cbm_len, new_val) )
         return -EINVAL;
 
-    /* Value setting position is same as feature array. */
-    val[0] = new_val;
+    /*
+     * Value setting position is same as feature array.
+     * Different features may have different setting behaviors, e.g. CDP
+     * has two values (DATA/CODE) which need us to save input value to
+     * different position in the array according to type.
+     */
+    for ( i = 0; i < feat->props->cos_num; i++ )
+    {
+        if ( type == feat->props->type[i] )
+            val[i] = new_val;
+    }
 
     return 0;
+}
+
+static int compare_val(const uint32_t val[],
+                       const struct feat_node *feat,
+                       unsigned int cos)
+{
+    int rc = 0;
+    unsigned int i;
+
+    for ( i = 0; i < feat->props->cos_num; i++ )
+    {
+        uint32_t feat_val = 0;
+
+        rc = 0;
+
+        /* If cos is bigger than cos_max, we need compare default value. */
+        if ( cos > feat->props->cos_max )
+        {
+            /*
+             * COS ID 0 always stores the default value so input 0 to get
+             * default value.
+             */
+            feat->props->get_val(feat, 0, feat->props->type[i], &feat_val);
+
+            /*
+             * If cos is bigger than feature's cos_max, the val should be
+             * default value. Otherwise, it fails to find a COS ID. So we
+             * have to exit find flow.
+             */
+            if ( val[i] != feat_val )
+                return -EINVAL;
+
+            rc = 1;
+            continue;
+        }
+
+        /* For CDP, DATA is the first item in val[], CODE is the second. */
+        feat->props->get_val(feat, cos, feat->props->type[i], &feat_val);
+        if ( val[i] != feat_val )
+            break;
+
+        rc = 1;
+    }
+
+    return rc;
 }
 
 static int find_cos(const uint32_t val[], unsigned int array_len,
@@ -840,7 +937,7 @@ static int find_cos(const uint32_t val[], unsigned int array_len,
     for ( cos = 0; cos <= cos_max; cos++ )
     {
         const uint32_t *val_ptr = val;
-        bool found = false;
+        int rc = 0;
 
         if ( cos && !ref[cos] )
             continue;
@@ -851,43 +948,21 @@ static int find_cos(const uint32_t val[], unsigned int array_len,
          */
         for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
         {
-            uint32_t default_val = 0;
-
             feat = info->features[i];
             if ( !feat )
                 continue;
-
-            /*
-             * COS ID 0 always stores the default value so input 0 to get
-             * default value.
-             */
-            feat->props->get_val(feat, 0, 0, &default_val);
 
             /*
              * Compare value according to feature array order.
              * We must follow this order because value array is assembled
              * as this order.
              */
-            if ( cos > feat->props->cos_max )
-            {
-                /*
-                 * If cos is bigger than feature's cos_max, the val should be
-                 * default value. Otherwise, it fails to find a COS ID. So we
-                 * have to exit find flow.
-                 */
-                if ( val[0] != default_val )
-                    return -EINVAL;
-
-                found = true;
-            }
-            else
-            {
-                if ( val[0] == feat->cos_reg_val[cos] )
-                    found = true;
-            }
+            rc = compare_val(val, feat, cos);
+            if ( rc < 0 )
+                return rc;
 
             /* If fail to match, go to next cos to compare. */
-            if ( !found )
+            if ( !rc )
                 break;
 
             val_ptr += feat->props->cos_num;
@@ -896,7 +971,7 @@ static int find_cos(const uint32_t val[], unsigned int array_len,
         }
 
         /* For this COS ID all entries in the values array do match. Use it. */
-        if ( found )
+        if ( rc )
             return cos;
     }
 
@@ -908,7 +983,7 @@ static bool fits_cos_max(const uint32_t val[],
                          const struct psr_socket_info *info,
                          unsigned int cos)
 {
-    unsigned int i;
+    unsigned int i, j;
 
     for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
     {
@@ -922,9 +997,14 @@ static bool fits_cos_max(const uint32_t val[],
 
         if ( cos > feat->props->cos_max )
         {
-            feat->props->get_val(feat, 0, 0, &default_val);
-            if ( val[0] != default_val )
-                return false;
+            /* For CDP, DATA is the first item in val[], CODE is the second. */
+            for ( j = 0; j < feat->props->cos_num; j++ )
+            {
+                feat->props->get_val(feat, 0, feat->props->type[j],
+                                     &default_val);
+                if ( val[j] != default_val )
+                    return false;
+            }
         }
 
         array_len -= feat->props->cos_num;
@@ -994,6 +1074,7 @@ struct cos_write_info
     unsigned int cos;
     struct feat_node *feature;
     uint32_t val;
+    enum cbm_type type;
 };
 
 static void do_write_psr_msr(void *data)
@@ -1005,11 +1086,12 @@ static void do_write_psr_msr(void *data)
     if ( cos > feat->props->cos_max )
         return;
 
-    feat->props->write_msr(cos, info->val, feat);
+    feat->props->write_msr(cos, info->val, info->type, feat);
 }
 
 static int write_psr_msr(unsigned int socket, unsigned int cos,
-                         uint32_t val, enum psr_feat_type feat_type)
+                         uint32_t val, enum cbm_type type,
+                         enum psr_feat_type feat_type)
 {
     struct psr_socket_info *info = get_socket_info(socket);
     struct cos_write_info data =
@@ -1017,6 +1099,7 @@ static int write_psr_msr(unsigned int socket, unsigned int cos,
         .cos = cos,
         .feature = info->features[feat_type],
         .val = val,
+        .type = type,
     };
 
     if ( socket == cpu_to_socket(smp_processor_id()) )
@@ -1031,6 +1114,40 @@ static int write_psr_msr(unsigned int socket, unsigned int cos,
     }
 
     return 0;
+}
+
+static void restore_default_val(unsigned int socket, unsigned int cos,
+                                enum psr_feat_type feat_type)
+{
+    unsigned int i, j;
+    uint32_t default_val;
+    const struct psr_socket_info *info = get_socket_info(socket);
+
+    for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
+    {
+        const struct feat_node *feat = info->features[i];
+        /*
+         * There are four judgements:
+         * 1. Input 'feat_type' is valid so we have to get feature according to
+         *    it. If current feature type (i) does not match 'feat_type', we
+         *    need skip it, so continue to check next feature.
+         * 2. Input 'feat_type' is 'PSR_SOCKET_MAX_FEAT' which means we should
+         *    handle all features in this case. So, go to next loop.
+         * 3. Do not need restore the COS value back to default if cos_num is 1,
+         *    e.g. L3 CAT. Because next value setting will overwrite it.
+         * 4. 'feat' we got is NULL, continue.
+         */
+        if ( ( feat_type != PSR_SOCKET_MAX_FEAT && feat_type != i ) ||
+             !feat || feat->props->cos_num == 1 )
+            continue;
+
+        for ( j = 0; j < feat->props->cos_num; j++ )
+        {
+            feat->props->get_val(feat, 0, feat->props->type[j], &default_val);
+            write_psr_msr(socket, cos, default_val,
+                          feat->props->type[j], i);
+        }
+    }
 }
 
 /* The whole set process is protected by domctl_lock. */
@@ -1125,7 +1242,7 @@ int psr_set_val(struct domain *d, unsigned int socket,
          * Step 4:
          * Write all features MSRs according to the COS ID.
          */
-        ret = write_psr_msr(socket, cos, val, feat_type);
+        ret = write_psr_msr(socket, cos, val, type, feat_type);
         if ( ret )
             goto unlock_free_array;
     }
@@ -1139,10 +1256,26 @@ int psr_set_val(struct domain *d, unsigned int socket,
     ASSERT(!cos || ref[cos]);
     ASSERT(!old_cos || ref[old_cos]);
     ref[old_cos]--;
-    spin_unlock(&info->ref_lock);
 
     /*
      * Step 6:
+     * For features,  e.g. CDP, which cos_num is more than 1, we have to
+     * restore the old_cos value back to default when ref[old_cos] is 0.
+     * Otherwise, user will see wrong values when this COS ID is reused. E.g.
+     * user wants to set DATA to 0x3ff for a new domain. He hopes to see the
+     * DATA is set to 0x3ff and CODE should be the default value, 0x7ff. But
+     * if the COS ID picked for this action is the one that has been used by
+     * other domain and the CODE has been set to 0x1ff. Then, user will see
+     * DATA: 0x3ff, CODE: 0x1ff. So, we have to restore COS values for features
+     * using multiple COSs.
+     */
+    if ( old_cos && !ref[old_cos] )
+        restore_default_val(socket, old_cos, feat_type);
+
+    spin_unlock(&info->ref_lock);
+
+    /*
+     * Step 7:
      * Save the COS ID into current domain's psr_cos_ids[] so that we can know
      * which COS the domain is using on the socket. One domain can only use
      * one COS ID at same time on each socket.
@@ -1183,6 +1316,13 @@ static void psr_free_cos(struct domain *d)
         spin_lock(&info->ref_lock);
         ASSERT(!cos || info->cos_ref[cos]);
         info->cos_ref[cos]--;
+        /*
+         * The 'cos_ref[cos]' of 'd' is 0 now so we need restore corresponding
+         * COS registers to default value. Because this case happens when a
+         * domain is destroied, we need restore all features.
+         */
+        if ( !info->cos_ref[cos] )
+            restore_default_val(socket, cos, PSR_SOCKET_MAX_FEAT);
         spin_unlock(&info->ref_lock);
     }
 
