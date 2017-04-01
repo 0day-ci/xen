@@ -257,6 +257,9 @@ static enum psr_feat_type psr_cbm_type_to_feat_type(enum cbm_type type)
     case PSR_CBM_TYPE_L3_CODE:
         feat_type = PSR_SOCKET_L3_CDP;
         break;
+    case PSR_CBM_TYPE_L2:
+        feat_type = PSR_SOCKET_L2_CAT;
+        break;
     default:
         ASSERT_UNREACHABLE();
     }
@@ -466,6 +469,7 @@ static struct feat_props l3_cdp_props = {
 /* L2 CAT ops */
 static struct feat_props l2_cat_props = {
     .cos_num = 1,
+    .get_feat_info = cat_get_feat_info,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,

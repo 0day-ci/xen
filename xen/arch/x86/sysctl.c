@@ -195,6 +195,27 @@ long arch_do_sysctl(
             break;
         }
 
+        case XEN_SYSCTL_PSR_CAT_get_l2_info:
+        {
+            uint32_t data[PSR_INFO_ARRAY_SIZE];
+
+            ret = psr_get_info(sysctl->u.psr_cat_op.target,
+                               PSR_CBM_TYPE_L2, data, ARRAY_SIZE(data));
+            if ( ret )
+                break;
+
+            sysctl->u.psr_cat_op.u.l3_info.cos_max =
+                                      data[PSR_INFO_IDX_COS_MAX];
+            sysctl->u.psr_cat_op.u.l3_info.cbm_len =
+                                      data[PSR_INFO_IDX_CAT_CBM_LEN];
+            sysctl->u.psr_cat_op.u.l3_info.flags =
+                                      data[PSR_INFO_IDX_CAT_FLAG];
+
+            if ( !ret && __copy_field_to_guest(u_sysctl, sysctl, u.psr_cat_op) )
+                ret = -EFAULT;
+            break;
+        }
+
         default:
             ret = -EOPNOTSUPP;
             break;
