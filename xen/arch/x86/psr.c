@@ -101,6 +101,10 @@ struct feat_node {
         /* get_val is used to get feature COS register value. */
         void (*get_val)(const struct feat_node *feat, unsigned int cos,
                         uint32_t *val);
+
+        /* write_msr is used to write out feature MSR register. */
+        void (*write_msr)(unsigned int cos, uint32_t val,
+                          struct feat_node *feat);
     } *props;
 
     uint32_t cos_reg_val[MAX_COS_REG_CNT];
@@ -315,10 +319,21 @@ static void cat_get_val(const struct feat_node *feat, unsigned int cos,
 }
 
 /* L3 CAT ops */
+static void l3_cat_write_msr(unsigned int cos, uint32_t val,
+                             struct feat_node *feat)
+{
+    if ( feat->cos_reg_val[cos] != val )
+    {
+        feat->cos_reg_val[cos] = val;
+        wrmsrl(MSR_IA32_PSR_L3_MASK(cos), val);
+    }
+}
+
 static struct feat_props l3_cat_props = {
     .cos_num = 1,
     .get_feat_info = cat_get_feat_info,
     .get_val = cat_get_val,
+    .write_msr = l3_cat_write_msr,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
@@ -878,10 +893,56 @@ static int pick_avail_cos(const struct psr_socket_info *info,
     return -EOVERFLOW;
 }
 
+static unsigned int get_socket_cpu(unsigned int socket)
+{
+    if ( likely(socket < nr_sockets) )
+        return cpumask_any(socket_cpumask[socket]);
+
+    return nr_cpu_ids;
+}
+
+struct cos_write_info
+{
+    unsigned int cos;
+    struct feat_node *feature;
+    uint32_t val;
+};
+
+static void do_write_psr_msr(void *data)
+{
+    struct cos_write_info *info = data;
+    unsigned int cos            = info->cos;
+    struct feat_node *feat      = info->feature;
+
+    if ( cos > feat->props->cos_max )
+        return;
+
+    feat->props->write_msr(cos, info->val, feat);
+}
+
 static int write_psr_msr(unsigned int socket, unsigned int cos,
                          uint32_t val, enum psr_feat_type feat_type)
 {
-    return -ENOENT;
+    struct psr_socket_info *info = get_socket_info(socket);
+    struct cos_write_info data =
+    {
+        .cos = cos,
+        .feature = info->features[feat_type],
+        .val = val,
+    };
+
+    if ( socket == cpu_to_socket(smp_processor_id()) )
+        do_write_psr_msr(&data);
+    else
+    {
+        unsigned int cpu = get_socket_cpu(socket);
+
+        if ( cpu >= nr_cpu_ids )
+            return -ENOTSOCK;
+        on_selected_cpus(cpumask_of(cpu), do_write_psr_msr, &data, 1);
+    }
+
+    return 0;
 }
 
 /* The whole set process is protected by domctl_lock. */
