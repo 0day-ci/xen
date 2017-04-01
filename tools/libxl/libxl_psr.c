@@ -317,6 +317,7 @@ int libxl_psr_cat_set_cbm(libxl_ctx *ctx, uint32_t domid,
     GC_INIT(ctx);
     int rc;
     int socketid, nr_sockets;
+    libxl_psr_cat_info cat_info;
 
     rc = libxl__count_physical_sockets(gc, &nr_sockets);
     if (rc) {
@@ -331,10 +332,41 @@ int libxl_psr_cat_set_cbm(libxl_ctx *ctx, uint32_t domid,
             break;
 
         xc_type = libxl__psr_cbm_type_to_libxc_psr_cat_type(type);
-        if (xc_psr_cat_set_domain_data(ctx->xch, domid, xc_type,
-                                       socketid, cbm)) {
-            libxl__psr_cat_log_err_msg(gc, errno);
-            rc = ERROR_FAIL;
+
+        if (xc_type == XC_PSR_CAT_L3_CBM) {
+            if (xc_psr_cat_get_info(ctx->xch, socketid, 3, &cat_info.cos_max,
+                                    &cat_info.cbm_len, &cat_info.cdp_enabled)) {
+                libxl__psr_cat_log_err_msg(gc, errno);
+                rc = ERROR_FAIL;
+                goto out;
+            }
+        }
+
+        /*
+         * If cdp_enabled is true and type is XC_PSR_CAT_L3_CBM,  we need set
+         * both CODE and DATA.
+         */
+        if (xc_type == XC_PSR_CAT_L3_CBM && cat_info.cdp_enabled) {
+            xc_type = XC_PSR_CAT_L3_CBM_CODE;
+            if (xc_psr_cat_set_domain_data(ctx->xch, domid, xc_type,
+                                           socketid, cbm)) {
+                libxl__psr_cat_log_err_msg(gc, errno);
+                rc = ERROR_FAIL;
+            }
+
+            xc_type = XC_PSR_CAT_L3_CBM_DATA;
+            if (rc != ERROR_FAIL &&
+                xc_psr_cat_set_domain_data(ctx->xch, domid, xc_type,
+                                           socketid, cbm)) {
+                libxl__psr_cat_log_err_msg(gc, errno);
+                rc = ERROR_FAIL;
+            }
+        } else {
+            if (xc_psr_cat_set_domain_data(ctx->xch, domid, xc_type,
+                                           socketid, cbm)) {
+                libxl__psr_cat_log_err_msg(gc, errno);
+                rc = ERROR_FAIL;
+            }
         }
     }
 
