@@ -224,6 +224,29 @@ static enum psr_feat_type psr_cbm_type_to_feat_type(enum cbm_type type)
 }
 
 /* CAT common functions implementation. */
+static bool psr_check_cbm(unsigned int cbm_len, unsigned long cbm)
+{
+    unsigned int first_bit, zero_bit;
+
+    /* Set bits should only in the range of [0, cbm_len]. */
+    if ( cbm & (~0ul << cbm_len) )
+        return false;
+
+    /* At least one bit need to be set. */
+    if ( cbm == 0 )
+        return false;
+
+    first_bit = find_first_bit(&cbm, cbm_len);
+    zero_bit = find_next_zero_bit(&cbm, cbm_len, first_bit);
+
+    /* Set bits should be contiguous. */
+    if ( zero_bit < cbm_len &&
+         find_next_bit(&cbm, cbm_len, zero_bit) < cbm_len )
+        return false;
+
+    return true;
+}
+
 static void cat_init_feature(const struct cpuid_leaf *regs,
                              struct feat_node *feat,
                              struct psr_socket_info *info,
@@ -593,7 +616,21 @@ int psr_get_val(struct domain *d, unsigned int socket,
 /* Set value functions */
 static unsigned int get_cos_num(const struct psr_socket_info *info)
 {
-    return 0;
+    unsigned int num = 0, i;
+
+    /* Get all features total amount. */
+    for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
+    {
+        const struct feat_node *feat = info->features[i];
+        if ( !feat )
+            continue;
+
+        feat = info->features[i];
+
+        num += feat->props->cos_num;
+    }
+
+    return num;
 }
 
 static int gather_val_array(uint32_t val[],
@@ -601,7 +638,38 @@ static int gather_val_array(uint32_t val[],
                             const struct psr_socket_info *info,
                             unsigned int old_cos)
 {
-    return -EINVAL;
+    unsigned int i;
+
+    if ( !val )
+        return -EINVAL;
+
+    /* Get all features current values according to old_cos. */
+    for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
+    {
+        unsigned int cos = old_cos;
+        const struct feat_node *feat = info->features[i];
+        if ( !feat )
+            continue;
+
+        if ( array_len < feat->props->cos_num )
+            return -ENOSPC;
+
+        /*
+         * If old_cos exceeds current feature's cos_max, we should get
+         * default value. So assign cos to 0 which stores default value.
+         */
+        if ( cos > feat->props->cos_max )
+            cos = 0;
+
+        /* Value getting order is same as feature array. */
+        feat->props->get_val(feat, cos, &val[0]);
+
+        array_len -= feat->props->cos_num;
+
+        val += feat->props->cos_num;
+    }
+
+    return 0;
 }
 
 static int insert_val_to_array(uint32_t val[],
@@ -611,7 +679,40 @@ static int insert_val_to_array(uint32_t val[],
                                enum cbm_type type,
                                uint32_t new_val)
 {
-    return -EINVAL;
+    const struct feat_node *feat;
+    unsigned int i;
+
+    ASSERT(feat_type < PSR_SOCKET_MAX_FEAT);
+
+    /* Insert new value into array according to feature's position in array. */
+    for ( i = 0; i < feat_type; i++ )
+    {
+        feat = info->features[i];
+        if ( !feat )
+            continue;
+
+        if ( array_len <= feat->props->cos_num )
+            return -ENOSPC;
+
+        array_len -= feat->props->cos_num;
+
+        val += feat->props->cos_num;
+    }
+
+    feat = info->features[feat_type];
+    if ( !feat )
+        return -ENOENT;
+
+    if ( array_len < feat->props->cos_num )
+        return -ENOSPC;
+
+    if ( !psr_check_cbm(feat->props->cbm_len, new_val) )
+        return -EINVAL;
+
+    /* Value setting position is same as feature array. */
+    val[0] = new_val;
+
+    return 0;
 }
 
 static int find_cos(const uint32_t val[], unsigned int array_len,
