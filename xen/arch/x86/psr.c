@@ -800,15 +800,82 @@ static int find_cos(const uint32_t val[], unsigned int array_len,
     return -ENOENT;
 }
 
+static bool fits_cos_max(const uint32_t val[],
+                         uint32_t array_len,
+                         const struct psr_socket_info *info,
+                         unsigned int cos)
+{
+    unsigned int i;
+
+    for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
+    {
+        uint32_t default_val = 0;
+        const struct feat_node *feat = info->features[i];
+        if ( !feat )
+            continue;
+
+        if ( array_len < feat->props->cos_num )
+            return false;
+
+        if ( cos > feat->props->cos_max )
+        {
+            feat->props->get_val(feat, 0, &default_val);
+            if ( val[0] != default_val )
+                return false;
+        }
+
+        array_len -= feat->props->cos_num;
+
+        val += feat->props->cos_num;
+    }
+
+    return true;
+}
+
 static int pick_avail_cos(const struct psr_socket_info *info,
                           spinlock_t *ref_lock,
                           const uint32_t val[], unsigned int array_len,
                           unsigned int old_cos,
                           enum psr_feat_type feat_type)
 {
+    unsigned int cos;
+    unsigned int cos_max = 0;
+    const struct feat_node *feat;
+    const unsigned int *ref = info->cos_ref;
+
     ASSERT(spin_is_locked(ref_lock));
 
-    return -ENOENT;
+    /* cos_max is the one of the feature which is being set. */
+    feat = info->features[feat_type];
+    if ( !feat )
+        return -ENOENT;
+
+    cos_max = feat->props->cos_max;
+    if ( !cos_max )
+        return -ENOENT;
+
+    /* We cannot use id 0 because it stores the default values. */
+    if ( old_cos && ref[old_cos] == 1 &&
+         fits_cos_max(val, array_len, info, old_cos) )
+            return old_cos;
+
+    /* Find an unused one other than cos0. */
+    for ( cos = 1; cos <= cos_max; cos++ )
+    {
+        /*
+         * ref is 0 means this COS is not used by other domain and
+         * can be used for current setting.
+         */
+        if ( !ref[cos] )
+        {
+            if ( !fits_cos_max(val, array_len, info, cos) )
+                break;
+
+            return cos;
+        }
+    }
+
+    return -EOVERFLOW;
 }
 
 static int write_psr_msr(unsigned int socket, unsigned int cos,
