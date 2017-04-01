@@ -144,9 +144,26 @@ static DEFINE_PER_CPU(struct psr_assoc, psr_assoc);
  * array creation. It is used to transiently store a spare node.
  */
 static struct feat_node *feat_l3_cat;
+static struct feat_node *feat_l3_cdp;
 
 /* Common functions */
 #define cat_default_val(len) (0xffffffff >> (32 - (len)))
+
+/*
+ * get_cdp_data - get DATA COS register value from input COS ID.
+ * @feat:        the feature node.
+ * @cos:         the COS ID.
+ */
+#define get_cdp_data(feat, cos)              \
+            ( (feat)->cos_reg_val[(cos) * 2] )
+
+/*
+ * get_cdp_code - get CODE COS register value from input COS ID.
+ * @feat:        the feature node.
+ * @cos:         the COS ID.
+ */
+#define get_cdp_code(feat, cos)              \
+            ( (feat)->cos_reg_val[(cos) * 2 + 1] )
 
 /*
  * Use this function to check if any allocation feature has been enabled
@@ -283,6 +300,37 @@ static void cat_init_feature(const struct cpuid_leaf *regs,
 
         break;
 
+    case PSR_SOCKET_L3_CDP:
+    {
+        unsigned long val;
+
+        /* Cut half of cos_max when CDP is enabled. */
+        feat->props->cos_max >>= 1;
+
+        /* We only write mask1 since mask0 is always all ones by default. */
+        wrmsrl(MSR_IA32_PSR_L3_MASK(1), cat_default_val(feat->props->cbm_len));
+        rdmsrl(MSR_IA32_PSR_L3_QOS_CFG, val);
+        wrmsrl(MSR_IA32_PSR_L3_QOS_CFG, val | (1 << PSR_L3_QOS_CDP_ENABLE_BIT));
+
+        /* cos=0 is reserved as default cbm(all bits within cbm_len are 1). */
+        get_cdp_code(feat, 0) = cat_default_val(feat->props->cbm_len);
+        get_cdp_data(feat, 0) = cat_default_val(feat->props->cbm_len);
+
+        /*
+         * To handle cpu offline and then online case, we need restore MSRs to
+         * default values.
+         */
+        for ( i = 1; i <= feat->props->cos_max; i++ )
+        {
+            wrmsrl(MSR_IA32_PSR_L3_MASK_DATA(i), get_cdp_data(feat, 0));
+            wrmsrl(MSR_IA32_PSR_L3_MASK_CODE(i), get_cdp_code(feat, 0));
+            get_cdp_code(feat, i) = get_cdp_code(feat, 0);
+            get_cdp_data(feat, i) = get_cdp_data(feat, 0);
+        }
+
+        break;
+    }
+
     default:
         return;
     }
@@ -294,8 +342,9 @@ static void cat_init_feature(const struct cpuid_leaf *regs,
     if ( !opt_cpu_info )
         return;
 
-    printk(XENLOG_INFO "%s CAT: enabled on socket %u, cos_max:%u, cbm_len:%u\n",
-           ((type == PSR_SOCKET_L3_CAT) ? "L3" : "L2"),
+    printk(XENLOG_INFO "%s: enabled on socket %u, cos_max:%u, cbm_len:%u\n",
+           ((type == PSR_SOCKET_L3_CDP) ? "CDP" :
+            ((type == PSR_SOCKET_L3_CAT) ? "L3 CAT": "L2 CAT")),
            socket, feat->props->cos_max, feat->props->cbm_len);
 }
 
@@ -334,6 +383,11 @@ static struct feat_props l3_cat_props = {
     .get_feat_info = cat_get_feat_info,
     .get_val = cat_get_val,
     .write_msr = l3_cat_write_msr,
+};
+
+/* L3 CDP ops */
+static struct feat_props l3_cdp_props = {
+    .cos_num = 2,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
@@ -1161,6 +1215,10 @@ static int psr_cpu_prepare(void)
          (feat_l3_cat = xzalloc(struct feat_node)) == NULL )
         return -ENOMEM;
 
+    if ( feat_l3_cdp == NULL &&
+         (feat_l3_cdp = xzalloc(struct feat_node)) == NULL )
+        return -ENOMEM;
+
     return 0;
 }
 
@@ -1193,11 +1251,21 @@ static void psr_cpu_init(void)
     {
         cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 1, &regs);
 
-        feat = feat_l3_cat;
-        feat_l3_cat = NULL;
-        feat->props = &l3_cat_props;
-
-        cat_init_feature(&regs, feat, info, PSR_SOCKET_L3_CAT);
+        if ( (regs.c & PSR_CAT_CDP_CAPABILITY) && (opt_psr & PSR_CDP) &&
+             !info->features[PSR_SOCKET_L3_CDP] )
+        {
+            feat = feat_l3_cdp;
+            feat_l3_cdp = NULL;
+            feat->props = &l3_cdp_props;
+            cat_init_feature(&regs, feat, info, PSR_SOCKET_L3_CDP);
+        }
+        else
+        {
+            feat = feat_l3_cat;
+            feat_l3_cat = NULL;
+            feat->props = &l3_cat_props;
+            cat_init_feature(&regs, feat, info, PSR_SOCKET_L3_CAT);
+        }
     }
 
  assoc_init:
@@ -1257,7 +1325,7 @@ static int __init psr_presmp_init(void)
     if ( (opt_psr & PSR_CMT) && opt_rmid_max )
         init_psr_cmt(opt_rmid_max);
 
-    if ( opt_psr & PSR_CAT )
+    if ( opt_psr & (PSR_CAT | PSR_CDP) )
         init_psr();
 
     if ( psr_cpu_prepare() )
