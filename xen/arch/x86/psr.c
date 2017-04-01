@@ -237,6 +237,10 @@ static enum psr_feat_type psr_cbm_type_to_feat_type(enum cbm_type type)
     case PSR_CBM_TYPE_L3:
         feat_type = PSR_SOCKET_L3_CAT;
         break;
+    case PSR_CBM_TYPE_L3_DATA:
+    case PSR_CBM_TYPE_L3_CODE:
+        feat_type = PSR_SOCKET_L3_CDP;
+        break;
     default:
         ASSERT_UNREACHABLE();
     }
@@ -386,8 +390,20 @@ static struct feat_props l3_cat_props = {
 };
 
 /* L3 CDP ops */
+static bool l3_cdp_get_feat_info(const struct feat_node *feat,
+                                 uint32_t data[], uint32_t array_len)
+{
+    if ( !cat_get_feat_info(feat, data, array_len) )
+        return false;
+
+    data[PSR_INFO_IDX_CAT_FLAG] |= XEN_SYSCTL_PSR_CAT_L3_CDP;
+
+    return true;
+}
+
 static struct feat_props l3_cdp_props = {
     .cos_num = 2,
+    .get_feat_info = l3_cdp_get_feat_info,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
@@ -640,6 +656,14 @@ int psr_get_info(unsigned int socket, enum cbm_type type,
     feat = psr_get_feat(socket, type);
     if ( IS_ERR(feat) )
         return PTR_ERR(feat);
+
+    /* If type is L3 CAT but we cannot find it in feature array, try CDP. */
+    if ( !feat && type == PSR_CBM_TYPE_L3 )
+    {
+        feat = psr_get_feat(socket, PSR_CBM_TYPE_L3_CODE);
+        if ( IS_ERR(feat) )
+            return PTR_ERR(feat);
+    }
 
     if ( !feat )
         return -ENOENT;
