@@ -160,6 +160,7 @@ static DEFINE_PER_CPU(struct psr_assoc, psr_assoc);
  */
 static struct feat_node *feat_l3_cat;
 static struct feat_node *feat_l3_cdp;
+static struct feat_node *feat_l2_cat;
 
 /* Common functions */
 #define cat_default_val(len) (0xffffffff >> (32 - (len)))
@@ -304,10 +305,14 @@ static void cat_init_feature(const struct cpuid_leaf *regs,
     switch ( type )
     {
     case PSR_SOCKET_L3_CAT:
+    case PSR_SOCKET_L2_CAT:
         /* cos=0 is reserved as default cbm(all bits within cbm_len are 1). */
         feat->cos_reg_val[0] = cat_default_val(feat->props->cbm_len);
 
-        feat->props->type[0] = PSR_CBM_TYPE_L3;
+        if ( type == PSR_SOCKET_L3_CAT )
+            feat->props->type[0] = PSR_CBM_TYPE_L3;
+        else
+            feat->props->type[0] = PSR_CBM_TYPE_L2;
 
         /*
          * To handle cpu offline and then online case, we need restore MSRs to
@@ -315,7 +320,11 @@ static void cat_init_feature(const struct cpuid_leaf *regs,
          */
         for ( i = 1; i <= feat->props->cos_max; i++ )
         {
-            wrmsrl(MSR_IA32_PSR_L3_MASK(i), feat->cos_reg_val[0]);
+            if ( type == PSR_SOCKET_L3_CAT )
+                wrmsrl(MSR_IA32_PSR_L3_MASK(i), feat->cos_reg_val[0]);
+            else
+                wrmsrl(MSR_IA32_PSR_L2_MASK(i), feat->cos_reg_val[0]);
+
             feat->cos_reg_val[i] = feat->cos_reg_val[0];
         }
 
@@ -452,6 +461,11 @@ static struct feat_props l3_cdp_props = {
     .get_feat_info = l3_cdp_get_feat_info,
     .get_val = l3_cdp_get_val,
     .write_msr = l3_cdp_write_msr,
+};
+
+/* L2 CAT ops */
+static struct feat_props l2_cat_props = {
+    .cos_num = 1,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
@@ -1393,6 +1407,10 @@ static int psr_cpu_prepare(void)
          (feat_l3_cdp = xzalloc(struct feat_node)) == NULL )
         return -ENOMEM;
 
+    if ( feat_l2_cat == NULL &&
+         (feat_l2_cat = xzalloc(struct feat_node)) == NULL )
+        return -ENOMEM;
+
     return 0;
 }
 
@@ -1440,6 +1458,17 @@ static void psr_cpu_init(void)
             feat->props = &l3_cat_props;
             cat_init_feature(&regs, feat, info, PSR_SOCKET_L3_CAT);
         }
+    }
+
+    cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 0, &regs);
+    if ( regs.b & PSR_RESOURCE_TYPE_L2 )
+    {
+        cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 2, &regs);
+
+        feat = feat_l2_cat;
+        feat_l2_cat = NULL;
+        feat->props = &l2_cat_props;
+        cat_init_feature(&regs, feat, info, PSR_SOCKET_L2_CAT);
     }
 
  assoc_init:
