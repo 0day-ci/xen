@@ -13,15 +13,99 @@
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  */
-#include <xen/init.h>
 #include <xen/cpu.h>
 #include <xen/err.h>
+#include <xen/init.h>
 #include <xen/sched.h>
 #include <asm/psr.h>
+
+/*
+ * Terminology:
+ * - CAT         Cache Allocation Technology
+ * - CBM         Capacity BitMasks
+ * - CDP         Code and Data Prioritization
+ * - COS/CLOS    Class of Service. Also mean COS registers.
+ * - COS_MAX     Max number of COS for the feature (minus 1)
+ * - MSRs        Machine Specific Registers
+ * - PSR         Intel Platform Shared Resource
+ */
 
 #define PSR_CMT        (1<<0)
 #define PSR_CAT        (1<<1)
 #define PSR_CDP        (1<<2)
+
+/*
+ * Per SDM chapter 'Cache Allocation Technology: Cache Mask Configuration',
+ * the MSRs ranging from 0C90H through 0D0FH (inclusive), enables support for
+ * up to 128 L3 CAT Classes of Service. The COS_ID=[0,127].
+ *
+ * The MSRs ranging from 0D10H through 0D4FH (inclusive), enables support for
+ * up to 64 L2 CAT COS. The COS_ID=[0,63].
+ *
+ * So, the maximum COS register count of one feature is 128.
+ */
+#define MAX_COS_REG_CNT  128
+
+enum psr_feat_type {
+    PSR_SOCKET_L3_CAT,
+    PSR_SOCKET_L3_CDP,
+    PSR_SOCKET_L2_CAT,
+    PSR_SOCKET_MAX_FEAT,
+};
+
+/*
+ * This structure represents one feature.
+ * feat_props  - Feature properties, including operation callback functions
+                 and feature common values.
+ * cos_reg_val - Array to store the values of COS registers. One entry stores
+ *               the value of one COS register.
+ *               For L3 CAT and L2 CAT, one entry corresponds to one COS_ID.
+ *               For CDP, two entries correspond to one COS_ID. E.g.
+ *               COS_ID=0 corresponds to cos_reg_val[0] (Data) and
+ *               cos_reg_val[1] (Code).
+ */
+struct feat_node {
+    /*
+     * This structure defines feature operation callback functions. Every
+     * feature enabled MUST implement such callback functions and register
+     * them to props.
+     *
+     * Feature specific behaviors will be encapsulated into these callback
+     * functions. Then, the main flows will not be changed when introducing
+     * a new feature.
+     *
+     * Feature independent HW info and common values are also defined in it.
+     */
+    const struct feat_props {
+        /*
+         * cos_num, cos_max and cbm_len are common values for all features
+         * so far.
+         * cos_num - COS registers number that feature uses for one COS ID.
+         *           It is defined in SDM.
+         * cos_max - The max COS registers number got through CPUID.
+         * cbm_len - The length of CBM got through CPUID.
+         */
+        unsigned int cos_num;
+        unsigned int cos_max;
+        unsigned int cbm_len;
+    } *props;
+
+    uint32_t cos_reg_val[MAX_COS_REG_CNT];
+};
+
+/*
+ * PSR features are managed per socket. Below structure defines the members
+ * used to manage these features.
+ * features  - A feature node array used to manage all features enabled.
+ * ref_lock  - A lock to protect cos_ref.
+ * cos_ref   - A reference count array to record how many domains are using the
+ *             COS ID. Every entry of cos_ref corresponds to one COS ID.
+ */
+struct psr_socket_info {
+    struct feat_node *features[PSR_SOCKET_MAX_FEAT];
+    spinlock_t ref_lock;
+    unsigned int cos_ref[MAX_COS_REG_CNT];
+};
 
 struct psr_assoc {
     uint64_t val;
