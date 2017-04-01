@@ -1427,25 +1427,37 @@ long arch_do_domctl(
             break;
 
         case XEN_DOMCTL_PSR_CAT_OP_GET_L3_CBM:
-            ret = psr_get_l3_cbm(d, domctl->u.psr_cat_op.target,
-                                 &domctl->u.psr_cat_op.data,
-                                 PSR_CBM_TYPE_L3);
+        {
+            uint32_t val;
+
+            ret = psr_get_val(d, domctl->u.psr_cat_op.target,
+                              &val, PSR_CBM_TYPE_L3);
+            domctl->u.psr_cat_op.data = val;
             copyback = 1;
             break;
+        }
 
         case XEN_DOMCTL_PSR_CAT_OP_GET_L3_CODE:
-            ret = psr_get_l3_cbm(d, domctl->u.psr_cat_op.target,
-                                 &domctl->u.psr_cat_op.data,
-                                 PSR_CBM_TYPE_L3_CODE);
+        {
+            uint32_t val;
+
+            ret = psr_get_val(d, domctl->u.psr_cat_op.target,
+                              &val, PSR_CBM_TYPE_L3_CODE);
+            domctl->u.psr_cat_op.data = val;
             copyback = 1;
             break;
+        }
 
         case XEN_DOMCTL_PSR_CAT_OP_GET_L3_DATA:
-            ret = psr_get_l3_cbm(d, domctl->u.psr_cat_op.target,
-                                 &domctl->u.psr_cat_op.data,
-                                 PSR_CBM_TYPE_L3_DATA);
+        {
+            uint32_t val;
+
+            ret = psr_get_val(d, domctl->u.psr_cat_op.target,
+                              &val, PSR_CBM_TYPE_L3_DATA);
+            domctl->u.psr_cat_op.data = val;
             copyback = 1;
             break;
+        }
 
         default:
             ret = -EOPNOTSUPP;

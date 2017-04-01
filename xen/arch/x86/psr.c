@@ -97,6 +97,10 @@ struct feat_node {
         /* get_feat_info is used to get feature HW info. */
         bool (*get_feat_info)(const struct feat_node *feat,
                               uint32_t data[], unsigned int array_len);
+
+        /* get_val is used to get feature COS register value. */
+        void (*get_val)(const struct feat_node *feat, unsigned int cos,
+                        uint32_t *val);
     } *props;
 
     uint32_t cos_reg_val[MAX_COS_REG_CNT];
@@ -265,10 +269,17 @@ static bool cat_get_feat_info(const struct feat_node *feat,
     return true;
 }
 
+static void cat_get_val(const struct feat_node *feat, unsigned int cos,
+                        uint32_t *val)
+{
+    *val = feat->cos_reg_val[cos];
+}
+
 /* L3 CAT ops */
 static struct feat_props l3_cat_props = {
     .cos_num = 1,
     .get_feat_info = cat_get_feat_info,
+    .get_val = cat_get_val,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
@@ -494,24 +505,34 @@ static struct psr_socket_info *get_socket_info(unsigned int socket)
     return socket_info + socket;
 }
 
-int psr_get_info(unsigned int socket, enum cbm_type type,
-                 uint32_t data[], unsigned int array_len)
+static struct feat_node * psr_get_feat(unsigned int socket,
+                                       enum cbm_type type)
 {
     const struct psr_socket_info *info = get_socket_info(socket);
-    const struct feat_node *feat;
     enum psr_feat_type feat_type;
 
     if ( IS_ERR(info) )
-        return PTR_ERR(info);
+        return ERR_PTR(PTR_ERR(info));
+
+    feat_type = psr_cbm_type_to_feat_type(type);
+    if ( feat_type > ARRAY_SIZE(info->features) )
+        return NULL;
+
+    return info->features[feat_type];
+}
+
+int psr_get_info(unsigned int socket, enum cbm_type type,
+                 uint32_t data[], unsigned int array_len)
+{
+    const struct feat_node *feat;
 
     if ( !data )
         return -EINVAL;
 
-    feat_type = psr_cbm_type_to_feat_type(type);
-    if ( feat_type > ARRAY_SIZE(info->features) )
-        return -ENOENT;
+    feat = psr_get_feat(socket, type);
+    if ( IS_ERR(feat) )
+        return PTR_ERR(feat);
 
-    feat = info->features[feat_type];
     if ( !feat )
         return -ENOENT;
 
@@ -521,9 +542,35 @@ int psr_get_info(unsigned int socket, enum cbm_type type,
     return -EINVAL;
 }
 
-int psr_get_l3_cbm(struct domain *d, unsigned int socket,
-                   uint64_t *cbm, enum cbm_type type)
+int psr_get_val(struct domain *d, unsigned int socket,
+                uint32_t *val, enum cbm_type type)
 {
+    const struct feat_node *feat;
+    unsigned int cos;
+
+    ASSERT(d && val);
+
+    feat = psr_get_feat(socket, type);
+    if ( IS_ERR(feat) )
+        return PTR_ERR(feat);
+
+    if ( !feat )
+        return -ENOENT;
+
+    cos = d->arch.psr_cos_ids[socket];
+    /*
+     * If input cos exceeds current feature's cos_max, we should return its
+     * default value which is stored in cos 0. This case only happens
+     * when more than two features enabled concurrently and at least one
+     * features's cos_max is bigger than others. When a domain's working cos
+     * id is bigger than some features' cos_max, HW automatically works as
+     * default value for those features which cos_max is smaller.
+     */
+    if ( cos > feat->props->cos_max )
+        cos = 0;
+
+    feat->props->get_val(feat, cos, val);
+
     return 0;
 }
 
