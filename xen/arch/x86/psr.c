@@ -34,6 +34,9 @@
 #define PSR_CAT        (1<<1)
 #define PSR_CDP        (1<<2)
 
+#define CAT_CBM_LEN_MASK 0x1f
+#define CAT_COS_MAX_MASK 0xffff
+
 /*
  * Per SDM chapter 'Cache Allocation Technology: Cache Mask Configuration',
  * the MSRs ranging from 0C90H through 0D0FH (inclusive), enables support for
@@ -76,7 +79,7 @@ struct feat_node {
      *
      * Feature independent HW info and common values are also defined in it.
      */
-    const struct feat_props {
+    struct feat_props {
         /*
          * cos_num, cos_max and cbm_len are common values for all features
          * so far.
@@ -114,10 +117,123 @@ struct psr_assoc {
 
 struct psr_cmt *__read_mostly psr_cmt;
 
+static struct psr_socket_info *__read_mostly socket_info;
+
 static unsigned int opt_psr;
 static unsigned int __initdata opt_rmid_max = 255;
+static unsigned int __read_mostly opt_cos_max = MAX_COS_REG_CNT;
 static uint64_t rmid_mask;
 static DEFINE_PER_CPU(struct psr_assoc, psr_assoc);
+
+/*
+ * Declare global feature node for every feature to facilitate the feature
+ * array creation. It is used to transiently store a spare node.
+ */
+static struct feat_node *feat_l3_cat;
+
+/* Common functions */
+#define cat_default_val(len) (0xffffffff >> (32 - (len)))
+
+/*
+ * Use this function to check if any allocation feature has been enabled
+ * in cmdline.
+ */
+static bool psr_alloc_feat_enabled(void)
+{
+    return !!socket_info;
+}
+
+static void free_socket_resources(unsigned int socket)
+{
+    unsigned int i;
+    struct psr_socket_info *info = socket_info + socket;
+
+    if ( !info )
+        return;
+
+    /*
+     * Free resources of features. The global feature object, e.g. feat_l3_cat,
+     * may not be freed here if it is not added into array. It is simply being
+     * kept until the next CPU online attempt.
+     */
+    for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
+    {
+        if ( !info->features[i] )
+            continue;
+
+        xfree(info->features[i]);
+        info->features[i] = NULL;
+    }
+}
+
+static bool feat_init_done(const struct psr_socket_info *info)
+{
+    unsigned int i;
+
+    for ( i = 0; i < PSR_SOCKET_MAX_FEAT; i++ )
+    {
+        if ( !info->features[i] )
+            continue;
+
+        return true;
+    }
+
+    return false;
+}
+
+/* CAT common functions implementation. */
+static void cat_init_feature(const struct cpuid_leaf *regs,
+                             struct feat_node *feat,
+                             struct psr_socket_info *info,
+                             enum psr_feat_type type)
+{
+    unsigned int socket, i;
+
+    /* No valid value so do not enable feature. */
+    if ( !regs->a || !regs->d )
+        return;
+
+    feat->props->cbm_len = (regs->a & CAT_CBM_LEN_MASK) + 1;
+    feat->props->cos_max = min(opt_cos_max, regs->d & CAT_COS_MAX_MASK);
+
+    switch ( type )
+    {
+    case PSR_SOCKET_L3_CAT:
+        /* cos=0 is reserved as default cbm(all bits within cbm_len are 1). */
+        feat->cos_reg_val[0] = cat_default_val(feat->props->cbm_len);
+
+        /*
+         * To handle cpu offline and then online case, we need restore MSRs to
+         * default values.
+         */
+        for ( i = 1; i <= feat->props->cos_max; i++ )
+        {
+            wrmsrl(MSR_IA32_PSR_L3_MASK(i), feat->cos_reg_val[0]);
+            feat->cos_reg_val[i] = feat->cos_reg_val[0];
+        }
+
+        break;
+
+    default:
+        return;
+    }
+
+    /* Add this feature into array. */
+    info->features[type] = feat;
+
+    socket = cpu_to_socket(smp_processor_id());
+    if ( !opt_cpu_info )
+        return;
+
+    printk(XENLOG_INFO "%s CAT: enabled on socket %u, cos_max:%u, cbm_len:%u\n",
+           ((type == PSR_SOCKET_L3_CAT) ? "L3" : "L2"),
+           socket, feat->props->cos_max, feat->props->cbm_len);
+}
+
+/* L3 CAT ops */
+static struct feat_props l3_cat_props = {
+    .cos_num = 1,
+};
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
                                   unsigned int mask)
@@ -157,6 +273,9 @@ static void __init parse_psr_param(char *s)
 
         if ( val_str && !strcmp(s, "rmid_max") )
             opt_rmid_max = simple_strtoul(val_str, NULL, 0);
+
+        if ( val_str && !strcmp(s, "cos_max") )
+            opt_cos_max = simple_strtoul(val_str, NULL, 0);
 
         s = ss + 1;
     } while ( ss );
@@ -313,19 +432,95 @@ void psr_domain_free(struct domain *d)
     psr_free_rmid(d);
 }
 
-static int psr_cpu_prepare(unsigned int cpu)
+static void __init init_psr(void)
 {
+    if ( opt_cos_max < 1 )
+    {
+        printk(XENLOG_INFO "CAT: disabled, cos_max is too small\n");
+        return;
+    }
+
+    socket_info = xzalloc_array(struct psr_socket_info, nr_sockets);
+
+    if ( !socket_info )
+    {
+        printk(XENLOG_INFO "Failed to alloc socket_info!\n");
+        return;
+    }
+}
+
+static void __init psr_free(void)
+{
+    xfree(socket_info);
+    socket_info = NULL;
+}
+
+static int psr_cpu_prepare(void)
+{
+    if ( !psr_alloc_feat_enabled() )
+        return 0;
+
+    /* Malloc memory for the global feature node here. */
+    if ( feat_l3_cat == NULL &&
+         (feat_l3_cat = xzalloc(struct feat_node)) == NULL )
+        return -ENOMEM;
+
     return 0;
 }
 
 static void psr_cpu_init(void)
 {
+    struct psr_socket_info *info;
+    unsigned int socket;
+    unsigned int cpu = smp_processor_id();
+    struct feat_node *feat;
+    struct cpuid_leaf regs;
+
+    if ( !psr_alloc_feat_enabled() || !boot_cpu_has(X86_FEATURE_PQE) )
+        goto assoc_init;
+
+    if ( boot_cpu_data.cpuid_level < PSR_CPUID_LEVEL_CAT )
+    {
+        setup_clear_cpu_cap(X86_FEATURE_PQE);
+        goto assoc_init;
+    }
+
+    socket = cpu_to_socket(cpu);
+    info = socket_info + socket;
+    if ( feat_init_done(info) )
+        goto assoc_init;
+
+    spin_lock_init(&info->ref_lock);
+
+    cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 0, &regs);
+    if ( regs.b & PSR_RESOURCE_TYPE_L3 )
+    {
+        cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 1, &regs);
+
+        feat = feat_l3_cat;
+        feat_l3_cat = NULL;
+        feat->props = &l3_cat_props;
+
+        cat_init_feature(&regs, feat, info, PSR_SOCKET_L3_CAT);
+    }
+
+ assoc_init:
     psr_assoc_init();
 }
 
 static void psr_cpu_fini(unsigned int cpu)
 {
-    return;
+    unsigned int socket = cpu_to_socket(cpu);
+
+    if ( !psr_alloc_feat_enabled() )
+        return;
+
+    /*
+     * We only free when we are the last CPU in the socket. The socket_cpumask
+     * is cleared prior to this notification code by remove_siblinginfo().
+     */
+    if ( socket_cpumask[socket] && cpumask_empty(socket_cpumask[socket]) )
+        free_socket_resources(socket);
 }
 
 static int cpu_callback(
@@ -337,7 +532,7 @@ static int cpu_callback(
     switch ( action )
     {
     case CPU_UP_PREPARE:
-        rc = psr_cpu_prepare(cpu);
+        rc = psr_cpu_prepare();
         break;
     case CPU_STARTING:
         psr_cpu_init();
@@ -366,10 +561,14 @@ static int __init psr_presmp_init(void)
     if ( (opt_psr & PSR_CMT) && opt_rmid_max )
         init_psr_cmt(opt_rmid_max);
 
-    psr_cpu_prepare(0);
+    if ( opt_psr & PSR_CAT )
+        init_psr();
+
+    if ( psr_cpu_prepare() )
+        psr_free();
 
     psr_cpu_init();
-    if ( psr_cmt_enabled() )
+    if ( psr_cmt_enabled() || psr_alloc_feat_enabled() )
         register_cpu_notifier(&cpu_nfb);
 
     return 0;
