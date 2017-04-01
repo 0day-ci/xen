@@ -100,7 +100,7 @@ struct feat_node {
 
         /* get_val is used to get feature COS register value. */
         void (*get_val)(const struct feat_node *feat, unsigned int cos,
-                        uint32_t *val);
+                        enum cbm_type type, uint32_t *val);
 
         /* write_msr is used to write out feature MSR register. */
         void (*write_msr)(unsigned int cos, uint32_t val,
@@ -366,7 +366,7 @@ static bool cat_get_feat_info(const struct feat_node *feat,
 }
 
 static void cat_get_val(const struct feat_node *feat, unsigned int cos,
-                        uint32_t *val)
+                        enum cbm_type type, uint32_t *val)
 {
     *val = feat->cos_reg_val[cos];
 }
@@ -401,9 +401,19 @@ static bool l3_cdp_get_feat_info(const struct feat_node *feat,
     return true;
 }
 
+static void l3_cdp_get_val(const struct feat_node *feat, unsigned int cos,
+                           enum cbm_type type, uint32_t *val)
+{
+    if ( type == PSR_CBM_TYPE_L3_DATA )
+        *val = get_cdp_data(feat, cos);
+    else
+        *val = get_cdp_code(feat, cos);
+}
+
 static struct feat_props l3_cdp_props = {
     .cos_num = 2,
     .get_feat_info = l3_cdp_get_feat_info,
+    .get_val = l3_cdp_get_val,
 };
 
 static void __init parse_psr_bool(char *s, char *value, char *feature,
@@ -701,7 +711,7 @@ int psr_get_val(struct domain *d, unsigned int socket,
     if ( cos > feat->props->cos_max )
         cos = 0;
 
-    feat->props->get_val(feat, cos, val);
+    feat->props->get_val(feat, cos, type, val);
 
     return 0;
 }
@@ -755,7 +765,7 @@ static int gather_val_array(uint32_t val[],
             cos = 0;
 
         /* Value getting order is same as feature array. */
-        feat->props->get_val(feat, cos, &val[0]);
+        feat->props->get_val(feat, cos, 0, &val[0]);
 
         array_len -= feat->props->cos_num;
 
@@ -851,7 +861,7 @@ static int find_cos(const uint32_t val[], unsigned int array_len,
              * COS ID 0 always stores the default value so input 0 to get
              * default value.
              */
-            feat->props->get_val(feat, 0, &default_val);
+            feat->props->get_val(feat, 0, 0, &default_val);
 
             /*
              * Compare value according to feature array order.
@@ -912,7 +922,7 @@ static bool fits_cos_max(const uint32_t val[],
 
         if ( cos > feat->props->cos_max )
         {
-            feat->props->get_val(feat, 0, &default_val);
+            feat->props->get_val(feat, 0, 0, &default_val);
             if ( val[0] != default_val )
                 return false;
         }
