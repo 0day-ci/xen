@@ -42,6 +42,7 @@
 #define VIRT_ITS_CMDBUF_VALID   3
 struct virt_its {
     struct domain *d;
+    paddr_t doorbell_address;
     spinlock_t vcmd_lock;       /* Protects the virtual command buffer. */
     uint64_t cbaser;
     uint64_t cwriter;
@@ -141,6 +142,27 @@ static struct vcpu *get_vcpu_from_collection(struct virt_its *its,
 #define DEV_TABLE_ITT_SIZE(x) (BIT(((x) & GENMASK_ULL(7, 0)) + 1))
 #define DEV_TABLE_ENTRY(addr, bits)                     \
         (((addr) & GENMASK_ULL(51, 8)) | (((bits) - 1) & GENMASK_ULL(7, 0)))
+
+/* Set the address of an ITT for a given device ID. */
+static int its_set_itt_address(struct virt_its *its, uint32_t devid,
+                               paddr_t itt_address, uint32_t nr_bits)
+{
+    paddr_t addr = get_baser_phys_addr(its->baser_dev);
+    uint64_t *itt;
+
+    if ( devid >= its->max_devices )
+        return -ENOENT;
+
+    itt = map_one_guest_page(its->d, addr + devid * sizeof(uint64_t));
+    if ( !itt )
+        return -EFAULT;
+
+    *itt = DEV_TABLE_ENTRY(itt_address, nr_bits);
+
+    unmap_one_guest_page(itt);
+
+    return 0;
+}
 
 /*
  * Lookup the address of the Interrupt Translation Table associated with
@@ -367,6 +389,44 @@ static int its_handle_mapc(struct virt_its *its, uint64_t *cmdptr)
     return 0;
 }
 
+static int its_handle_mapd(struct virt_its *its, uint64_t *cmdptr)
+{
+    uint32_t devid = its_cmd_get_deviceid(cmdptr);
+    unsigned int size = its_cmd_get_size(cmdptr) + 1;
+    bool valid = its_cmd_get_validbit(cmdptr);
+    paddr_t itt_addr = its_cmd_mask_field(cmdptr, 2, 0, 52) &
+                           GENMASK_ULL(51, 8);
+    int ret;
+
+    /*
+     * There is no easy and clean way for Xen to know the ITS device ID of a
+     * particular (PCI) device, so we have to rely on the guest telling
+     * us about it. For *now* we are just using the device ID *Dom0* uses,
+     * because the driver there has the actual knowledge.
+     * Eventually this will be replaced with a dedicated hypercall to
+     * announce pass-through of devices.
+     */
+    if ( is_hardware_domain(its->d) )
+    {
+        /* Dom0's ITSes are mapped 1:1, so both address are the same. */
+        ret = gicv3_its_map_guest_device(its->d, its->doorbell_address, devid,
+                                         its->doorbell_address, devid,
+                                         BIT(size), valid);
+        if ( ret )
+            return ret;
+    }
+
+    spin_lock(&its->its_lock);
+    if ( valid )
+        ret = its_set_itt_address(its, devid, itt_addr, size);
+    else
+        ret = its_set_itt_address(its, devid, INVALID_PADDR, 1);
+
+    spin_unlock(&its->its_lock);
+
+    return ret;
+}
+
 #define ITS_CMD_BUFFER_SIZE(baser)      ((((baser) & 0xff) + 1) << 12)
 
 static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
@@ -413,6 +473,9 @@ static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
         case GITS_CMD_MAPC:
             ret = its_handle_mapc(its, cmdptr);
             break;
+        case GITS_CMD_MAPD:
+            ret = its_handle_mapd(its, cmdptr);
+	    break;
         case GITS_CMD_SYNC:
             /* We handle ITS commands synchronously, so we ignore SYNC. */
 	    break;
