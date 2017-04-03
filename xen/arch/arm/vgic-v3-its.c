@@ -473,6 +473,33 @@ static int its_handle_movi(struct virt_its *its, uint64_t *cmdptr)
     return 0;
 }
 
+static int its_handle_discard(struct virt_its *its, uint64_t *cmdptr)
+{
+    uint32_t devid = its_cmd_get_deviceid(cmdptr);
+    uint32_t eventid = its_cmd_get_id(cmdptr);
+    struct pending_irq *pirq;
+    struct vcpu *vcpu;
+    uint32_t vlpi;
+
+    if ( !read_itte(its, devid, eventid, &vcpu, &vlpi) )
+        return -1;
+
+    pirq = lpi_to_pending(its->d, vlpi);
+    if ( pirq )
+    {
+        clear_bit(GIC_IRQ_GUEST_QUEUED, &pirq->status);
+        gic_remove_from_queues(vcpu, vlpi);
+    }
+
+    if ( !write_itte(its, devid, eventid, UNMAPPED_COLLECTION, INVALID_LPI, NULL) )
+        return -1;
+
+    gicv3_assign_guest_event(its->d, its->doorbell_address,
+                             devid, eventid, NULL, 0);
+
+    return 0;
+}
+
 #define ITS_CMD_BUFFER_SIZE(baser)      ((((baser) & 0xff) + 1) << 12)
 
 static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
@@ -512,6 +539,9 @@ static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
         {
         case GITS_CMD_CLEAR:
             ret = its_handle_clear(its, cmdptr);
+            break;
+        case GITS_CMD_DISCARD:
+            ret = its_handle_discard(its, cmdptr);
             break;
         case GITS_CMD_INT:
             ret = its_handle_int(its, cmdptr);
