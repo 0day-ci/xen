@@ -366,6 +366,65 @@ static int its_handle_int(struct virt_its *its, uint64_t *cmdptr)
     return 0;
 }
 
+/*
+ * For a given virtual LPI read the enabled bit and priority from the virtual
+ * property table and update the virtual IRQ's state.
+ * This takes care of removing or pushing of virtual LPIs to their VCPUs.
+ */
+static void update_lpi_enabled_status(struct virt_its* its,
+                                      struct vcpu *vcpu, uint32_t vlpi)
+{
+    struct pending_irq *p = lpi_to_pending(its->d, vlpi);
+    paddr_t proptable_addr;
+    uint8_t *property;
+
+    if ( !p )
+        return;
+
+    proptable_addr = its->d->arch.vgic.rdist_propbase & GENMASK_ULL(51, 12);
+    property = map_one_guest_page(its->d, proptable_addr + vlpi - LPI_OFFSET);
+
+    p->lpi_priority = *property & LPI_PROP_PRIO_MASK;
+
+    if ( *property & LPI_PROP_ENABLED )
+    {
+        unsigned long flags;
+
+        set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+        spin_lock_irqsave(&vcpu->arch.vgic.lock, flags);
+        if ( !list_empty(&p->inflight) &&
+             !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
+            gic_raise_guest_irq(vcpu, vlpi, p->lpi_priority);
+        spin_unlock_irqrestore(&vcpu->arch.vgic.lock, flags);
+
+        /* Check whether the LPI has fired while the guest had it disabled. */
+        if ( test_and_clear_bit(GIC_IRQ_GUEST_LPI_PENDING, &p->status) )
+            vgic_vcpu_inject_irq(vcpu, vlpi);
+    }
+    else
+    {
+        clear_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+        gic_remove_from_queues(vcpu, vlpi);
+    }
+
+    unmap_one_guest_page(property);
+}
+
+static int its_handle_inv(struct virt_its *its, uint64_t *cmdptr)
+{
+    uint32_t devid = its_cmd_get_deviceid(cmdptr);
+    uint32_t eventid = its_cmd_get_id(cmdptr);
+    struct vcpu *vcpu;
+    uint32_t vlpi;
+
+    if ( !read_itte(its, devid, eventid, &vcpu, &vlpi) )
+        return -1;
+
+    update_lpi_enabled_status(its, vcpu, vlpi);
+
+    return 0;
+}
+
 static int its_handle_mapc(struct virt_its *its, uint64_t *cmdptr)
 {
     uint32_t collid = its_cmd_get_collection(cmdptr);
@@ -546,6 +605,9 @@ static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
         case GITS_CMD_INT:
             ret = its_handle_int(its, cmdptr);
             break;
+        case GITS_CMD_INV:
+            ret = its_handle_inv(its, cmdptr);
+	    break;
         case GITS_CMD_MAPC:
             ret = its_handle_mapc(its, cmdptr);
             break;
