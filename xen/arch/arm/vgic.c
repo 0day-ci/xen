@@ -431,10 +431,15 @@ bool vgic_to_sgi(struct vcpu *v, register_t sgir, enum gic_sgi_mode irqmode,
 struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq)
 {
     struct pending_irq *n;
+
     /* Pending irqs allocation strategy: the first vgic.nr_spis irqs
      * are used for SPIs; the rests are used for per cpu irqs */
     if ( irq < 32 )
         n = &v->arch.vgic.pending_irqs[irq];
+#ifdef CONFIG_HAS_ITS
+    else if ( is_lpi(irq) )
+        n = lpi_to_pending(v->domain, irq);
+#endif
     else
         n = &v->domain->arch.vgic.pending_irqs[irq - 32];
     return n;

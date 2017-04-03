@@ -461,7 +461,19 @@ static void gic_update_one_lr(struct vcpu *v, int i)
 
     gic_hw_ops->read_lr(i, &lr_val);
     irq = lr_val.virq;
+
     p = irq_to_pending(v, irq);
+    /* An LPI might have been unmapped, in which case we just clean up here. */
+    if ( !p )
+    {
+        ASSERT(is_lpi(irq));
+
+        gic_hw_ops->clear_lr(i);
+        clear_bit(i, &this_cpu(lr_mask));
+
+        return;
+    }
+
     if ( lr_val.state & GICH_LR_ACTIVE )
     {
         set_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);

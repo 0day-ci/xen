@@ -330,6 +330,23 @@ read_unknown:
     return 1;
 }
 
+/*
+ * Looks up a virtual LPI number in our tree of mapped LPIs. This will return
+ * the corresponding struct pending_irq, which we also use to store the
+ * enabled and pending bit plus the priority.
+ * Returns NULL if an LPI cannot be found.
+ */
+struct pending_irq *lpi_to_pending(struct domain *d, unsigned int lpi)
+{
+    struct pending_irq *pirq;
+
+    read_lock(&d->arch.vgic.pend_lpi_tree_lock);
+    pirq = radix_tree_lookup(&d->arch.vgic.pend_lpi_tree, lpi);
+    read_unlock(&d->arch.vgic.pend_lpi_tree_lock);
+
+    return pirq;
+}
+
 static int __vgic_v3_rdistr_rd_mmio_write(struct vcpu *v, mmio_info_t *info,
                                           uint32_t gicr_reg,
                                           register_t r)
@@ -1452,6 +1469,9 @@ static int vgic_v3_domain_init(struct domain *d)
     spin_lock_init(&d->arch.vgic.its_devices_lock);
     d->arch.vgic.its_devices = RB_ROOT;
 
+    rwlock_init(&d->arch.vgic.pend_lpi_tree_lock);
+    radix_tree_init(&d->arch.vgic.pend_lpi_tree);
+
     /*
      * Domain 0 gets the hardware address.
      * Guests get the virtual platform layout.
@@ -1525,6 +1545,7 @@ static int vgic_v3_domain_init(struct domain *d)
 static void vgic_v3_domain_free(struct domain *d)
 {
     gicv3_its_unmap_all_devices(d);
+    radix_tree_destroy(&d->arch.vgic.pend_lpi_tree, NULL);
     xfree(d->arch.vgic.rdist_regions);
 }
 
