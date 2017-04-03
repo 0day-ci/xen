@@ -455,6 +455,24 @@ static int its_handle_mapti(struct virt_its *its, uint64_t *cmdptr)
     return 0;
 }
 
+static int its_handle_movi(struct virt_its *its, uint64_t *cmdptr)
+{
+    uint32_t devid = its_cmd_get_deviceid(cmdptr);
+    uint32_t eventid = its_cmd_get_id(cmdptr);
+    int collid = its_cmd_get_collection(cmdptr);
+    struct vcpu *vcpu;
+
+    if ( !write_itte(its, devid, eventid, collid, SKIP_LPI_UPDATE, &vcpu) )
+        return -1;
+
+    /* TODO: lookup currently-in-guest virtual IRQs and migrate them */
+
+    gicv3_lpi_change_vcpu(its->d,
+                          its->doorbell_address, devid, eventid, vcpu->vcpu_id);
+
+    return 0;
+}
+
 #define ITS_CMD_BUFFER_SIZE(baser)      ((((baser) & 0xff) + 1) << 12)
 
 static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
@@ -507,6 +525,12 @@ static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
         case GITS_CMD_MAPI:
         case GITS_CMD_MAPTI:
             ret = its_handle_mapti(its, cmdptr);
+            break;
+        case GITS_CMD_MOVALL:
+            gdprintk(XENLOG_G_INFO, "ITS: ignoring MOVALL command\n");
+            break;
+        case GITS_CMD_MOVI:
+            ret = its_handle_movi(its, cmdptr);
             break;
         case GITS_CMD_SYNC:
             /* We handle ITS commands synchronously, so we ignore SYNC. */
