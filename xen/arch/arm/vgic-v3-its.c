@@ -425,6 +425,49 @@ static int its_handle_inv(struct virt_its *its, uint64_t *cmdptr)
     return 0;
 }
 
+/*
+ * INVALL updates the per-LPI configuration status for every LPI mapped to
+ * a particular redistributor.
+ * We iterate over all mapped LPIs in our radix tree and update those.
+ */
+static int its_handle_invall(struct virt_its *its, uint64_t *cmdptr)
+{
+    uint32_t collid = its_cmd_get_collection(cmdptr);
+    struct vcpu *vcpu;
+    struct pending_irq *pirqs[16];
+    uint32_t vlpi = 0;
+    int nr_lpis, i;
+
+    /* We may want to revisit this implementation for DomUs. */
+    ASSERT(is_hardware_domain(its->d));
+
+    spin_lock(&its->its_lock);
+    vcpu = get_vcpu_from_collection(its, collid);
+    spin_unlock(&its->its_lock);
+
+    read_lock(&its->d->arch.vgic.pend_lpi_tree_lock);
+
+    do {
+        nr_lpis = radix_tree_gang_lookup(&its->d->arch.vgic.pend_lpi_tree,
+                                         (void **)pirqs, vlpi,
+					 ARRAY_SIZE(pirqs));
+
+        for ( i = 0; i < nr_lpis; i++ )
+        {
+            vlpi = pirqs[i]->irq;
+            update_lpi_enabled_status(its, vcpu, vlpi);
+        }
+
+        /* Protect from overflow when incrementing 0xffffffff */
+        if ( vlpi == ~0 || ++vlpi < its->d->arch.vgic.nr_lpis )
+            break;
+    } while ( nr_lpis == ARRAY_SIZE(pirqs));
+
+    read_unlock(&its->d->arch.vgic.pend_lpi_tree_lock);
+
+    return 0;
+}
+
 static int its_handle_mapc(struct virt_its *its, uint64_t *cmdptr)
 {
     uint32_t collid = its_cmd_get_collection(cmdptr);
@@ -607,6 +650,9 @@ static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
             break;
         case GITS_CMD_INV:
             ret = its_handle_inv(its, cmdptr);
+	    break;
+        case GITS_CMD_INVALL:
+            ret = its_handle_invall(its, cmdptr);
 	    break;
         case GITS_CMD_MAPC:
             ret = its_handle_mapc(its, cmdptr);
