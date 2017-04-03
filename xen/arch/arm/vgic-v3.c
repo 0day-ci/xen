@@ -168,8 +168,10 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
     switch ( gicr_reg )
     {
     case VREG32(GICR_CTLR):
-        /* We have not implemented LPI's, read zero */
-        goto read_as_zero_32;
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        *r = vgic_reg32_extract(!!(v->arch.vgic.flags & VGIC_V3_LPIS_ENABLED),
+                                info);
+        return 1;
 
     case VREG32(GICR_IIDR):
         if ( dabt.size != DABT_WORD ) goto bad_width;
@@ -181,15 +183,18 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
         uint64_t typer, aff;
 
         if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
-        /* TBD: Update processor id in [23:8] when ITS support is added */
         aff = (MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 3) << 56 |
                MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 2) << 48 |
                MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 1) << 40 |
                MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 0) << 32);
         typer = aff;
+        typer |= (v->vcpu_id & 0xffff) << 8;
 
         if ( v->arch.vgic.flags & VGIC_V3_RDIST_LAST )
             typer |= GICR_TYPER_LAST;
+
+        if ( v->domain->arch.vgic.has_its )
+            typer |= GICR_TYPER_PLPIS;
 
         *r = vgic_reg64_extract(typer, info);
 
@@ -433,6 +438,35 @@ static uint64_t sanitize_pendbaser(uint64_t reg)
     return reg;
 }
 
+static void vgic_vcpu_enable_lpis(struct vcpu *v)
+{
+    uint64_t reg = v->domain->arch.vgic.rdist_propbase;
+    unsigned int nr_lpis = BIT((reg & 0x1f) + 1) - LPI_OFFSET;
+    int nr_pages;
+
+    /* The first VCPU to enable LPIs maps the property table. */
+    if ( !v->domain->arch.vgic.nr_lpis )
+    {
+        v->domain->arch.vgic.nr_lpis = nr_lpis;
+
+        nr_pages = DIV_ROUND_UP(nr_lpis, PAGE_SIZE);
+        get_guest_pages(v->domain, reg & GENMASK_ULL(51, 12), nr_pages);
+        gprintk(XENLOG_INFO, "VGIC-v3: VCPU%d mapped %d pages for property table\n",
+               v->vcpu_id, nr_pages);
+    }
+    nr_pages = DIV_ROUND_UP(((nr_lpis + LPI_OFFSET) / 8), PAGE_SIZE);
+    reg = v->arch.vgic.rdist_pendbase;
+
+    get_guest_pages(v->domain, reg & GENMASK_ULL(51, 12), nr_pages);
+
+    gprintk(XENLOG_INFO, "VGIC-v3: VCPU%d mapped %d pages for pending table\n",
+            v->vcpu_id, nr_pages);
+
+    v->arch.vgic.flags |= VGIC_V3_LPIS_ENABLED;
+
+    printk("VGICv3: enabled %d LPIs for VCPU%d\n", nr_lpis, v->vcpu_id);
+}
+
 static int __vgic_v3_rdistr_rd_mmio_write(struct vcpu *v, mmio_info_t *info,
                                           uint32_t gicr_reg,
                                           register_t r)
@@ -443,8 +477,18 @@ static int __vgic_v3_rdistr_rd_mmio_write(struct vcpu *v, mmio_info_t *info,
     switch ( gicr_reg )
     {
     case VREG32(GICR_CTLR):
-        /* LPI's not implemented */
-        goto write_ignore_32;
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        if ( !v->domain->arch.vgic.has_its )
+            return 1;
+
+        /* LPIs can only be enabled once, but never disabled again. */
+        if ( !(r & GICR_CTLR_ENABLE_LPIS) ||
+             (v->arch.vgic.flags & VGIC_V3_LPIS_ENABLED) )
+            return 1;
+
+        vgic_vcpu_enable_lpis(v);
+
+        return 1;
 
     case VREG32(GICR_IIDR):
         /* RO */
@@ -1044,6 +1088,11 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
         typer = ((ncpus - 1) << GICD_TYPE_CPUS_SHIFT |
                  DIV_ROUND_UP(v->domain->arch.vgic.nr_spis, 32));
 
+        if ( v->domain->arch.vgic.has_its )
+        {
+            typer |= GICD_TYPE_LPIS;
+            irq_bits = 16;
+        }
         typer |= (irq_bits - 1) << GICD_TYPE_ID_BITS_SHIFT;
 
         *r = vgic_reg32_extract(typer, info);
@@ -1665,6 +1714,21 @@ static int vgic_v3_domain_init(struct domain *d)
 
 static void vgic_v3_domain_free(struct domain *d)
 {
+    int nr_pages;
+    struct vcpu *v;
+
+    if ( d->arch.vgic.nr_lpis )
+    {
+        nr_pages = DIV_ROUND_UP(d->arch.vgic.nr_lpis, PAGE_SIZE);
+        put_guest_pages(d, d->arch.vgic.rdist_propbase & GENMASK_ULL(51, 12),
+                        nr_pages);
+
+        nr_pages = DIV_ROUND_UP((d->arch.vgic.nr_lpis + LPI_OFFSET) / 8,
+                                PAGE_SIZE);
+        for_each_vcpu(d, v)
+            put_guest_pages(d, v->arch.vgic.rdist_pendbase & GENMASK_ULL(51, 12),
+                            nr_pages);
+    }
     gicv3_its_unmap_all_devices(d);
     radix_tree_destroy(&d->arch.vgic.pend_lpi_tree, NULL);
     xfree(d->arch.vgic.rdist_regions);
