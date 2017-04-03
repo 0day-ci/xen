@@ -35,6 +35,7 @@
 #define GITS_BASER5                     0x128
 #define GITS_BASER6                     0x130
 #define GITS_BASER7                     0x138
+#define GITS_PIDR2                      GICR_PIDR2
 
 /* Register bits */
 #define GITS_VALID_BIT                  BIT_ULL(63)
@@ -56,6 +57,7 @@
 #define GITS_TYPER_ITT_SIZE_MASK        (0xfUL << GITS_TYPER_ITT_SIZE_SHIFT)
 #define GITS_TYPER_ITT_SIZE(r)          ((((r) & GITS_TYPER_ITT_SIZE_MASK) >> \
                                                  GITS_TYPER_ITT_SIZE_SHIFT) + 1)
+#define GITS_TYPER_PHYSICAL             (1U << 0)
 
 #define GITS_IIDR_VALUE                 0x34c
 

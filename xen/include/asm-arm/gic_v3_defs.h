@@ -155,6 +155,16 @@
 #define LPI_PROP_RES1                (1 << 1)
 #define LPI_PROP_ENABLED             (1 << 0)
 
+/*
+ * PIDR2: Only bits[7:4] are not implementation defined. We are
+ * emulating a GICv3 ([7:4] = 0x3).
+ *
+ * We don't emulate a specific registers scheme so implement the others
+ * bits as RES0 as recommended by the spec (see 8.1.13 in ARM IHI 0069A).
+ */
+#define GICV3_GICD_PIDR2  0x30
+#define GICV3_GICR_PIDR2  GICV3_GICD_PIDR2
+
 #define GICH_VMCR_EOI                (1 << 9)
 #define GICH_VMCR_VENG1              (1 << 1)
 
@@ -197,6 +207,15 @@ struct rdist_region {
     void __iomem *map_base;
     bool single_rdist;
 };
+
+/*
+ * 64 bits registers can be accessible using 32-bit and 64-bit unless
+ * stated otherwise (See 8.1.3 ARM IHI 0069A).
+ */
+static inline bool vgic_reg64_check_access(struct hsr_dabt dabt)
+{
+    return ( dabt.size == DABT_DOUBLE_WORD || dabt.size == DABT_WORD );
+}
 
 #endif /* __ASM_ARM_GIC_V3_DEFS_H__ */
 
