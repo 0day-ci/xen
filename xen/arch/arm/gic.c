@@ -709,7 +709,13 @@ void gic_interrupt(struct cpu_user_regs *regs, int is_fiq)
             do_IRQ(regs, irq, is_fiq);
             local_irq_disable();
         }
-        else if (unlikely(irq < 16))
+#ifdef CONFIG_HAS_ITS
+        else if ( is_lpi(irq) )
+        {
+            do_LPI(irq);
+        }
+#endif
+        else if ( unlikely(irq < 16) )
         {
             do_sgi(regs, irq);
         }

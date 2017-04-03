@@ -347,6 +347,17 @@ struct pending_irq *lpi_to_pending(struct domain *d, unsigned int lpi)
     return pirq;
 }
 
+/* Retrieve the priority of an LPI from its struct pending_irq. */
+int vgic_lpi_get_priority(struct domain *d, uint32_t vlpi)
+{
+    struct pending_irq *p = lpi_to_pending(d, vlpi);
+
+    if ( !p )
+        return GIC_PRI_IRQ;
+
+    return p->lpi_priority;
+}
+
 static int __vgic_v3_rdistr_rd_mmio_write(struct vcpu *v, mmio_info_t *info,
                                           uint32_t gicr_reg,
                                           register_t r)

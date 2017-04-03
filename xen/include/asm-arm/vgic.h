@@ -66,12 +66,14 @@ struct pending_irq
 #define GIC_IRQ_GUEST_VISIBLE  2
 #define GIC_IRQ_GUEST_ENABLED  3
 #define GIC_IRQ_GUEST_MIGRATING   4
+#define GIC_IRQ_GUEST_LPI_PENDING 5
     unsigned long status;
     struct irq_desc *desc; /* only set it the irq corresponds to a physical irq */
     unsigned int irq;
 #define GIC_INVALID_LR         (uint8_t)~0
     uint8_t lr;
     uint8_t priority;
+    uint8_t lpi_priority;       /* Caches the priority if this is an LPI. */
     /* inflight is used to append instances of pending_irq to
      * vgic.inflight_irqs */
     struct list_head inflight;

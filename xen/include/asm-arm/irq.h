@@ -46,6 +46,8 @@ static inline bool is_lpi(unsigned int irq)
     return irq >= LPI_OFFSET;
 }
 
+void do_LPI(unsigned int irq);
+
 #define domain_pirq_to_irq(d, pirq) (pirq)
 
 bool_t is_assignable_irq(unsigned int irq);
