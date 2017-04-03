@@ -41,6 +41,11 @@ struct irq_desc *__irq_to_desc(int irq);
 
 void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq);
 
+static inline bool is_lpi(unsigned int irq)
+{
+    return irq >= LPI_OFFSET;
+}
+
 #define domain_pirq_to_irq(d, pirq) (pirq)
 
 bool_t is_assignable_irq(unsigned int irq);

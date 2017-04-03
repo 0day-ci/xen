@@ -220,6 +220,8 @@ enum gic_version {
     GIC_V3,
 };
 
+#define INVALID_LPI     0
+
 extern enum gic_version gic_hw_version(void);
 
 /* Program the IRQ type into the GIC */
