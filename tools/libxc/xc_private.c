@@ -32,6 +32,7 @@ struct xc_interface_core *xc_interface_open(xentoollog_logger *logger,
 {
     struct xc_interface_core xch_buf, *xch = &xch_buf;
 
+    xch->fmem = NULL;
     xch->flags = open_flags;
     xch->dombuild_logger_file = 0;
     xc_clear_last_error(xch);
