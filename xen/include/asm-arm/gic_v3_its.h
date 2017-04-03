@@ -161,6 +161,12 @@ int gicv3_its_setup_collection(unsigned int cpu);
 int vgic_v3_its_init_virtual(struct domain *d, paddr_t guest_addr,
 			     unsigned int devid_bits, unsigned int intid_bits);
 
+/* Given a list of ITSes, create the appropriate DT nodes for a domain. */
+int gicv3_its_make_dt_nodes(struct list_head *its_list,
+                            const struct domain *d,
+                            const struct dt_device_node *gic,
+                            void *fdt);
+
 /*
  * Map a device on the host by allocating an ITT on the host (ITS).
  * "nr_event" specifies how many events (interrupts) this device will need.
@@ -231,6 +237,13 @@ static inline int vgic_v3_its_init_virtual(struct domain *d,
                                            paddr_t guest_addr,
                                            unsigned int devid_bits,
                                            unsigned int intid_bits)
+{
+    return 0;
+}
+static inline int gicv3_its_make_dt_nodes(struct list_head *its_list,
+                                       const struct domain *d,
+                                       const struct dt_device_node *gic,
+                                       void *fdt)
 {
     return 0;
 }
