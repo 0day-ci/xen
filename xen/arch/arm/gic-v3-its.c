@@ -765,6 +765,76 @@ void gicv3_its_unmap_all_devices(struct domain *d)
     spin_unlock(&d->arch.vgic.its_devices_lock);
 }
 
+/* Must be called with the its_device_lock held. */
+static struct its_devices *get_its_device(struct domain *d, paddr_t doorbell,
+                                          uint32_t devid)
+{
+    struct rb_node *node = d->arch.vgic.its_devices.rb_node;
+    struct its_devices *dev;
+
+    while (node)
+    {
+        int cmp;
+
+        dev = rb_entry(node, struct its_devices, rbnode);
+        cmp = compare_its_guest_devices(dev, doorbell, devid);
+
+        if ( !cmp )
+            return dev;
+
+        if ( cmp > 0 )
+            node = node->rb_left;
+        else
+            node = node->rb_right;
+    }
+
+    return NULL;
+}
+
+static uint32_t get_host_lpi(struct its_devices *dev, uint32_t eventid)
+{
+    uint32_t host_lpi = 0;
+
+    if ( dev && (eventid < dev->eventids) )
+        host_lpi = dev->host_lpi_blocks[eventid / LPI_BLOCK] +
+                                       (eventid % LPI_BLOCK);
+
+    return host_lpi;
+}
+
+/*
+ * Connects the event ID for an already assigned device to the given VCPU/vLPI
+ * pair. The corresponding physical LPI is already mapped on the host side
+ * (when assigning the physical device to the guest), so we just connect the
+ * target VCPU/vLPI pair to that interrupt to inject it properly if it fires.
+ */
+struct pending_irq *gicv3_assign_guest_event(struct domain *d,
+                                             paddr_t doorbell_address,
+                                             uint32_t vdevid, uint32_t veventid,
+                                             struct vcpu *v, uint32_t virt_lpi)
+{
+    struct its_devices *dev;
+    struct pending_irq *pirq = NULL;
+    uint32_t host_lpi = 0;
+
+    spin_lock(&d->arch.vgic.its_devices_lock);
+    dev = get_its_device(d, doorbell_address, vdevid);
+    if ( dev )
+    {
+        host_lpi = get_host_lpi(dev, veventid);
+        pirq = &dev->pend_irqs[veventid];
+    }
+    spin_unlock(&d->arch.vgic.its_devices_lock);
+
+    if ( !host_lpi || !pirq )
+        return NULL;
+
+    gicv3_lpi_update_host_entry(host_lpi, d->domain_id,
+                                v ? v->vcpu_id : -1, virt_lpi);
+
+    return pirq;
+}
+
 /* Scan the DT for any ITS nodes and create a list of host ITSes out of it. */
 void gicv3_its_dt_init(const struct dt_device_node *node)
 {

@@ -264,8 +264,8 @@ static bool read_itte(struct virt_its *its, uint32_t devid, uint32_t evid,
  * This function takes care of the locking by taking the its_lock itself, so
  * a caller shall not hold this. Upon returning, the lock is dropped again.
  */
-bool write_itte(struct virt_its *its, uint32_t devid, uint32_t evid,
-                uint32_t collid, uint32_t vlpi, struct vcpu **vcpu)
+static bool write_itte(struct virt_its *its, uint32_t devid, uint32_t evid,
+                       uint32_t collid, uint32_t vlpi, struct vcpu **vcpu)
 {
     struct vits_itte *itte;
 
@@ -427,6 +427,34 @@ static int its_handle_mapd(struct virt_its *its, uint64_t *cmdptr)
     return ret;
 }
 
+static int its_handle_mapti(struct virt_its *its, uint64_t *cmdptr)
+{
+    uint32_t devid = its_cmd_get_deviceid(cmdptr);
+    uint32_t eventid = its_cmd_get_id(cmdptr);
+    uint32_t intid = its_cmd_get_physical_id(cmdptr);
+    uint16_t collid = its_cmd_get_collection(cmdptr);
+    struct pending_irq *pirq;
+    struct vcpu *vcpu;
+
+    if ( its_cmd_get_command(cmdptr) == GITS_CMD_MAPI )
+        intid = eventid;
+
+    pirq = gicv3_assign_guest_event(its->d, its->doorbell_address,
+                                    devid, eventid, vcpu, intid);
+    if ( !pirq )
+        return -1;
+
+    vgic_init_pending_irq(pirq, intid);
+    write_lock(&its->d->arch.vgic.pend_lpi_tree_lock);
+    radix_tree_insert(&its->d->arch.vgic.pend_lpi_tree, intid, pirq);
+    write_unlock(&its->d->arch.vgic.pend_lpi_tree_lock);
+
+    if ( !write_itte(its, devid, eventid, collid, intid, &vcpu) )
+        return -1;
+
+    return 0;
+}
+
 #define ITS_CMD_BUFFER_SIZE(baser)      ((((baser) & 0xff) + 1) << 12)
 
 static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
@@ -476,6 +504,10 @@ static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
         case GITS_CMD_MAPD:
             ret = its_handle_mapd(its, cmdptr);
 	    break;
+        case GITS_CMD_MAPI:
+        case GITS_CMD_MAPTI:
+            ret = its_handle_mapti(its, cmdptr);
+            break;
         case GITS_CMD_SYNC:
             /* We handle ITS commands synchronously, so we ignore SYNC. */
 	    break;
