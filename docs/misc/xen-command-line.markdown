@@ -1172,6 +1172,15 @@ based interrupts. Any higher IRQs will be available for use via PCI MSI.
 ### maxcpus
 > `= <integer>`
 
+### max\_its\_device\_bits
+> `= <integer>`
+
+Specifies the maximum number of devices using MSIs on the ARM GICv3 ITS
+controller to allocate table entries for. Each table entry uses a hardware
+specific size, typically 8 or 16 bytes. This value is given as the number
+of bits required to hold one device ID.
+Defaults to the machine provided value, which is at most 32 bits.
+
 ### mce
 > `= <integer>`
 
