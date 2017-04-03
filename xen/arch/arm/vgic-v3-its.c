@@ -71,6 +71,189 @@ static bool its_is_enabled(struct virt_its *its)
     return test_bit(VIRT_ITS_ENABLED, &its->flags);
 }
 
+#define UNMAPPED_COLLECTION      ((uint16_t)~0)
+
+/*
+ * The physical address is encoded slightly differently depending on
+ * the used page size: the highest four bits are stored in the lowest
+ * four bits of the field for 64K pages.
+ */
+static paddr_t get_baser_phys_addr(uint64_t reg)
+{
+    if ( reg & BIT(9) )
+        return (reg & GENMASK_ULL(47, 16)) |
+                ((reg & GENMASK_ULL(15, 12)) << 36);
+    else
+        return reg & GENMASK_ULL(47, 12);
+}
+
+/* Must be called with the ITS lock held. */
+static struct vcpu *get_vcpu_from_collection(struct virt_its *its,
+                                             uint16_t collid)
+{
+    paddr_t addr = get_baser_phys_addr(its->baser_coll);
+    uint16_t *coll_table;
+    uint16_t vcpu_id;
+
+    if ( collid >= its->max_collections )
+        return NULL;
+
+    coll_table = map_one_guest_page(its->d, addr + collid * sizeof(uint16_t));
+    if ( !coll_table )
+        return NULL;
+
+    vcpu_id = *coll_table;
+
+    unmap_one_guest_page(coll_table);
+
+    if ( vcpu_id == UNMAPPED_COLLECTION || vcpu_id >= its->d->max_vcpus )
+        return NULL;
+
+    return its->d->vcpu[vcpu_id];
+}
+
+/*
+ * Our device table encodings:
+ * Contains the guest physical address of the Interrupt Translation Table in
+ * bits [51:8], and the size of it encoded in the lowest 8 bits.
+ */
+#define DEV_TABLE_ITT_ADDR(x) ((x) & GENMASK_ULL(51, 8))
+#define DEV_TABLE_ITT_SIZE(x) (BIT(((x) & GENMASK_ULL(7, 0)) + 1))
+#define DEV_TABLE_ENTRY(addr, bits)                     \
+        (((addr) & GENMASK_ULL(51, 8)) | (((bits) - 1) & GENMASK_ULL(7, 0)))
+
+/*
+ * Lookup the address of the Interrupt Translation Table associated with
+ * a device ID and return the address of the ITTE belonging to the event ID
+ * (which is an index into that table).
+ */
+static paddr_t its_get_itte_address(struct virt_its *its,
+                                    uint32_t devid, uint32_t evid)
+{
+    paddr_t ret, addr = get_baser_phys_addr(its->baser_dev);
+    uint64_t *itt_ptr;
+    uint64_t itt;
+
+    if ( devid >= its->max_devices )
+        return INVALID_PADDR;
+
+    itt_ptr = map_one_guest_page(its->d, addr + devid * sizeof(uint64_t));
+    if ( !itt_ptr )
+        return INVALID_PADDR;
+
+    itt = read_u64_atomic(itt_ptr);
+
+    if ( evid < DEV_TABLE_ITT_SIZE(itt) &&
+         DEV_TABLE_ITT_ADDR(itt) != INVALID_PADDR )
+        ret = DEV_TABLE_ITT_ADDR(itt) + evid * sizeof(struct vits_itte);
+    else
+        ret = INVALID_PADDR;
+
+    unmap_one_guest_page(itt_ptr);
+
+    return ret;
+}
+
+/*
+ * Looks up a given deviceID/eventID pair on an ITS and returns a pointer to
+ * the corresponding ITTE. This maps the respective guest page into Xen.
+ * Once finished with handling the ITTE, call put_itte() to unmap
+ * the page again.
+ * Must be called with the ITS lock held.
+ */
+static struct vits_itte *get_itte(struct virt_its *its,
+                                  uint32_t devid, uint32_t evid)
+{
+    paddr_t addr = its_get_itte_address(its, devid, evid);
+
+    if ( addr == INVALID_PADDR )
+        return NULL;
+
+    return map_one_guest_page(its->d, addr);
+}
+
+/* Must be called with the ITS lock held. */
+static void put_itte(struct virt_its *its, struct vits_itte *itte)
+{
+    unmap_one_guest_page(itte);
+}
+
+/*
+ * Queries the collection and device tables to get the vCPU and virtual
+ * LPI number for a given guest event. This takes care of mapping the
+ * respective tables and validating the values, since we can't efficiently
+ * protect the ITTs with their less-than-page-size granularity.
+ * This function takes care of the locking by taking the its_lock itself, so
+ * a caller shall not hold this. Upon returning, the lock is dropped again.
+ */
+bool read_itte(struct virt_its *its, uint32_t devid, uint32_t evid,
+               struct vcpu **vcpu, uint32_t *vlpi)
+{
+    struct vits_itte *itte;
+    uint16_t collid;
+    uint32_t _vlpi;
+    struct vcpu *_vcpu;
+
+    spin_lock(&its->its_lock);
+    itte = get_itte(its, devid, evid);
+    if ( !itte )
+    {
+        spin_unlock(&its->its_lock);
+        return false;
+    }
+    collid = itte->collection;
+    _vlpi = itte->vlpi;
+    put_itte(its, itte);
+
+    _vcpu = get_vcpu_from_collection(its, collid);
+    spin_unlock(&its->its_lock);
+
+    if ( !_vcpu )
+        return false;
+
+    *vcpu = _vcpu;
+    *vlpi = _vlpi;
+
+    return true;
+}
+
+#define SKIP_LPI_UPDATE 1
+/*
+ * This function takes care of the locking by taking the its_lock itself, so
+ * a caller shall not hold this. Upon returning, the lock is dropped again.
+ */
+bool write_itte(struct virt_its *its, uint32_t devid, uint32_t evid,
+                uint32_t collid, uint32_t vlpi, struct vcpu **vcpu)
+{
+    struct vits_itte *itte;
+
+    if ( collid >= its->max_collections )
+        return false;
+
+    if ( vlpi >= its->d->arch.vgic.nr_lpis )
+        return false;
+
+    spin_lock(&its->its_lock);
+    itte = get_itte(its, devid, evid);
+    if ( !itte )
+    {
+        spin_unlock(&its->its_lock);
+        return false;
+    }
+
+    itte->collection = collid;
+    if ( vlpi != SKIP_LPI_UPDATE )
+        itte->vlpi = vlpi;
+
+    if ( vcpu )
+        *vcpu = get_vcpu_from_collection(its, collid);
+
+    put_itte(its, itte);
+    spin_unlock(&its->its_lock);
+
+    return true;
+}
+
 /**************************************
  * Functions that handle ITS commands *
  **************************************/
