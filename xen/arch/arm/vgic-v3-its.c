@@ -87,6 +87,26 @@ static paddr_t get_baser_phys_addr(uint64_t reg)
         return reg & GENMASK_ULL(47, 12);
 }
 
+static int its_set_collection(struct virt_its *its, uint16_t collid,
+                              uint16_t vcpu_id)
+{
+    paddr_t addr = get_baser_phys_addr(its->baser_coll);
+    uint16_t *coll_table;
+
+    if ( collid >= its->max_collections )
+        return -ENOENT;
+
+    coll_table = map_one_guest_page(its->d, addr + collid * sizeof(uint16_t));
+    if ( !coll_table )
+        return -EFAULT;
+
+    *coll_table = vcpu_id;
+
+    unmap_one_guest_page(coll_table);
+
+    return 0;
+}
+
 /* Must be called with the ITS lock held. */
 static struct vcpu *get_vcpu_from_collection(struct virt_its *its,
                                              uint16_t collid)
@@ -324,6 +344,29 @@ static int its_handle_int(struct virt_its *its, uint64_t *cmdptr)
     return 0;
 }
 
+static int its_handle_mapc(struct virt_its *its, uint64_t *cmdptr)
+{
+    uint32_t collid = its_cmd_get_collection(cmdptr);
+    uint64_t rdbase = its_cmd_mask_field(cmdptr, 2, 16, 44);
+
+    if ( collid >= its->max_collections )
+        return -1;
+
+    if ( rdbase >= its->d->max_vcpus )
+        return -1;
+
+    spin_lock(&its->its_lock);
+
+    if ( its_cmd_get_validbit(cmdptr) )
+        its_set_collection(its, collid, rdbase);
+    else
+        its_set_collection(its, collid, UNMAPPED_COLLECTION);
+
+    spin_unlock(&its->its_lock);
+
+    return 0;
+}
+
 #define ITS_CMD_BUFFER_SIZE(baser)      ((((baser) & 0xff) + 1) << 12)
 
 static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
@@ -366,6 +409,9 @@ static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
             break;
         case GITS_CMD_INT:
             ret = its_handle_int(its, cmdptr);
+            break;
+        case GITS_CMD_MAPC:
+            ret = its_handle_mapc(its, cmdptr);
             break;
         case GITS_CMD_SYNC:
             /* We handle ITS commands synchronously, so we ignore SYNC. */
