@@ -1449,6 +1449,9 @@ static int vgic_v3_domain_init(struct domain *d)
     d->arch.vgic.nr_regions = rdist_count;
     d->arch.vgic.rdist_regions = rdist_regions;
 
+    spin_lock_init(&d->arch.vgic.its_devices_lock);
+    d->arch.vgic.its_devices = RB_ROOT;
+
     /*
      * Domain 0 gets the hardware address.
      * Guests get the virtual platform layout.
@@ -1521,6 +1524,7 @@ static int vgic_v3_domain_init(struct domain *d)
 
 static void vgic_v3_domain_free(struct domain *d)
 {
+    gicv3_its_unmap_all_devices(d);
     xfree(d->arch.vgic.rdist_regions);
 }
 
