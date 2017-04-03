@@ -1080,6 +1080,38 @@ static const struct mmio_handler_ops vgic_its_mmio_handler = {
     .write = vgic_v3_its_mmio_write,
 };
 
+int vgic_v3_its_init_virtual(struct domain *d, paddr_t guest_addr,
+                             unsigned int devid_bits, unsigned int intid_bits)
+{
+    struct virt_its *its;
+    uint64_t base_attr;
+
+    its = xzalloc(struct virt_its);
+    if ( ! its )
+        return -ENOMEM;
+
+    base_attr  = GIC_BASER_InnerShareable << GITS_BASER_SHAREABILITY_SHIFT;
+    base_attr |= GIC_BASER_CACHE_SameAsInner << GITS_BASER_OUTER_CACHEABILITY_SHIFT;
+    base_attr |= GIC_BASER_CACHE_RaWaWb << GITS_BASER_INNER_CACHEABILITY_SHIFT;
+
+    its->cbaser  = base_attr;
+    base_attr |= 0ULL << GITS_BASER_PAGE_SIZE_SHIFT;
+    its->baser_dev  = GITS_BASER_TYPE_DEVICE << GITS_BASER_TYPE_SHIFT;
+    its->baser_dev |= (7ULL << GITS_BASER_ENTRY_SIZE_SHIFT) | base_attr;
+    its->baser_coll  = GITS_BASER_TYPE_COLLECTION << GITS_BASER_TYPE_SHIFT;
+    its->baser_coll |= (1ULL << GITS_BASER_ENTRY_SIZE_SHIFT) | base_attr;
+    its->d = d;
+    its->doorbell_address = guest_addr + ITS_DOORBELL_OFFSET;
+    its->devid_bits = devid_bits;
+    its->intid_bits = intid_bits;
+    spin_lock_init(&its->vcmd_lock);
+    spin_lock_init(&its->its_lock);
+
+    register_mmio_handler(d, &vgic_its_mmio_handler, guest_addr, SZ_64K, its);
+
+    return 0;
+}
+
 /*
  * Local variables:
  * mode: C

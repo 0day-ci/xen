@@ -154,6 +154,14 @@ uint64_t gicv3_get_redist_address(unsigned int cpu, bool use_pta);
 int gicv3_its_setup_collection(unsigned int cpu);
 
 /*
+ * Create and register a virtual ITS at the given guest address.
+ * If a host ITS is specified, a hardware domain can reach out to that host
+ * ITS to deal with devices and LPI mappings and can enable/disable LPIs.
+ */
+int vgic_v3_its_init_virtual(struct domain *d, paddr_t guest_addr,
+			     unsigned int devid_bits, unsigned int intid_bits);
+
+/*
  * Map a device on the host by allocating an ITT on the host (ITS).
  * "nr_event" specifies how many events (interrupts) this device will need.
  * Setting "valid" to false deallocates the device.
@@ -217,6 +225,14 @@ static inline int gicv3_its_setup_collection(unsigned int cpu)
 
 static inline void gicv3_its_unmap_all_devices(struct domain *d)
 {
+}
+
+static inline int vgic_v3_its_init_virtual(struct domain *d,
+                                           paddr_t guest_addr,
+                                           unsigned int devid_bits,
+                                           unsigned int intid_bits)
+{
+    return 0;
 }
 
 #endif /* CONFIG_HAS_ITS */
