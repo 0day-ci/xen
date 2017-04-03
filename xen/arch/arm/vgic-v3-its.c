@@ -186,8 +186,8 @@ static void put_itte(struct virt_its *its, struct vits_itte *itte)
  * This function takes care of the locking by taking the its_lock itself, so
  * a caller shall not hold this. Upon returning, the lock is dropped again.
  */
-bool read_itte(struct virt_its *its, uint32_t devid, uint32_t evid,
-               struct vcpu **vcpu, uint32_t *vlpi)
+static bool read_itte(struct virt_its *its, uint32_t devid, uint32_t evid,
+                      struct vcpu **vcpu, uint32_t *vlpi)
 {
     struct vits_itte *itte;
     uint16_t collid;
@@ -273,6 +273,30 @@ static uint64_t its_cmd_mask_field(uint64_t *its_cmd, unsigned int word,
 #define its_cmd_get_target_addr(cmd)    its_cmd_mask_field(cmd, 2, 16, 32)
 #define its_cmd_get_validbit(cmd)       its_cmd_mask_field(cmd, 2, 63,  1)
 
+static int its_handle_clear(struct virt_its *its, uint64_t *cmdptr)
+{
+    uint32_t devid = its_cmd_get_deviceid(cmdptr);
+    uint32_t eventid = its_cmd_get_id(cmdptr);
+    struct pending_irq *p;
+    struct vcpu *vcpu;
+    uint32_t vlpi;
+
+    if ( !read_itte(its, devid, eventid, &vcpu, &vlpi) )
+        return -1;
+
+    p = lpi_to_pending(its->d, vlpi);
+    if ( !p )
+        return -1;
+
+    clear_bit(GIC_IRQ_GUEST_LPI_PENDING, &p->status);
+
+    /* Remove a pending, but not yet injected guest IRQ. */
+    clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
+    gic_remove_from_queues(vcpu, vlpi);
+
+    return 0;
+}
+
 #define ITS_CMD_BUFFER_SIZE(baser)      ((((baser) & 0xff) + 1) << 12)
 
 static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
@@ -310,6 +334,9 @@ static int vgic_its_handle_cmds(struct domain *d, struct virt_its *its,
 
         switch ( its_cmd_get_command(cmdptr) )
         {
+        case GITS_CMD_CLEAR:
+            ret = its_handle_clear(its, cmdptr);
+            break;
         case GITS_CMD_SYNC:
             /* We handle ITS commands synchronously, so we ignore SYNC. */
 	    break;
