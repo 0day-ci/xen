@@ -1418,6 +1418,67 @@ int prepare_ring_for_helper(
 }
 
 /*
+ * Mark a given number of guest pages as used (by increasing their refcount),
+ * starting with the given guest address. This needs to be called once before
+ * calling (possibly repeatedly) map_one_guest_pages().
+ * Before the domain gets destroyed, call put_guest_pages() to drop the
+ * reference.
+ */
+int get_guest_pages(struct domain *d, paddr_t gpa, unsigned int nr_pages)
+{
+    unsigned int i;
+    struct page_info *page;
+
+    for ( i = 0; i < nr_pages; i++ )
+    {
+        page = get_page_from_gfn(d, (gpa >> PAGE_SHIFT) + i, NULL, P2M_ALLOC);
+        if ( !page )
+        {
+            /* Make sure we drop the references of pages we got so far. */
+            put_guest_pages(d, gpa, i);
+            return -EINVAL;
+        }
+    }
+
+    return 0;
+}
+
+void put_guest_pages(struct domain *d, paddr_t gpa, unsigned int nr_pages)
+{
+    mfn_t mfn;
+    int i;
+
+    p2m_read_lock(&d->arch.p2m);
+    for ( i = 0; i < nr_pages; i++ )
+    {
+        mfn = p2m_get_entry(&d->arch.p2m, _gfn((gpa >> PAGE_SHIFT) + i),
+                            NULL, NULL, NULL);
+        if ( mfn_eq(mfn, INVALID_MFN) )
+            continue;
+        put_page(mfn_to_page(mfn_x(mfn)));
+    }
+    p2m_read_unlock(&d->arch.p2m);
+}
+
+/*
+ * Provides easy access to guest memory by "mapping" one page of it into
+ * Xen's VA space. In fact it relies on the memory being already mapped
+ * and just provides a pointer to it.
+ */
+void *map_one_guest_page(struct domain *d, paddr_t guest_addr)
+{
+    void *ptr = map_domain_page(_mfn(guest_addr >> PAGE_SHIFT));
+
+    return ptr + (guest_addr & ~PAGE_MASK);
+}
+
+/* "Unmap" a previously mapped guest page. Could be optimized away. */
+void unmap_one_guest_page(void *va)
+{
+    unmap_domain_page(((uintptr_t)va & PAGE_MASK));
+}
+
+/*
  * Local variables:
  * mode: C
  * c-file-style: "BSD"

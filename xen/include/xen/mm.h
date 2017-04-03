@@ -570,6 +570,14 @@ int prepare_ring_for_helper(struct domain *d, unsigned long gmfn,
                             struct page_info **_page, void **_va);
 void destroy_ring_for_helper(void **_va, struct page_info *page);
 
+/* Mark guest pages as used (by the hypervisor) to avoid dropping them. */
+int get_guest_pages(struct domain *d, paddr_t gpa, unsigned int nr_pages);
+void put_guest_pages(struct domain *d, paddr_t gpa, unsigned int nr_pages);
+
+/* Map guest memory into Xen's VA space. */
+void *map_one_guest_page(struct domain *d, paddr_t guest_addr);
+void unmap_one_guest_page(void *va);
+
 #include <asm/flushtlb.h>
 
 static inline void accumulate_tlbflush(bool *need_tlbflush,
