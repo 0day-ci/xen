@@ -1181,6 +1181,15 @@ specific size, typically 8 or 16 bytes. This value is given as the number
 of bits required to hold one device ID.
 Defaults to the machine provided value, which is at most 32 bits.
 
+### max\_lpi\_bits
+> `= <integer>`
+
+Specifies the number of ARM GICv3 LPI interrupts to allocate on the host,
+presented as the number of bits needed to encode it. This must be at least
+14 and not exceed 32, and each LPI requires one byte (configuration) and
+one pending bit to be allocated.
+Defaults to 20 bits (to cover at most 1048576 interrupts).
+
 ### mce
 > `= <integer>`
 
