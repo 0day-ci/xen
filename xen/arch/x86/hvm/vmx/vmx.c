@@ -1343,6 +1343,20 @@ static void vmx_set_rdtsc_exiting(struct vcpu *v, bool_t enable)
     vmx_vmcs_exit(v);
 }
 
+static void vmx_set_descriptor_access_exiting(struct vcpu *v, bool enable)
+{
+    if ( enable )
+        v->arch.hvm_vmx.secondary_exec_control |=
+            SECONDARY_EXEC_DESCRIPTOR_TABLE_EXITING;
+    else
+        v->arch.hvm_vmx.secondary_exec_control &=
+            ~SECONDARY_EXEC_DESCRIPTOR_TABLE_EXITING;
+
+    vmx_vmcs_enter(v);
+    vmx_update_secondary_exec_control(v);
+    vmx_vmcs_exit(v);
+}
+
 static void vmx_init_hypercall_page(struct domain *d, void *hypercall_page)
 {
     char *p;
@@ -2230,6 +2244,7 @@ static struct hvm_function_table __initdata vmx_function_table = {
     .handle_cd            = vmx_handle_cd,
     .set_info_guest       = vmx_set_info_guest,
     .set_rdtsc_exiting    = vmx_set_rdtsc_exiting,
+    .set_descriptor_access_exiting = vmx_set_descriptor_access_exiting,
     .nhvm_vcpu_initialise = nvmx_vcpu_initialise,
     .nhvm_vcpu_destroy    = nvmx_vcpu_destroy,
     .nhvm_vcpu_reset      = nvmx_vcpu_reset,
@@ -3361,6 +3376,40 @@ static void vmx_handle_xrstors(void)
     domain_crash(current->domain);
 }
 
+static void vmx_handle_idt_or_gdt(idt_or_gdt_instr_info_t instr_info,
+                                  uint64_t exit_qualification)
+{
+    uint8_t descriptor = instr_info.instr_identity
+        ? VM_EVENT_DESC_IDTR : VM_EVENT_DESC_GDTR;
+
+    hvm_descriptor_access_intercept(instr_info.raw, exit_qualification,
+                                    descriptor, instr_info.instr_write);
+}
+
+static void vmx_handle_ldt_or_tr(ldt_or_tr_instr_info_t instr_info,
+                                 uint64_t exit_qualification)
+{
+    uint8_t descriptor = instr_info.instr_identity
+        ? VM_EVENT_DESC_TR : VM_EVENT_DESC_LDTR;
+
+    hvm_descriptor_access_intercept(instr_info.raw, exit_qualification,
+                                    descriptor, instr_info.instr_write);
+}
+
+static void vmx_handle_descriptor_access(uint32_t exit_reason)
+{
+    uint64_t instr_info;
+    uint64_t exit_qualification;
+
+    __vmread(EXIT_QUALIFICATION, &exit_qualification);
+    __vmread(VMX_INSTRUCTION_INFO, &instr_info);
+
+    if ( exit_reason == EXIT_REASON_ACCESS_GDTR_OR_IDTR )
+        vmx_handle_idt_or_gdt(instr_info, exit_qualification);
+    else
+        vmx_handle_ldt_or_tr(instr_info, exit_qualification);
+}
+
 static int vmx_handle_apic_write(void)
 {
     unsigned long exit_qualification;
@@ -3972,6 +4021,9 @@ void vmx_vmexit_handler(struct cpu_user_regs *regs)
 
     case EXIT_REASON_ACCESS_GDTR_OR_IDTR:
     case EXIT_REASON_ACCESS_LDTR_OR_TR:
+        vmx_handle_descriptor_access(exit_reason);
+        break;
+
     case EXIT_REASON_VMX_PREEMPTION_TIMER_EXPIRED:
     case EXIT_REASON_INVPCID:
     /* fall through */

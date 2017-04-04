@@ -72,6 +72,28 @@ void hvm_monitor_msr(unsigned int msr, uint64_t value)
     }
 }
 
+void hvm_monitor_descriptor_access(uint64_t exit_info,
+                                   uint64_t vmx_exit_qualification,
+                                   uint8_t descriptor, bool is_write)
+{
+    struct vcpu *curr = current;
+    vm_event_request_t req = {
+        .reason = VM_EVENT_REASON_DESCRIPTOR_ACCESS,
+        .u.desc_access.descriptor = descriptor,
+        .u.desc_access.is_write = is_write,
+    };
+    if ( cpu_has_vmx )
+    {
+        req.u.desc_access.arch.vmx.instr_info = exit_info;
+        req.u.desc_access.arch.vmx.exit_qualification = vmx_exit_qualification;
+    }
+    else
+    {
+        req.u.desc_access.arch.svm.exitinfo = exit_info;
+    }
+    monitor_traps(curr, 1, &req);
+}
+
 static inline unsigned long gfn_of_rip(unsigned long rip)
 {
     struct vcpu *curr = current;

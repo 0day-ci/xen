@@ -3572,6 +3572,43 @@ gp_fault:
     return X86EMUL_EXCEPTION;
 }
 
+int hvm_descriptor_access_intercept(uint64_t exit_info,
+                                    uint64_t vmx_exit_qualification,
+                                    uint8_t descriptor, bool is_write)
+{
+    struct vcpu *curr = current;
+    struct domain *currd = curr->domain;
+    int rc;
+
+    if ( currd->arch.monitor.descriptor_access_enabled )
+    {
+        ASSERT(curr->arch.vm_event);
+        hvm_monitor_descriptor_access(exit_info, vmx_exit_qualification,
+                                      descriptor, is_write);
+    }
+    else
+    {
+        struct hvm_emulate_ctxt ctxt = {};
+
+        hvm_emulate_init_once(&ctxt, NULL, guest_cpu_user_regs());
+        rc = hvm_emulate_one(&ctxt);
+        switch ( rc )
+        {
+        case X86EMUL_UNHANDLEABLE:
+            domain_crash(currd);
+            return X86EMUL_UNHANDLEABLE;
+        case X86EMUL_EXCEPTION:
+            hvm_inject_event(&ctxt.ctxt.event);
+            /* fall through */
+        default:
+            hvm_emulate_writeback(&ctxt);
+            break;
+        }
+    }
+
+    return X86EMUL_OKAY;
+}
+
 static bool is_cross_vendor(const struct x86_emulate_state *state,
                             const struct x86_emulate_ctxt *ctxt)
 {
