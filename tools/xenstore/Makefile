@@ -5,6 +5,7 @@ MAJOR = 3.0
 MINOR = 3
 
 CFLAGS += -Werror
+CFLAGS += -Wno-bool-operation
 CFLAGS += -I.
 # Include configure output (config.h)
 CFLAGS += -include $(XEN_ROOT)/tools/config.h
