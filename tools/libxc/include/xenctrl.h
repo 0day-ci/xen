@@ -1923,6 +1923,8 @@ int xc_altp2m_destroy_view(xc_interface *handle, domid_t domid,
 /* Switch all vCPUs of the domain to the specified altp2m view */
 int xc_altp2m_switch_to_view(xc_interface *handle, domid_t domid,
                              uint16_t view_id);
+int xc_altp2m_set_suppress_ve(xc_interface *handle, domid_t domid,
+                              uint16_t view_id, xen_pfn_t gfn, uint8_t sve);
 int xc_altp2m_set_mem_access(xc_interface *handle, domid_t domid,
                              uint16_t view_id, xen_pfn_t gfn,
                              xenmem_access_t access);
