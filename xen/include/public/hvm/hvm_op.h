@@ -231,6 +231,18 @@ struct xen_hvm_altp2m_set_mem_access {
 typedef struct xen_hvm_altp2m_set_mem_access xen_hvm_altp2m_set_mem_access_t;
 DEFINE_XEN_GUEST_HANDLE(xen_hvm_altp2m_set_mem_access_t);
 
+struct xen_hvm_altp2m_set_suppress_ve {
+    /* view */
+    uint16_t view;
+    uint8_t suppress_ve;
+    uint8_t pad1;
+    uint32_t pad2;
+    /* gfn */
+    uint64_t gfn;
+};
+typedef struct xen_hvm_altp2m_set_suppress_ve xen_hvm_altp2m_set_suppress_ve_t;
+DEFINE_XEN_GUEST_HANDLE(xen_hvm_altp2m_set_suppress_ve_t);
+
 struct xen_hvm_altp2m_change_gfn {
     /* view */
     uint16_t view;
@@ -262,6 +274,8 @@ struct xen_hvm_altp2m_op {
 #define HVMOP_altp2m_set_mem_access       7
 /* Change a p2m entry to have a different gfn->mfn mapping */
 #define HVMOP_altp2m_change_gfn           8
+/* Set the "Suppress #VE" bit on a page */
+#define HVMOP_altp2m_set_suppress_ve      9
     domid_t domain;
     uint16_t pad1;
     uint32_t pad2;
@@ -270,6 +284,7 @@ struct xen_hvm_altp2m_op {
         struct xen_hvm_altp2m_vcpu_enable_notify enable_notify;
         struct xen_hvm_altp2m_view               view;
         struct xen_hvm_altp2m_set_mem_access     set_mem_access;
+        struct xen_hvm_altp2m_set_suppress_ve    set_suppress_ve;
         struct xen_hvm_altp2m_change_gfn         change_gfn;
         uint8_t pad[64];
     } u;
