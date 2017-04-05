@@ -273,8 +273,7 @@ int p2m_set_altp2m_mem_access(struct domain *d, struct p2m_domain *hp2m,
         }
     }
 
-    return ap2m->set_entry(ap2m, gfn_l, mfn, PAGE_ORDER_4K, t, a,
-                         (current->domain != d));
+    return ap2m->set_entry(ap2m, gfn_l, mfn, PAGE_ORDER_4K, t, a, -1);
 }
 
 static int set_mem_access(struct domain *d, struct p2m_domain *p2m,
