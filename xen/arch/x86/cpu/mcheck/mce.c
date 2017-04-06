@@ -174,10 +174,6 @@ void mce_need_clearbank_register(mce_need_clearbank_t cbfunc)
     mc_need_clearbank_scan = cbfunc;
 }
 
-
-static struct mce_softirq_barrier mce_inside_bar, mce_severity_bar;
-static struct mce_softirq_barrier mce_trap_bar;
-
 /*
  * mce_logout_lock should only be used in the trap handler,
  * while MCIP has not been cleared yet in the global status
@@ -453,6 +449,7 @@ static int mce_urgent_action(const struct cpu_user_regs *regs,
 /* Shared #MC handler. */
 void mcheck_cmn_handler(const struct cpu_user_regs *regs)
 {
+    static DEFINE_MCE_BARRIER(mce_trap_bar);
     struct mca_banks *bankmask = mca_allbanks;
     struct mca_banks *clear_bank = __get_cpu_var(mce_clear_banks);
     uint64_t gstatus;
@@ -1698,6 +1695,8 @@ static int mce_delayed_action(mctelem_cookie_t mctc)
 /* Softirq Handler for this MCE# processing */
 static void mce_softirq(void)
 {
+    static DEFINE_MCE_BARRIER(mce_inside_bar);
+    static DEFINE_MCE_BARRIER(mce_severity_bar);
     int cpu = smp_processor_id();
     unsigned int workcpu;
 
@@ -1764,9 +1763,6 @@ void mce_handler_init(void)
 
     /* callback register, do we really need so many callback? */
     /* mce handler data initialization */
-    mce_barrier_init(&mce_inside_bar);
-    mce_barrier_init(&mce_severity_bar);
-    mce_barrier_init(&mce_trap_bar);
     spin_lock_init(&mce_logout_lock);
     open_softirq(MACHINE_CHECK_SOFTIRQ, mce_softirq);
 }
