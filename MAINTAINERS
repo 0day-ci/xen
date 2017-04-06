@@ -206,6 +206,13 @@ S:	Supported
 F:	xen/arch/x86/debug.c
 F:	tools/debugger/gdbsx/
 
+GOLANG BINDINGS
+M:      George Dunlap <george.dunlap@citrix.com>
+M:	Ian Jackson <ian.jackson@eu.citrix.com>
+M:	Wei Liu <wei.liu2@citrix.com>
+S:      Supported
+F:      tools/golang
+
 INTEL(R) TRUSTED EXECUTION TECHNOLOGY (TXT)
 M:	Gang Wei <gang.wei@intel.com>
 M:	Shane Wang <shane.wang@intel.com>
