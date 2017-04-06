@@ -177,6 +177,7 @@ void mce_need_clearbank_register(mce_need_clearbank_t cbfunc)
 
 static struct mce_softirq_barrier mce_inside_bar, mce_severity_bar;
 static struct mce_softirq_barrier mce_trap_bar;
+static struct mce_softirq_barrier mce_handler_init_bar;
 
 /*
  * mce_logout_lock should only be used in the trap handler,
@@ -187,8 +188,6 @@ static struct mce_softirq_barrier mce_trap_bar;
 static DEFINE_SPINLOCK(mce_logout_lock);
 
 static atomic_t severity_cpu = ATOMIC_INIT(-1);
-static atomic_t found_error = ATOMIC_INIT(0);
-static cpumask_t mce_fatal_cpus;
 
 const struct mca_error_handler *__read_mostly mce_dhandlers;
 const struct mca_error_handler *__read_mostly mce_uhandlers;
@@ -453,11 +452,18 @@ static int mce_urgent_action(const struct cpu_user_regs *regs,
 /* Shared #MC handler. */
 void mcheck_cmn_handler(const struct cpu_user_regs *regs)
 {
+    static atomic_t found_error;
+    static cpumask_t mce_fatal_cpus;
     struct mca_banks *bankmask = mca_allbanks;
     struct mca_banks *clear_bank = __get_cpu_var(mce_clear_banks);
     uint64_t gstatus;
     mctelem_cookie_t mctc = NULL;
     struct mca_summary bs;
+
+    mce_barrier_enter(&mce_handler_init_bar);
+    atomic_set(&found_error, 0);
+    cpumask_clear(&mce_fatal_cpus);
+    mce_barrier_exit(&mce_handler_init_bar);
 
     mce_spin_lock(&mce_logout_lock);
 
@@ -1767,6 +1773,7 @@ void mce_handler_init(void)
     mce_barrier_init(&mce_inside_bar);
     mce_barrier_init(&mce_severity_bar);
     mce_barrier_init(&mce_trap_bar);
+    mce_barrier_init(&mce_handler_init_bar);
     spin_lock_init(&mce_logout_lock);
     open_softirq(MACHINE_CHECK_SOFTIRQ, mce_softirq);
 }
