@@ -51,4 +51,23 @@ uint32_t guest_io_read(unsigned int port, unsigned int bytes,
 void guest_io_write(unsigned int port, unsigned int bytes, uint32_t data,
                     struct domain *);
 
+int emulate_privileged_op(struct cpu_user_regs *regs);
+int emulate_invalid_rdtscp(struct cpu_user_regs *regs);
+int emulate_forced_invalid_op(struct cpu_user_regs *regs);
+void emulate_gate_op(struct cpu_user_regs *regs);
+
+static inline const char *trapstr(unsigned int trapnr)
+{
+    static const char * const strings[] = {
+        "divide error", "debug", "nmi", "bkpt", "overflow", "bounds",
+        "invalid opcode", "device not available", "double fault",
+        "coprocessor segment", "invalid tss", "segment not found",
+        "stack error", "general protection fault", "page fault",
+        "spurious interrupt", "coprocessor error", "alignment check",
+        "machine check", "simd error", "virtualisation exception"
+    };
+
+    return trapnr < ARRAY_SIZE(strings) ? strings[trapnr] : "???";
+}
+
 #endif /* ASM_TRAP_H */
