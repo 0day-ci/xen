@@ -177,7 +177,7 @@ void mce_need_clearbank_register(mce_need_clearbank_t cbfunc)
 
 static struct mce_softirq_barrier mce_inside_bar, mce_severity_bar;
 static struct mce_softirq_barrier mce_trap_bar;
-static struct mce_softirq_barrier mce_handler_init_bar;
+static struct mce_softirq_barrier mce_handler_init_bar, mce_softirq_init_bar;
 
 /*
  * mce_logout_lock should only be used in the trap handler,
@@ -186,8 +186,6 @@ static struct mce_softirq_barrier mce_handler_init_bar;
  * happen at any moment, which would cause lock recursion.
  */
 static DEFINE_SPINLOCK(mce_logout_lock);
-
-static atomic_t severity_cpu = ATOMIC_INIT(-1);
 
 const struct mca_error_handler *__read_mostly mce_dhandlers;
 const struct mca_error_handler *__read_mostly mce_uhandlers;
@@ -452,7 +450,7 @@ static int mce_urgent_action(const struct cpu_user_regs *regs,
 /* Shared #MC handler. */
 void mcheck_cmn_handler(const struct cpu_user_regs *regs)
 {
-    static atomic_t found_error;
+    static atomic_t severity_cpu, found_error;
     static cpumask_t mce_fatal_cpus;
     struct mca_banks *bankmask = mca_allbanks;
     struct mca_banks *clear_bank = __get_cpu_var(mce_clear_banks);
@@ -461,6 +459,7 @@ void mcheck_cmn_handler(const struct cpu_user_regs *regs)
     struct mca_summary bs;
 
     mce_barrier_enter(&mce_handler_init_bar);
+    atomic_set(&severity_cpu, -1);
     atomic_set(&found_error, 0);
     cpumask_clear(&mce_fatal_cpus);
     mce_barrier_exit(&mce_handler_init_bar);
@@ -1704,10 +1703,15 @@ static int mce_delayed_action(mctelem_cookie_t mctc)
 /* Softirq Handler for this MCE# processing */
 static void mce_softirq(void)
 {
+    static atomic_t severity_cpu;
     int cpu = smp_processor_id();
     unsigned int workcpu;
 
     mce_printk(MCE_VERBOSE, "CPU%d enter softirq\n", cpu);
+
+    mce_barrier_enter(&mce_softirq_init_bar);
+    atomic_set(&severity_cpu, -1);
+    mce_barrier_exit(&mce_softirq_init_bar);
 
     mce_barrier_enter(&mce_inside_bar);
 
@@ -1774,6 +1778,7 @@ void mce_handler_init(void)
     mce_barrier_init(&mce_severity_bar);
     mce_barrier_init(&mce_trap_bar);
     mce_barrier_init(&mce_handler_init_bar);
+    mce_barrier_init(&mce_softirq_init_bar);
     spin_lock_init(&mce_logout_lock);
     open_softirq(MACHINE_CHECK_SOFTIRQ, mce_softirq);
 }
