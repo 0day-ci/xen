@@ -373,7 +373,7 @@ static int read_descriptor(unsigned int sel,
                            unsigned long *base,
                            unsigned long *limit,
                            unsigned int *ar,
-                           bool_t insn_fetch)
+                           bool insn_fetch)
 {
     struct desc_struct desc;
 
@@ -640,7 +640,7 @@ static int priv_op_read_segment(enum x86_segment seg,
 }
 
 /* Perform IOPL check between the vcpu's shadowed IOPL, and the assumed cpl. */
-static bool_t iopl_ok(const struct vcpu *v, const struct cpu_user_regs *regs)
+static bool iopl_ok(const struct vcpu *v, const struct cpu_user_regs *regs)
 {
     unsigned int cpl = guest_kernel_mode(v, regs) ?
         (VM_ASSIST(v->domain, architectural_iopl) ? 0 : 1) : 3;
@@ -690,8 +690,8 @@ static int guest_io_okay(
 }
 
 /* Has the administrator granted sufficient permission for this I/O access? */
-static bool_t admin_io_okay(unsigned int port, unsigned int bytes,
-                            const struct domain *d)
+static bool admin_io_okay(unsigned int port, unsigned int bytes,
+                          const struct domain *d)
 {
     /*
      * Port 0xcf8 (CONFIG_ADDRESS) is only visible for DWORD accesses.
@@ -707,8 +707,8 @@ static bool_t admin_io_okay(unsigned int port, unsigned int bytes,
     return ioports_access_permitted(d, port, port + bytes - 1);
 }
 
-static bool_t pci_cfg_ok(struct domain *currd, unsigned int start,
-                         unsigned int size, uint32_t *write)
+static bool pci_cfg_ok(struct domain *currd, unsigned int start,
+                       unsigned int size, uint32_t *write)
 {
     uint32_t machine_bdf;
 
