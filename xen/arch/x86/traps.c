@@ -1,18 +1,18 @@
 /******************************************************************************
  * arch/x86/traps.c
- * 
+ *
  * Modifications to Linux original are copyright (c) 2002-2004, K A Fraser
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; If not, see <http://www.gnu.org/licenses/>.
  */
@@ -110,7 +110,7 @@ void (*ioemul_handle_quirk)(
 static int debug_stack_lines = 20;
 integer_param("debug_stack_lines", debug_stack_lines);
 
-static bool_t opt_ler;
+static bool opt_ler;
 boolean_param("ler", opt_ler);
 
 #define stack_words_per_line 4
@@ -525,7 +525,7 @@ void vcpu_show_execution_state(struct vcpu *v)
 }
 
 static cpumask_t show_state_mask;
-static bool_t opt_show_all;
+static bool opt_show_all;
 boolean_param("async-show-all", opt_show_all);
 
 static int nmi_show_execution_state(const struct cpu_user_regs *regs, int cpu)
@@ -548,7 +548,7 @@ static int nmi_show_execution_state(const struct cpu_user_regs *regs, int cpu)
  * are disabled). In such situations we can't do much that is safe. We try to
  * print out some tracing and then we just spin.
  */
-void fatal_trap(const struct cpu_user_regs *regs, bool_t show_remote)
+void fatal_trap(const struct cpu_user_regs *regs, bool show_remote)
 {
     static DEFINE_PER_CPU(char, depth);
     unsigned int trapnr = regs->entry_vector;
@@ -978,7 +978,7 @@ void do_int3(struct cpu_user_regs *regs)
     {
         debugger_trap_fatal(TRAP_int3, regs);
         return;
-    } 
+    }
 
     pv_inject_guest_trap(TRAP_int3, regs);
 }
@@ -1328,9 +1328,9 @@ void do_page_fault(struct cpu_user_regs *regs)
 
 /*
  * Early #PF handler to print CR2, error code, and stack.
- * 
+ *
  * We also deal with spurious faults here, even though they should never happen
- * during early boot (an issue was seen once, but was most likely a hardware 
+ * during early boot (an issue was seen once, but was most likely a hardware
  * problem).
  */
 void __init do_early_page_fault(struct cpu_user_regs *regs)
@@ -1374,7 +1374,7 @@ void do_general_protection(struct cpu_user_regs *regs)
 
     /*
      * Cunning trick to allow arbitrary "INT n" handling.
-     * 
+     *
      * We set DPL == 0 on all vectors in the IDT. This prevents any INT <n>
      * instruction from trapping to the appropriate vector, when that might not
      * be expected by Xen or the guest OS. For example, that entry might be for
@@ -1382,12 +1382,12 @@ void do_general_protection(struct cpu_user_regs *regs)
      * expect an error code on the stack (which a software trap never
      * provides), or might be a hardware interrupt handler that doesn't like
      * being called spuriously.
-     * 
+     *
      * Instead, a GPF occurs with the faulting IDT vector in the error code.
-     * Bit 1 is set to indicate that an IDT entry caused the fault. Bit 0 is 
+     * Bit 1 is set to indicate that an IDT entry caused the fault. Bit 0 is
      * clear (which got already checked above) to indicate that it's a software
      * fault, not a hardware one.
-     * 
+     *
      * NOTE: Vectors 3 and 4 are dealt with from their own handler. This is
      * okay because they can only be triggered by an explicit DPL-checked
      * instruction. The DPL specified by the guest OS for these vectors is NOT
@@ -1586,14 +1586,14 @@ static int dummy_nmi_callback(const struct cpu_user_regs *regs, int cpu)
 {
     return 0;
 }
- 
+
 static nmi_callback_t *nmi_callback = dummy_nmi_callback;
 
 void do_nmi(const struct cpu_user_regs *regs)
 {
     unsigned int cpu = smp_processor_id();
     unsigned char reason;
-    bool_t handle_unknown = 0;
+    bool handle_unknown = false;
 
     ++nmi_count(cpu);
 
@@ -1602,7 +1602,7 @@ void do_nmi(const struct cpu_user_regs *regs)
 
     if ( (nmi_watchdog == NMI_NONE) ||
          (!nmi_watchdog_tick(regs) && watchdog_force) )
-        handle_unknown = 1;
+        handle_unknown = true;
 
     /* Only the BSP gets external NMIs from the system. */
     if ( cpu == 0 )
@@ -1982,28 +1982,28 @@ long set_debugreg(struct vcpu *v, unsigned int reg, unsigned long value)
 
     switch ( reg )
     {
-    case 0: 
+    case 0:
         if ( !access_ok(value, sizeof(long)) )
             return -EPERM;
-        if ( v == curr ) 
+        if ( v == curr )
             write_debugreg(0, value);
         break;
-    case 1: 
+    case 1:
         if ( !access_ok(value, sizeof(long)) )
             return -EPERM;
-        if ( v == curr ) 
+        if ( v == curr )
             write_debugreg(1, value);
         break;
-    case 2: 
+    case 2:
         if ( !access_ok(value, sizeof(long)) )
             return -EPERM;
-        if ( v == curr ) 
+        if ( v == curr )
             write_debugreg(2, value);
         break;
     case 3:
         if ( !access_ok(value, sizeof(long)) )
             return -EPERM;
-        if ( v == curr ) 
+        if ( v == curr )
             write_debugreg(3, value);
         break;
     case 6:
@@ -2013,7 +2013,7 @@ long set_debugreg(struct vcpu *v, unsigned int reg, unsigned long value)
          */
         value &= ~DR_STATUS_RESERVED_ZERO; /* reserved bits => 0 */
         value |=  DR_STATUS_RESERVED_ONE;  /* reserved bits => 1 */
-        if ( v == curr ) 
+        if ( v == curr )
             write_debugreg(6, value);
         break;
     case 7:
