@@ -449,12 +449,24 @@ static int mce_urgent_action(const struct cpu_user_regs *regs,
 void mcheck_cmn_handler(const struct cpu_user_regs *regs)
 {
     static DEFINE_MCE_BARRIER(mce_trap_bar);
-    static atomic_t severity_cpu = ATOMIC_INIT(-1);
+    static DEFINE_MCE_BARRIER(mce_handler_init_bar);
+    static atomic_t severity_cpu;
     struct mca_banks *bankmask = mca_allbanks;
     struct mca_banks *clear_bank = __get_cpu_var(mce_clear_banks);
     uint64_t gstatus;
     mctelem_cookie_t mctc = NULL;
     struct mca_summary bs;
+
+    /*
+     * Re-initialize severity_cpu to clear historical information
+     * taken from previous rounds of MC handling. Besides this
+     * initialization, severity_cpu is not always set below to
+     * override the previous value, so the re-initialization is
+     * necessary.
+     */
+    mce_barrier_enter(&mce_handler_init_bar);
+    atomic_set(&severity_cpu, -1);
+    mce_barrier_exit(&mce_handler_init_bar);
 
     mce_spin_lock(&mce_logout_lock);
 
