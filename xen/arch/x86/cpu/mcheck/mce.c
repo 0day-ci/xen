@@ -182,7 +182,6 @@ void mce_need_clearbank_register(mce_need_clearbank_t cbfunc)
  */
 static DEFINE_SPINLOCK(mce_logout_lock);
 
-static atomic_t severity_cpu = ATOMIC_INIT(-1);
 static atomic_t found_error = ATOMIC_INIT(0);
 static cpumask_t mce_fatal_cpus;
 
@@ -450,6 +449,7 @@ static int mce_urgent_action(const struct cpu_user_regs *regs,
 void mcheck_cmn_handler(const struct cpu_user_regs *regs)
 {
     static DEFINE_MCE_BARRIER(mce_trap_bar);
+    static atomic_t severity_cpu = ATOMIC_INIT(-1);
     struct mca_banks *bankmask = mca_allbanks;
     struct mca_banks *clear_bank = __get_cpu_var(mce_clear_banks);
     uint64_t gstatus;
@@ -1697,6 +1697,7 @@ static void mce_softirq(void)
 {
     static DEFINE_MCE_BARRIER(mce_inside_bar);
     static DEFINE_MCE_BARRIER(mce_severity_bar);
+    static atomic_t severity_cpu;
     int cpu = smp_processor_id();
     unsigned int workcpu;
 
