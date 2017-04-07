@@ -37,9 +37,9 @@ struct dmop_bufs {
 #undef MAX_NR_BUFS
 };
 
-static bool _raw_copy_from_guest_buf(
+static bool _raw_copy_from_guest_buf_offset(
     const struct dmop_bufs *bufs, unsigned int idx,
-    void *dst, size_t dst_bytes)
+    size_t offset_bytes, void *dst, size_t dst_bytes)
 {
     size_t buf_bytes;
 
@@ -48,17 +48,20 @@ static bool _raw_copy_from_guest_buf(
 
     buf_bytes = bufs->buf[idx].size;
 
-    if ( dst_bytes > buf_bytes )
+    if ( offset_bytes >= dst_bytes ||
+         (offset_bytes + dst_bytes) < offset_bytes ||
+         (offset_bytes + dst_bytes) > dst_bytes )
         return false;
 
     memset(dst, 0, dst_bytes);
 
-    return !copy_from_guest(dst, bufs->buf[idx].h, dst_bytes);
+    return !copy_from_guest_offset(dst, bufs->buf[idx].h,
+                                   offset_bytes, dst_bytes);
 }
 
-static bool _raw_copy_to_guest_buf(
+static bool _raw_copy_to_guest_buf_offset(
     struct dmop_bufs *bufs, unsigned int idx,
-    const void *src, size_t src_bytes)
+    size_t offset_bytes, const void *src, size_t src_bytes)
 {
     size_t buf_bytes;
 
@@ -67,17 +70,28 @@ static bool _raw_copy_to_guest_buf(
 
     buf_bytes = bufs->buf[idx].size;
 
-    if ( src_bytes > buf_bytes )
+    if ( offset_bytes >= src_bytes ||
+         (offset_bytes + src_bytes) < offset_bytes ||
+         (offset_bytes + src_bytes) > src_bytes )
         return false;
 
-    return !copy_to_guest(bufs->buf[idx].h, src, src_bytes);
+    return !copy_to_guest_offset(bufs->buf[idx].h, offset_bytes,
+                                 src, src_bytes);
 }
 
+#define copy_from_guest_buf_offset(bufs, buf_idx, offset_bytes, dst) \
+    _raw_copy_from_guest_buf_offset(bufs, buf_idx, offset_bytes, \
+                                    dst, sizeof(*(dst)))
+
+#define copy_to_guest_buf_offset(bufs, buf_idx, offset_bytes, src) \
+    _raw_copy_to_guest_buf_offset(bufs, buf_idx, offset_bytes, \
+                                  src, sizeof(*(src)))
+
 #define copy_from_guest_buf(bufs, buf_idx, dst) \
-    _raw_copy_from_guest_buf(bufs, buf_idx, dst, sizeof(*(dst)))
+    copy_from_guest_buf_offset(bufs, buf_idx, 0, dst)
 
 #define copy_to_guest_buf(bufs, buf_idx, src) \
-    _raw_copy_to_guest_buf(bufs, buf_idx, src, sizeof(*(src)))
+    copy_to_guest_buf_offset(bufs, buf_idx, 0, src)
 
 static int track_dirty_vram(struct domain *d, xen_pfn_t first_pfn,
                             unsigned int nr, struct xen_dm_op_buf *buf)
