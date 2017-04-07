@@ -37,35 +37,47 @@ struct dmop_bufs {
 #undef MAX_NR_BUFS
 };
 
-static bool copy_buf_from_guest(const xen_dm_op_buf_t bufs[],
-                                unsigned int nr_bufs, void *dst,
-                                unsigned int idx, size_t dst_size)
+static bool _raw_copy_from_guest_buf(
+    const struct dmop_bufs *bufs, unsigned int idx,
+    void *dst, size_t dst_bytes)
 {
-    size_t size;
+    size_t buf_bytes;
 
-    if ( idx >= nr_bufs )
+    if ( idx >= bufs->nr )
         return false;
 
-    memset(dst, 0, dst_size);
+    buf_bytes = bufs->buf[idx].size;
 
-    size = min_t(size_t, dst_size, bufs[idx].size);
-
-    return !copy_from_guest(dst, bufs[idx].h, size);
-}
-
-static bool copy_buf_to_guest(const xen_dm_op_buf_t bufs[],
-                              unsigned int nr_bufs, unsigned int idx,
-                              const void *src, size_t src_size)
-{
-    size_t size;
-
-    if ( idx >= nr_bufs )
+    if ( dst_bytes > buf_bytes )
         return false;
 
-    size = min_t(size_t, bufs[idx].size, src_size);
+    memset(dst, 0, dst_bytes);
 
-    return !copy_to_guest(bufs[idx].h, src, size);
+    return !copy_from_guest(dst, bufs->buf[idx].h, dst_bytes);
 }
+
+static bool _raw_copy_to_guest_buf(
+    struct dmop_bufs *bufs, unsigned int idx,
+    const void *src, size_t src_bytes)
+{
+    size_t buf_bytes;
+
+    if ( idx >= bufs->nr )
+        return false;
+
+    buf_bytes = bufs->buf[idx].size;
+
+    if ( src_bytes > buf_bytes )
+        return false;
+
+    return !copy_to_guest(bufs->buf[idx].h, src, src_bytes);
+}
+
+#define copy_from_guest_buf(bufs, buf_idx, dst) \
+    _raw_copy_from_guest_buf(bufs, buf_idx, dst, sizeof(*(dst)))
+
+#define copy_to_guest_buf(bufs, buf_idx, src) \
+    _raw_copy_to_guest_buf(bufs, buf_idx, src, sizeof(*(src)))
 
 static int track_dirty_vram(struct domain *d, xen_pfn_t first_pfn,
                             unsigned int nr, struct xen_dm_op_buf *buf)
@@ -300,7 +312,7 @@ static int dm_op(domid_t domid, struct dmop_bufs *bufs)
     if ( rc )
         goto out;
 
-    if ( !copy_buf_from_guest(&bufs->buf[0], bufs->nr, &op, 0, sizeof(op)) )
+    if ( !copy_from_guest_buf(bufs, 0, &op) )
     {
         rc = -EFAULT;
         goto out;
@@ -507,8 +519,7 @@ static int dm_op(domid_t domid, struct dmop_bufs *bufs)
     }
 
     if ( (!rc || rc == -ERESTART) &&
-         !const_op &&
-         !copy_buf_to_guest(&bufs->buf[0], bufs->nr, 0, &op, sizeof(op)) )
+         !const_op && !copy_to_guest_buf(bufs, 0, &op) )
         rc = -EFAULT;
 
  out:
