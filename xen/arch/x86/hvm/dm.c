@@ -25,6 +25,18 @@
 
 #include <xsm/xsm.h>
 
+struct dmop_bufs {
+/*
+ * Small sanity limit. Enough for all current hypercalls.
+ */
+#define MAX_NR_BUFS 2
+
+    struct xen_dm_op_buf buf[MAX_NR_BUFS];
+    unsigned int nr;
+
+#undef MAX_NR_BUFS
+};
+
 static bool copy_buf_from_guest(const xen_dm_op_buf_t bufs[],
                                 unsigned int nr_bufs, void *dst,
                                 unsigned int idx, size_t dst_size)
@@ -270,9 +282,7 @@ static int inject_event(struct domain *d,
     return 0;
 }
 
-static int dm_op(domid_t domid,
-                 unsigned int nr_bufs,
-                 xen_dm_op_buf_t bufs[])
+static int dm_op(domid_t domid, struct dmop_bufs *bufs)
 {
     struct domain *d;
     struct xen_dm_op op;
@@ -290,7 +300,7 @@ static int dm_op(domid_t domid,
     if ( rc )
         goto out;
 
-    if ( !copy_buf_from_guest(bufs, nr_bufs, &op, 0, sizeof(op)) )
+    if ( !copy_buf_from_guest(&bufs->buf[0], bufs->nr, &op, 0, sizeof(op)) )
     {
         rc = -EFAULT;
         goto out;
@@ -400,10 +410,10 @@ static int dm_op(domid_t domid,
         if ( data->pad )
             break;
 
-        if ( nr_bufs < 2 )
+        if ( bufs->nr < 2 )
             break;
 
-        rc = track_dirty_vram(d, data->first_pfn, data->nr, &bufs[1]);
+        rc = track_dirty_vram(d, data->first_pfn, data->nr, &bufs->buf[1]);
         break;
     }
 
@@ -498,7 +508,7 @@ static int dm_op(domid_t domid,
 
     if ( (!rc || rc == -ERESTART) &&
          !const_op &&
-         !copy_buf_to_guest(bufs, nr_bufs, 0, &op, sizeof(op)) )
+         !copy_buf_to_guest(&bufs->buf[0], bufs->nr, 0, &op, sizeof(op)) )
         rc = -EFAULT;
 
  out:
@@ -521,20 +531,21 @@ CHECK_dm_op_set_mem_type;
 CHECK_dm_op_inject_event;
 CHECK_dm_op_inject_msi;
 
-#define MAX_NR_BUFS 2
-
 int compat_dm_op(domid_t domid,
                  unsigned int nr_bufs,
                  XEN_GUEST_HANDLE_PARAM(void) bufs)
 {
-    struct xen_dm_op_buf nat[MAX_NR_BUFS];
+    struct dmop_bufs buffers;
+
     unsigned int i;
     int rc;
 
-    if ( nr_bufs > MAX_NR_BUFS )
+    if ( nr_bufs > ARRAY_SIZE(buffers.buf) )
         return -E2BIG;
 
-    for ( i = 0; i < nr_bufs; i++ )
+    buffers.nr = nr_bufs;
+
+    for ( i = 0; i < buffers.nr; i++ )
     {
         struct compat_dm_op_buf cmp;
 
@@ -544,12 +555,12 @@ int compat_dm_op(domid_t domid,
 #define XLAT_dm_op_buf_HNDL_h(_d_, _s_) \
         guest_from_compat_handle((_d_)->h, (_s_)->h)
 
-        XLAT_dm_op_buf(&nat[i], &cmp);
+        XLAT_dm_op_buf(&buffers.buf[i], &cmp);
 
 #undef XLAT_dm_op_buf_HNDL_h
     }
 
-    rc = dm_op(domid, nr_bufs, nat);
+    rc = dm_op(domid, &buffers);
 
     if ( rc == -ERESTART )
         rc = hypercall_create_continuation(__HYPERVISOR_dm_op, "iih",
@@ -562,16 +573,18 @@ long do_dm_op(domid_t domid,
               unsigned int nr_bufs,
               XEN_GUEST_HANDLE_PARAM(xen_dm_op_buf_t) bufs)
 {
-    struct xen_dm_op_buf nat[MAX_NR_BUFS];
+    struct dmop_bufs buffers;
     int rc;
 
-    if ( nr_bufs > MAX_NR_BUFS )
+    if ( nr_bufs > ARRAY_SIZE(buffers.buf) )
         return -E2BIG;
 
-    if ( copy_from_guest_offset(nat, bufs, 0, nr_bufs) )
+    buffers.nr = nr_bufs;
+
+    if ( copy_from_guest_offset(&buffers.buf[0], bufs, 0, buffers.nr) )
         return -EFAULT;
 
-    rc = dm_op(domid, nr_bufs, nat);
+    rc = dm_op(domid, &buffers);
 
     if ( rc == -ERESTART )
         rc = hypercall_create_continuation(__HYPERVISOR_dm_op, "iih",
