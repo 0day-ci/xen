@@ -234,6 +234,14 @@ void vmx_intr_assist(void)
         return;
     }
 
+    /*
+     * Avoid the vIOAPIC RTE being changed by another vCPU.
+     * Otherwise, pt_update_irq() may return a wrong vector which is not in
+     * vIRR and pt_irq_posted() may not recognize a timer interrupt has been
+     * injected.
+     */
+    spin_lock(&v->domain->arch.hvm_domain.irq_lock);
+
     /* Crank the handle on interrupt state. */
     if ( is_hvm_vcpu(v) )
         pt_vector = pt_update_irq(v);
@@ -396,6 +404,7 @@ void vmx_intr_assist(void)
     }
 
  out:
+    spin_unlock(&v->domain->arch.hvm_domain.irq_lock);
     if ( !nestedhvm_vcpu_in_guestmode(v) &&
          !cpu_has_vmx_virtual_intr_delivery &&
          cpu_has_vmx_tpr_shadow )

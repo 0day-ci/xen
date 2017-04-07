@@ -153,14 +153,13 @@ static void __vpic_intack(struct hvm_hw_vpic *vpic, int irq)
     vpic_update_int_output(vpic);
 }
 
-static int vpic_intack(struct hvm_hw_vpic *vpic)
+static int vpic_intack_locked(struct hvm_hw_vpic *vpic)
 {
     int irq = -1;
 
-    vpic_lock(vpic);
-
+    ASSERT(vpic_is_locked(vpic));
     if ( !vpic->int_output )
-        goto out;
+        return irq;
 
     irq = vpic_get_highest_priority_irq(vpic);
     BUG_ON(irq < 0);
@@ -175,7 +174,15 @@ static int vpic_intack(struct hvm_hw_vpic *vpic)
         irq += 8;
     }
 
- out:
+    return irq;
+}
+
+static int vpic_intack(struct hvm_hw_vpic *vpic)
+{
+    int irq;
+
+    vpic_lock(vpic);
+    irq = vpic_intack_locked(vpic);
     vpic_unlock(vpic);
     return irq;
 }
@@ -487,13 +494,14 @@ int vpic_ack_pending_irq(struct vcpu *v)
     struct hvm_hw_vpic *vpic = &v->domain->arch.hvm_domain.vpic[0];
 
     ASSERT(has_vpic(v->domain));
+    ASSERT(vpic_is_locked(vpic));
 
     TRACE_2D(TRC_HVM_EMUL_PIC_PEND_IRQ_CALL, vlapic_accept_pic_intr(v),
              vpic->int_output);
     if ( !vlapic_accept_pic_intr(v) || !vpic->int_output )
         return -1;
 
-    irq = vpic_intack(vpic);
+    irq = vpic_intack_locked(vpic);
     if ( irq == -1 )
         return -1;
 

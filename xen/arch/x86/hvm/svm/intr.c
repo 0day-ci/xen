@@ -137,18 +137,25 @@ void svm_intr_assist(void)
     struct hvm_intack intack;
     enum hvm_intblk intblk;
 
+    /*
+     * Avoid the vIOAPIC RTE being changed by another vCPU.
+     * Otherwise, pt_update_irq() may return a wrong vector which is not in
+     * vIRR and pt_irq_posted() may not recognize a timer interrupt has been
+     * injected.
+     */
+    spin_lock(&v->domain->arch.hvm_domain.irq_lock);
     /* Crank the handle on interrupt state. */
     pt_update_irq(v);
 
     do {
         intack = hvm_vcpu_has_pending_irq(v);
         if ( likely(intack.source == hvm_intsrc_none) )
-            return;
+            goto out;
 
         intblk = hvm_interrupt_blocked(v, intack);
         if ( intblk == hvm_intblk_svm_gif ) {
             ASSERT(nestedhvm_enabled(v->domain));
-            return;
+            goto out;
         }
 
         /* Interrupts for the nested guest are already
@@ -165,13 +172,13 @@ void svm_intr_assist(void)
             switch (rc) {
             case NSVM_INTR_NOTINTERCEPTED:
                 /* Inject interrupt into 2nd level guest directly. */
-                break;	
+                goto out;
             case NSVM_INTR_NOTHANDLED:
             case NSVM_INTR_FORCEVMEXIT:
-                return;
+                goto out;
             case NSVM_INTR_MASKED:
                 /* Guest already enabled an interrupt window. */
-                return;
+                goto out;
             default:
                 panic("%s: nestedsvm_vcpu_interrupt can't handle value %#x",
                     __func__, rc);
@@ -195,7 +202,7 @@ void svm_intr_assist(void)
         if ( unlikely(vmcb->eventinj.fields.v) || intblk )
         {
             svm_enable_intr_window(v, intack);
-            return;
+            goto out;
         }
 
         intack = hvm_vcpu_ack_pending_irq(v, intack);
@@ -216,6 +223,8 @@ void svm_intr_assist(void)
     intack = hvm_vcpu_has_pending_irq(v);
     if ( unlikely(intack.source != hvm_intsrc_none) )
         svm_enable_intr_window(v, intack);
+ out:
+    spin_unlock(&v->domain->arch.hvm_domain.irq_lock);
 }
 
 /*

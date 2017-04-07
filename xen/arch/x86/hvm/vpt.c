@@ -296,8 +296,8 @@ int pt_update_irq(struct vcpu *v)
         vlapic_set_irq(vcpu_vlapic(v), irq, 0);
     else
     {
-        hvm_isa_irq_deassert(v->domain, irq);
-        hvm_isa_irq_assert(v->domain, irq);
+        hvm_isa_irq_deassert_locked(v->domain, irq);
+        hvm_isa_irq_assert_locked(v->domain, irq);
     }
 
     /*
