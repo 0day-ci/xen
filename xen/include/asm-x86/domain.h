@@ -74,6 +74,9 @@ int mapcache_domain_init(struct domain *);
 int mapcache_vcpu_init(struct vcpu *);
 void mapcache_override_current(struct vcpu *);
 
+void paravirt_ctxt_switch_from(struct vcpu *v);
+void paravirt_ctxt_switch_to(struct vcpu *v);
+
 /* x86/64: toggle guest between kernel and user modes. */
 void toggle_guest_mode(struct vcpu *);
 
