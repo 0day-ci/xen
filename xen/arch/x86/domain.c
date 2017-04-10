@@ -387,37 +387,10 @@ int switch_compat(struct domain *d)
     return rc;
 }
 
-int vcpu_initialise(struct vcpu *v)
+static int pv_vcpu_initialise(struct vcpu *v)
 {
     struct domain *d = v->domain;
-    int rc;
-
-    v->arch.flags = TF_kernel_mode;
-
-    rc = mapcache_vcpu_init(v);
-    if ( rc )
-        return rc;
-
-    if ( !is_idle_domain(d) )
-    {
-        paging_vcpu_init(v);
-
-        if ( (rc = vcpu_init_fpu(v)) != 0 )
-            return rc;
-
-        vmce_init_vcpu(v);
-    }
-    else if ( (rc = xstate_alloc_save_area(v)) != 0 )
-        return rc;
-
-    spin_lock_init(&v->arch.vpmu.vpmu_lock);
-
-    if ( is_hvm_domain(d) )
-    {
-        rc = hvm_vcpu_initialise(v);
-        goto done;
-    }
-
+    int rc = 0;
 
     spin_lock_init(&v->arch.pv_vcpu.shadow_ldt_lock);
 
@@ -458,7 +431,41 @@ int vcpu_initialise(struct vcpu *v)
             goto done;
         }
     }
+
  done:
+    return rc;
+}
+
+int vcpu_initialise(struct vcpu *v)
+{
+    struct domain *d = v->domain;
+    int rc;
+
+    v->arch.flags = TF_kernel_mode;
+
+    rc = mapcache_vcpu_init(v);
+    if ( rc )
+        return rc;
+
+    if ( !is_idle_domain(d) )
+    {
+        paging_vcpu_init(v);
+
+        if ( (rc = vcpu_init_fpu(v)) != 0 )
+            return rc;
+
+        vmce_init_vcpu(v);
+    }
+    else if ( (rc = xstate_alloc_save_area(v)) != 0 )
+        return rc;
+
+    spin_lock_init(&v->arch.vpmu.vpmu_lock);
+
+    if ( is_hvm_domain(d) )
+        rc = hvm_vcpu_initialise(v);
+    else
+        rc = pv_vcpu_initialise(v);
+
     if ( rc )
     {
         vcpu_destroy_fpu(v);
