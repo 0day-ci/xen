@@ -819,7 +819,6 @@ static int kexec_exec(XEN_GUEST_HANDLE_PARAM(void) uarg)
 static int kexec_swap_images(int type, struct kexec_image *new,
                              struct kexec_image **old)
 {
-    static DEFINE_SPINLOCK(kexec_lock);
     int base, bit, pos;
     int new_slot, old_slot;
 
@@ -830,8 +829,6 @@ static int kexec_swap_images(int type, struct kexec_image *new,
 
     if ( kexec_load_get_bits(type, &base, &bit) )
         return -EINVAL;
-
-    spin_lock(&kexec_lock);
 
     pos = (test_bit(bit, &kexec_flags) != 0);
     old_slot = base + pos;
@@ -844,8 +841,6 @@ static int kexec_swap_images(int type, struct kexec_image *new,
 
     clear_bit(old_slot, &kexec_flags);
     *old = kexec_image[old_slot];
-
-    spin_unlock(&kexec_lock);
 
     return 0;
 }
@@ -1187,11 +1182,21 @@ static int do_kexec_op_internal(unsigned long op,
                                 XEN_GUEST_HANDLE_PARAM(void) uarg,
                                 bool_t compat)
 {
+    static DEFINE_SPINLOCK(kexec_lock);
     int ret = -EINVAL;
 
     ret = xsm_kexec(XSM_PRIV);
     if ( ret )
         return ret;
+
+    /*
+     * Because we write directly to the reserved memory
+     * region when loading crash kernels we need a spinlock here to
+     * prevent multiple crash kernels from attempting to load
+     * simultaneously, and to prevent a crash kernel from loading
+     * over the top of a in use crash kernel.
+     */
+    spin_lock(&kexec_lock);
 
     switch ( op )
     {
@@ -1226,6 +1231,8 @@ static int do_kexec_op_internal(unsigned long op,
         ret = kexec_status(uarg);
         break;
     }
+
+    spin_unlock(&kexec_lock);
 
     return ret;
 }
