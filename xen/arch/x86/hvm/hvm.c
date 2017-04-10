@@ -593,7 +593,7 @@ static int hvm_print_line(
     return X86EMUL_OKAY;
 }
 
-int hvm_domain_initialise(struct domain *d)
+int hvm_domain_initialise(struct domain *d, unsigned int domcr_flags)
 {
     unsigned int nr_gsis;
     int rc;
@@ -612,9 +612,16 @@ int hvm_domain_initialise(struct domain *d)
 
     hvm_init_cacheattr_region_list(d);
 
-    rc = paging_enable(d, PG_refcounts|PG_translate|PG_external);
+    d->arch.hvm_domain.hap_enabled =
+        hvm_funcs.hap_supported && (domcr_flags & DOMCRF_hap);
+
+    rc = create_perdomain_mapping(d, PERDOMAIN_VIRT_START, 0, NULL, NULL);
     if ( rc != 0 )
         goto fail0;
+
+    rc = paging_enable(d, PG_refcounts|PG_translate|PG_external);
+    if ( rc != 0 )
+        goto fail1;
 
     nr_gsis = is_hardware_domain(d) ? nr_irqs_gsi : NR_HVM_DOMU_IRQS;
     d->arch.hvm_domain.pl_time = xzalloc(struct pl_time);
@@ -626,7 +633,7 @@ int hvm_domain_initialise(struct domain *d)
     rc = -ENOMEM;
     if ( !d->arch.hvm_domain.pl_time || !d->arch.hvm_domain.irq ||
          !d->arch.hvm_domain.params  || !d->arch.hvm_domain.io_handler )
-        goto fail1;
+        goto fail2;
 
     /* Set the number of GSIs */
     hvm_domain_irq(d)->nr_gsis = nr_gsis;
@@ -644,7 +651,7 @@ int hvm_domain_initialise(struct domain *d)
         if ( d->arch.hvm_domain.io_bitmap == NULL )
         {
             rc = -ENOMEM;
-            goto fail1;
+            goto fail2;
         }
         memset(d->arch.hvm_domain.io_bitmap, ~0, HVM_IOBITMAP_SIZE);
     }
@@ -663,7 +670,7 @@ int hvm_domain_initialise(struct domain *d)
 
     rc = vioapic_init(d);
     if ( rc != 0 )
-        goto fail1;
+        goto fail2;
 
     stdvga_init(d);
 
@@ -676,21 +683,23 @@ int hvm_domain_initialise(struct domain *d)
 
     rc = hvm_funcs.domain_initialise(d);
     if ( rc != 0 )
-        goto fail2;
+        goto fail3;
 
     return 0;
 
- fail2:
+ fail3:
     rtc_deinit(d);
     stdvga_deinit(d);
     vioapic_deinit(d);
- fail1:
+ fail2:
     if ( is_hardware_domain(d) )
         xfree(d->arch.hvm_domain.io_bitmap);
     xfree(d->arch.hvm_domain.io_handler);
     xfree(d->arch.hvm_domain.params);
     xfree(d->arch.hvm_domain.pl_time);
     xfree(d->arch.hvm_domain.irq);
+ fail1:
+    destroy_perdomain_mapping(d, PERDOMAIN_VIRT_START, 0);
  fail0:
     hvm_destroy_cacheattr_region_list(d);
     return rc;

@@ -587,14 +587,7 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
         d->arch.emulation_flags = emflags;
     }
 
-    if ( is_hvm_domain(d) )
-    {
-        d->arch.hvm_domain.hap_enabled =
-            hvm_funcs.hap_supported && (domcr_flags & DOMCRF_hap);
-
-        rc = create_perdomain_mapping(d, PERDOMAIN_VIRT_START, 0, NULL, NULL);
-    }
-    else if ( is_idle_domain(d) )
+    if ( is_idle_domain(d) )
         rc = 0;
     else
     {
@@ -663,7 +656,7 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
 
     if ( is_hvm_domain(d) )
     {
-        if ( (rc = hvm_domain_initialise(d)) != 0 )
+        if ( (rc = hvm_domain_initialise(d, domcr_flags)) != 0 )
             goto fail;
     }
     else
