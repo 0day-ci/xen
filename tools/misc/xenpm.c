@@ -99,8 +99,10 @@ static void parse_cpuid_and_int(int argc, char *argv[],
          exit(EINVAL);
     }
 
-    parse_cpuid(argv[0], cpuid);
-    if ( sscanf(argv[1], "%d", val) != 1 )
+    if ( argc > 1 )
+        parse_cpuid(argv[0], cpuid);
+
+    if ( argc == 0 || sscanf(argv[argc > 1], "%d", val) != 1 )
     {
         fprintf(stderr, "Invalid %s '%s'\n", what, argv[1]);
         exit(EINVAL);
