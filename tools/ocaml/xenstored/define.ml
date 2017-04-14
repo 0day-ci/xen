@@ -14,11 +14,23 @@
  * GNU Lesser General Public License for more details.
  *)
 
+open Unix_syscalls
+
 let xenstored_major = 1
 let xenstored_minor = 0
 
-let xenstored_proc_kva = "/proc/xen/xsd_kva"
-let xenstored_proc_port = "/proc/xen/xsd_port"
+let xenstored_proc_kva =
+  let info = Unix_syscalls.uname () in
+  match info.sysname with
+  | "Linux" -> "/proc/xen/xsd_kva"
+  | "FreeBSD" -> "/dev/xen/xenstored"
+  | _ -> "nonexistent"
+let xenstored_proc_port =
+  let info = Unix_syscalls.uname () in
+  match info.sysname with
+  | "Linux" -> "/proc/xen/xsd_port"
+  | "FreeBSD" -> "/dev/xen/xenstored"
+  | _ -> "nonexistent"
 
 let xs_daemon_socket = Paths.xen_run_stored ^ "/socket"
 let xs_daemon_socket_ro = Paths.xen_run_stored ^ "/socket_ro"
