@@ -337,7 +337,7 @@ void usage(char* progname)
 {
     fprintf(stderr, "Usage: %s [-m] <domain_id> write|exec", progname);
 #if defined(__i386__) || defined(__x86_64__)
-            fprintf(stderr, "|breakpoint|altp2m_write|altp2m_exec|debug|cpuid|desc_access");
+            fprintf(stderr, "|emulate_write|emulate_exec|breakpoint|altp2m_write|altp2m_exec|debug|cpuid|desc_access");
 #elif defined(__arm__) || defined(__aarch64__)
             fprintf(stderr, "|privcall");
 #endif
@@ -369,6 +369,7 @@ int main(int argc, char *argv[])
     int debug = 0;
     int cpuid = 0;
     int desc_access = 0;
+    int emulate = 0;
     uint16_t altp2m_view_id = 0;
 
     char* progname = argv[0];
@@ -411,6 +412,18 @@ int main(int argc, char *argv[])
         memaccess = 1;
     }
 #if defined(__i386__) || defined(__x86_64__)
+    else if ( !strcmp(argv[0], "emulate_write") )
+    {
+        default_access = XENMEM_access_rx;
+        emulate = 1;
+        memaccess = 1;
+    }
+    else if ( !strcmp(argv[0], "emulate_exec") )
+    {
+        default_access = XENMEM_access_rw;
+        emulate = 1;
+        memaccess = 1;
+    }
     else if ( !strcmp(argv[0], "breakpoint") )
     {
         breakpoint = 1;
@@ -527,6 +540,21 @@ int main(int argc, char *argv[])
 
     if ( memaccess && !altp2m )
     {
+        uint32_t nr_pages = xenaccess->max_gpfn - START_PFN;
+
+        /*
+          The Xen emulator is not yet complete. Limiting ourselves to a small number
+          of pages from the first part of the guest's memory makes it less likely for
+          the guest to get stuck on an UNHANDLEABLE instruction (since that memory
+          tends to be used by simpler kernel code), and is less likely to have a heavy
+          impact on the guest (since emulating everything will take a heavy toll).
+          While it presents no guarantee that all the instructions will pass emulation,
+          using the first 1000 pages has proven useful in practice. The limit can be
+          changed in the future.
+        */
+        if ( emulate && nr_pages > 1000 )
+            nr_pages = 1000;
+
         /* Set the default access type and convert all pages to it */
         rc = xc_set_mem_access(xch, domain_id, default_access, ~0ull, 0);
         if ( rc < 0 )
@@ -535,8 +563,7 @@ int main(int argc, char *argv[])
             goto exit;
         }
 
-        rc = xc_set_mem_access(xch, domain_id, default_access, START_PFN,
-                               (xenaccess->max_gpfn - START_PFN) );
+        rc = xc_set_mem_access(xch, domain_id, default_access, START_PFN, nr_pages);
 
         if ( rc < 0 )
         {
@@ -702,15 +729,20 @@ int main(int argc, char *argv[])
                 }
                 else if ( default_access != after_first_access )
                 {
-                    rc = xc_set_mem_access(xch, domain_id, after_first_access,
-                                           req.u.mem_access.gfn, 1);
-                    if (rc < 0)
+                    if ( !emulate )
                     {
-                        ERROR("Error %d setting gfn to access_type %d\n", rc,
-                              after_first_access);
-                        interrupted = -1;
-                        continue;
+                        rc = xc_set_mem_access(xch, domain_id, after_first_access,
+                                               req.u.mem_access.gfn, 1);
+                        if (rc < 0)
+                        {
+                            ERROR("Error %d setting gfn to access_type %d\n", rc,
+                                  after_first_access);
+                            interrupted = -1;
+                            continue;
+                        }
                     }
+                    else
+                        rsp.flags |= VM_EVENT_FLAG_EMULATE;
                 }
 
                 rsp.u.mem_access = req.u.mem_access;
