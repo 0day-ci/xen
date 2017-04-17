@@ -64,35 +64,21 @@ static struct hvm_vioapic *addr_vioapic(const struct domain *d,
 struct hvm_vioapic *gsi_vioapic(const struct domain *d, unsigned int gsi,
                                 unsigned int *pin)
 {
-    unsigned int i, base_gsi = 0;
+    unsigned int i;
 
     for ( i = 0; i < d->arch.hvm_domain.nr_vioapics; i++ )
     {
         struct hvm_vioapic *vioapic = domain_vioapic(d, i);
 
-        if ( gsi >= base_gsi && gsi < base_gsi + vioapic->nr_pins )
+        if ( gsi >= vioapic->base_gsi &&
+             gsi < vioapic->base_gsi + vioapic->nr_pins )
         {
-            *pin = gsi - base_gsi;
+            *pin = gsi - vioapic->base_gsi;
             return vioapic;
         }
-
-        base_gsi += vioapic->nr_pins;
     }
 
     return NULL;
-}
-
-static unsigned int base_gsi(const struct domain *d,
-                             const struct hvm_vioapic *vioapic)
-{
-    unsigned int nr_vioapics = d->arch.hvm_domain.nr_vioapics;
-    unsigned int base_gsi = 0, i = 0;
-    const struct hvm_vioapic *tmp;
-
-    while ( i < nr_vioapics && (tmp = domain_vioapic(d, i++)) != vioapic )
-        base_gsi += tmp->nr_pins;
-
-    return base_gsi;
 }
 
 static uint32_t vioapic_read_indirect(const struct hvm_vioapic *vioapic)
@@ -180,7 +166,7 @@ static void vioapic_write_redirent(
     struct hvm_irq *hvm_irq = hvm_domain_irq(d);
     union vioapic_redir_entry *pent, ent;
     int unmasked = 0;
-    unsigned int gsi = base_gsi(d, vioapic) + idx;
+    unsigned int gsi = vioapic->base_gsi + idx;
 
     spin_lock(&d->arch.hvm_domain.irq_lock);
 
@@ -340,7 +326,7 @@ static void vioapic_deliver(struct hvm_vioapic *vioapic, unsigned int pin)
     struct domain *d = vioapic_domain(vioapic);
     struct vlapic *target;
     struct vcpu *v;
-    unsigned int irq = base_gsi(d, vioapic) + pin;
+    unsigned int irq = vioapic->base_gsi + pin;
 
     ASSERT(spin_is_locked(&d->arch.hvm_domain.irq_lock));
 
@@ -451,7 +437,7 @@ void vioapic_update_EOI(struct domain *d, u8 vector)
 {
     struct hvm_irq *hvm_irq = hvm_domain_irq(d);
     union vioapic_redir_entry *ent;
-    unsigned int i, base_gsi = 0;
+    unsigned int i;
 
     ASSERT(has_vioapic(d));
 
@@ -473,19 +459,18 @@ void vioapic_update_EOI(struct domain *d, u8 vector)
             if ( iommu_enabled )
             {
                 spin_unlock(&d->arch.hvm_domain.irq_lock);
-                hvm_dpci_eoi(d, base_gsi + pin, ent);
+                hvm_dpci_eoi(d, vioapic->base_gsi + pin, ent);
                 spin_lock(&d->arch.hvm_domain.irq_lock);
             }
 
             if ( (ent->fields.trig_mode == VIOAPIC_LEVEL_TRIG) &&
                  !ent->fields.mask &&
-                 hvm_irq->gsi_assert_count[base_gsi + pin] )
+                 hvm_irq->gsi_assert_count[vioapic->base_gsi + pin] )
             {
                 ent->fields.remote_irr = 1;
                 vioapic_deliver(vioapic, pin);
             }
         }
-        base_gsi += vioapic->nr_pins;
     }
 
     spin_unlock(&d->arch.hvm_domain.irq_lock);
@@ -554,6 +539,7 @@ void vioapic_reset(struct domain *d)
         {
             vioapic->base_address = mp_ioapics[i].mpc_apicaddr;
             vioapic->id = mp_ioapics[i].mpc_apicid;
+            vioapic->base_gsi = io_apic_gsi_base(i);
         }
         vioapic->nr_pins = nr_pins;
         vioapic->domain = d;
@@ -601,7 +587,12 @@ int vioapic_init(struct domain *d)
         nr_gsis += nr_pins;
     }
 
-    ASSERT(hvm_domain_irq(d)->nr_gsis == nr_gsis);
+    /*
+     * NB: hvm_domain_irq(d)->nr_gsis is actually the highest GSI + 1, but
+     * there might be holes in this range (ie: GSIs that don't belong to any
+     * vIO APIC).
+     */
+    ASSERT(hvm_domain_irq(d)->nr_gsis >= nr_gsis);
 
     d->arch.hvm_domain.nr_vioapics = nr_vioapics;
     vioapic_reset(d);
