@@ -83,6 +83,8 @@ static const unsigned int vlapic_lvt_mask[VLAPIC_LVT_NUM] =
     ((vlapic_get_reg(vlapic, APIC_LVTT) & APIC_TIMER_MODE_MASK) \
      == APIC_TIMER_MODE_TSC_DEADLINE)
 
+static void vlapic_INIT(struct vlapic *vlapic);
+
 static int vlapic_find_highest_vector(const void *bitmap)
 {
     const uint32_t *word = bitmap;
@@ -281,7 +283,7 @@ static void vlapic_init_sipi_one(struct vcpu *target, uint32_t icr)
         rc = vcpu_reset(target);
         ASSERT(!rc);
         target->fpu_initialised = fpu_initialised;
-        vlapic_reset(vcpu_vlapic(target));
+        vlapic_INIT(vcpu_vlapic(target));
         domain_unlock(target->domain);
         break;
     }
@@ -1237,18 +1239,15 @@ bool_t is_vlapic_lvtpc_enabled(struct vlapic *vlapic)
             !(vlapic_get_reg(vlapic, APIC_LVTPC) & APIC_LVT_MASKED));
 }
 
-/* Reset the VLPAIC back to its power-on/reset state. */
-void vlapic_reset(struct vlapic *vlapic)
+/* VLAPIC handles INIT signal */
+static void vlapic_INIT(struct vlapic *vlapic)
 {
-    struct vcpu *v = vlapic_vcpu(vlapic);
     int i;
 
-    if ( !has_vlapic(v->domain) )
+    if ( !has_vlapic(vlapic_vcpu(vlapic)->domain) )
         return;
 
-    vlapic_set_reg(vlapic, APIC_ID,  (v->vcpu_id * 2) << 24);
     vlapic_set_reg(vlapic, APIC_LVR, VLAPIC_VERSION);
-
     for ( i = 0; i < 8; i++ )
     {
         vlapic_set_reg(vlapic, APIC_IRR + 0x10 * i, 0);
@@ -1262,7 +1261,6 @@ void vlapic_reset(struct vlapic *vlapic)
     vlapic_set_reg(vlapic, APIC_TMICT,   0);
     vlapic_set_reg(vlapic, APIC_TMCCT,   0);
     vlapic_set_tdcr(vlapic, 0);
-
     vlapic_set_reg(vlapic, APIC_DFR, 0xffffffffU);
 
     for ( i = 0; i < VLAPIC_LVT_NUM; i++ )
@@ -1273,6 +1271,18 @@ void vlapic_reset(struct vlapic *vlapic)
 
     TRACE_0D(TRC_HVM_EMUL_LAPIC_STOP_TIMER);
     destroy_periodic_time(&vlapic->pt);
+}
+
+/* Reset the VLPAIC back to its power-on/reset state. */
+void vlapic_reset(struct vlapic *vlapic)
+{
+    struct vcpu *v = vlapic_vcpu(vlapic);
+
+    if ( !has_vlapic(v->domain) )
+        return;
+
+    vlapic_set_reg(vlapic, APIC_ID, (v->vcpu_id * 2) << 24);
+    vlapic_INIT(vlapic);
 }
 
 /* rearm the actimer if needed, after a HVM restore */
