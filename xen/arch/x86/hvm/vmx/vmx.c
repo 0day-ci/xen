@@ -4103,7 +4103,7 @@ void vmx_vmexit_handler(struct cpu_user_regs *regs)
     /* fall through */
     default:
     exit_and_crash:
-        gdprintk(XENLOG_WARNING, "Bad vmexit (reason %#lx)\n", exit_reason);
+        gprintk(XENLOG_ERR, "Bad vmexit: reason %ld\n", exit_reason);
 
         if ( vmx_get_cpl() )
             hvm_inject_hw_exception(TRAP_invalid_op,
