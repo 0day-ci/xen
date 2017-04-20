@@ -453,6 +453,6 @@ static int __init microcode_presmp_init(void)
         register_cpu_notifier(&microcode_percpu_nfb);
     }
 
-    return 0;
+    return rc;
 }
 presmp_initcall(microcode_presmp_init);
