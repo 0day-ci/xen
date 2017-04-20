@@ -338,7 +338,7 @@ static int core2_vpmu_save(struct vcpu *v, bool_t to_guest)
     return 1;
 }
 
-static inline void __core2_vpmu_load(struct vcpu *v)
+static inline int __core2_vpmu_load(struct vcpu *v)
 {
     unsigned int i, pmc_start;
     struct xen_pmu_intel_ctxt *core2_vpmu_cxt = vcpu_vpmu(v)->context;
@@ -356,7 +356,9 @@ static inline void __core2_vpmu_load(struct vcpu *v)
     for ( i = 0; i < arch_pmc_cnt; i++ )
     {
         wrmsrl(pmc_start + i, xen_pmu_cntr_pair[i].counter);
-        wrmsrl(MSR_P6_EVNTSEL(i), xen_pmu_cntr_pair[i].control);
+        if ( wrmsr_safe(MSR_P6_EVNTSEL(i), xen_pmu_cntr_pair[i].control) ==
+                -EFAULT)
+            return -EFAULT;
     }
 
     wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, core2_vpmu_cxt->fixed_ctrl);
@@ -369,6 +371,7 @@ static inline void __core2_vpmu_load(struct vcpu *v)
         core2_vpmu_cxt->global_ovf_ctrl = 0;
         wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL, core2_vpmu_cxt->global_ctrl);
     }
+    return 0;
 }
 
 static int core2_vpmu_verify(struct vcpu *v)
@@ -461,9 +464,8 @@ static int core2_vpmu_load(struct vcpu *v, bool_t from_guest)
 
     vpmu_set(vpmu, VPMU_CONTEXT_LOADED);
 
-    __core2_vpmu_load(v);
+    return __core2_vpmu_load(v);
 
-    return 0;
 }
 
 static int core2_vpmu_alloc_resource(struct vcpu *v)
@@ -538,7 +540,8 @@ static int core2_vpmu_msr_common_check(u32 msr_index, int *type, int *index)
     /* Do the lazy load staff. */
     if ( !vpmu_is_set(vpmu, VPMU_CONTEXT_LOADED) )
     {
-        __core2_vpmu_load(current);
+        if ( __core2_vpmu_load(current) )
+            return 0;
         vpmu_set(vpmu, VPMU_CONTEXT_LOADED);
         if ( is_hvm_vcpu(current) &&
              cpu_has_vmx_msr_bitmap )
@@ -719,8 +722,11 @@ static int core2_vpmu_do_wrmsr(unsigned int msr, uint64_t msr_content,
         }
     }
 
-    if ( type != MSR_TYPE_GLOBAL )
-        wrmsrl(msr, msr_content);
+    if ( type != MSR_TYPE_GLOBAL)
+    {
+        if ( wrmsr_safe(msr, msr_content) == -EFAULT )
+            return -EFAULT;
+    }
     else
     {
         if ( is_hvm_vcpu(v) )
