@@ -103,13 +103,28 @@ void vmx_pi_per_cpu_init(unsigned int cpu)
 static void vmx_vcpu_block(struct vcpu *v)
 {
     unsigned long flags;
-    unsigned int dest;
+    unsigned int dest, dest_cpu;
     spinlock_t *old_lock;
-    spinlock_t *pi_blocking_list_lock =
-		&per_cpu(vmx_pi_blocking, v->processor).lock;
     struct pi_desc *pi_desc = &v->arch.hvm_vmx.pi_desc;
+    spinlock_t *pi_blocking_list_lock;
+
+    /*
+     * After pCPU goes down, the per-cpu PI blocking list is cleared.
+     * To make sure the parameter vCPU is added to the chosen pCPU's
+     * PI blocking list before the list is cleared, just retry when
+     * finding the pCPU has gone down.
+     */
+ retry:
+    dest_cpu = cpumask_any(&cpu_online_map);
+    pi_blocking_list_lock = &per_cpu(vmx_pi_blocking, dest_cpu).lock;
 
     spin_lock_irqsave(pi_blocking_list_lock, flags);
+    if ( unlikely(!cpu_online(dest_cpu)) )
+    {
+        spin_unlock_irqrestore(pi_blocking_list_lock, flags);
+        goto retry;
+    }
+
     old_lock = cmpxchg(&v->arch.hvm_vmx.pi_blocking.lock, NULL,
                        pi_blocking_list_lock);
 
@@ -120,11 +135,11 @@ static void vmx_vcpu_block(struct vcpu *v)
      */
     ASSERT(old_lock == NULL);
 
-    atomic_inc(&per_cpu(vmx_pi_blocking, v->processor).counter);
-    HVMTRACE_4D(VT_D_PI_BLOCK, v->domain->domain_id, v->vcpu_id, v->processor,
-                atomic_read(&per_cpu(vmx_pi_blocking, v->processor).counter));
+    atomic_inc(&per_cpu(vmx_pi_blocking, dest_cpu).counter);
+    HVMTRACE_4D(VT_D_PI_BLOCK, v->domain->domain_id, v->vcpu_id, dest_cpu,
+                atomic_read(&per_cpu(vmx_pi_blocking, dest_cpu).counter));
     list_add_tail(&v->arch.hvm_vmx.pi_blocking.list,
-                  &per_cpu(vmx_pi_blocking, v->processor).list);
+                  &per_cpu(vmx_pi_blocking, dest_cpu).list);
     spin_unlock_irqrestore(pi_blocking_list_lock, flags);
 
     ASSERT(!pi_test_sn(pi_desc));
@@ -134,7 +149,11 @@ static void vmx_vcpu_block(struct vcpu *v)
     ASSERT(pi_desc->ndst ==
            (x2apic_enabled ? dest : MASK_INSR(dest, PI_xAPIC_NDST_MASK)));
 
+    dest = cpu_physical_id(dest_cpu);
+
     write_atomic(&pi_desc->nv, pi_wakeup_vector);
+    write_atomic(&pi_desc->ndst,
+                 (x2apic_enabled ? dest : MASK_INSR(dest, PI_xAPIC_NDST_MASK)));
 }
 
 static void vmx_pi_switch_from(struct vcpu *v)
@@ -163,6 +182,7 @@ static void vmx_pi_unblock_vcpu(struct vcpu *v)
     unsigned long flags;
     spinlock_t *pi_blocking_list_lock;
     struct pi_desc *pi_desc = &v->arch.hvm_vmx.pi_desc;
+    unsigned int dest = cpu_physical_id(v->processor);
 
     /*
      * Set 'NV' field back to posted_intr_vector, so the
@@ -170,6 +190,8 @@ static void vmx_pi_unblock_vcpu(struct vcpu *v)
      * it is running in non-root mode.
      */
     write_atomic(&pi_desc->nv, posted_intr_vector);
+    write_atomic(&pi_desc->ndst,
+                 x2apic_enabled ? dest : MASK_INSR(dest, PI_xAPIC_NDST_MASK));
 
     pi_blocking_list_lock = v->arch.hvm_vmx.pi_blocking.lock;
 
