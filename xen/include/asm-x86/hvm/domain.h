@@ -98,6 +98,12 @@ struct hvm_pi_ops {
 
     /* Hook into the vmentry path. */
     void (*do_resume)(struct vcpu *v);
+
+    /* Get/Put refcount of PI blocking of this vCPU */
+    void (*get_ref)(struct vcpu *v);
+    void (*put_ref)(struct vcpu *v);
+    /* Is the PI blocking is referred by IRTEs */
+    bool (*in_use)(struct vcpu *v);
 };
 
 struct hvm_domain {

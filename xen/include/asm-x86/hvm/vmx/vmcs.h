@@ -85,6 +85,7 @@ struct pi_desc {
 struct pi_blocking_vcpu {
     struct list_head     list;
     spinlock_t           *lock;
+    atomic_t             refcnt;  /* How many IRTEs refer to this vCPU? */
 };
 
 struct arch_vmx_struct {
@@ -159,6 +160,8 @@ struct arch_vmx_struct {
      */
     struct pi_blocking_vcpu pi_blocking;
 };
+
+#define pi_desc_to_vcpu(a) container_of(a, struct vcpu, arch.hvm_vmx.pi_desc)
 
 int vmx_create_vmcs(struct vcpu *v);
 void vmx_destroy_vmcs(struct vcpu *v);

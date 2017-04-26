@@ -596,6 +596,32 @@ static int remap_entry_to_msi_msg(
     return 0;
 }
 
+static void pi_get_ref(struct pi_desc *pi_desc)
+{
+    struct vcpu *v;
+
+    if ( !pi_desc )
+        return;
+
+    v = pi_desc_to_vcpu(pi_desc);
+    ASSERT(is_hvm_domain(v->domain));
+    if ( v->domain->arch.hvm_domain.pi_ops.get_ref )
+        v->domain->arch.hvm_domain.pi_ops.get_ref(v);
+}
+
+static void pi_put_ref(struct pi_desc *pi_desc)
+{
+    struct vcpu *v;
+
+    if ( !pi_desc )
+        return;
+
+    v = pi_desc_to_vcpu(pi_desc);
+    ASSERT(is_hvm_domain(v->domain));
+    if ( v->domain->arch.hvm_domain.pi_ops.put_ref )
+        v->domain->arch.hvm_domain.pi_ops.put_ref(v);
+}
+
 static int msi_msg_to_remap_entry(
     struct iommu *iommu, struct pci_dev *pdev,
     struct msi_desc *msi_desc, struct msi_msg *msg)
@@ -619,6 +645,7 @@ static int msi_msg_to_remap_entry(
         {
             free_remap_entry(iommu, msi_desc->remap_index + i);
             msi_desc[i].irte_initialized = false;
+            pi_put_ref(msi_desc[i].pi_desc);
         }
         spin_unlock_irqrestore(&ir_ctrl->iremap_lock, flags);
         return 0;
@@ -962,11 +989,12 @@ void iommu_disable_x2apic_IR(void)
  * This function is used to update the IRTE for posted-interrupt
  * when guest changes MSI/MSI-X information.
  */
-int pi_update_irte(const struct pi_desc *pi_desc, const struct pirq *pirq,
+int pi_update_irte(struct pi_desc *pi_desc, const struct pirq *pirq,
     const uint8_t gvec)
 {
     struct irq_desc *desc;
     struct msi_desc *msi_desc;
+    struct pi_desc *old_pi_desc;
     int rc;
 
     desc = pirq_spin_lock_irq_desc(pirq, NULL);
@@ -979,13 +1007,22 @@ int pi_update_irte(const struct pi_desc *pi_desc, const struct pirq *pirq,
         rc = -ENODEV;
         goto unlock_out;
     }
+    old_pi_desc = msi_desc->pi_desc;
+
+    pi_get_ref(pi_desc);
     msi_desc->pi_desc = pi_desc;
     msi_desc->gvec = gvec;
 
     spin_unlock_irq(&desc->lock);
 
     ASSERT(pcidevs_locked());
-    return iommu_update_ire_from_msi(msi_desc, &msi_desc->msg);
+    rc = iommu_update_ire_from_msi(msi_desc, &msi_desc->msg);
+    if ( !rc )
+        pi_put_ref(old_pi_desc);
+    else
+        ASSERT_UNREACHABLE();
+
+    return rc;
 
  unlock_out:
     spin_unlock_irq(&desc->lock);

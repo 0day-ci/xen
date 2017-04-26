@@ -319,7 +319,7 @@ int pt_irq_create_bind(
     {
         uint8_t dest, dest_mode, delivery_mode;
         int dest_vcpu_id;
-        const struct vcpu *vcpu;
+        struct vcpu *vcpu;
 
         if ( !(pirq_dpci->flags & HVM_IRQ_DPCI_MAPPED) )
         {

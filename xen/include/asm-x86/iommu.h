@@ -92,7 +92,7 @@ bool_t iommu_supports_eim(void);
 int iommu_enable_x2apic_IR(void);
 void iommu_disable_x2apic_IR(void);
 
-int pi_update_irte(const struct pi_desc *pi_desc, const struct pirq *pirq,
+int pi_update_irte(struct pi_desc *pi_desc, const struct pirq *pirq,
                    const uint8_t gvec);
 
 #endif /* !__ARCH_X86_IOMMU_H__ */

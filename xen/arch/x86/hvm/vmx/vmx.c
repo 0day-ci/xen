@@ -100,6 +100,23 @@ void vmx_pi_per_cpu_init(unsigned int cpu)
     spin_lock_init(&per_cpu(vmx_pi_blocking, cpu).lock);
 }
 
+void vmx_pi_get_ref(struct vcpu *v)
+{
+    ASSERT(atomic_read(&v->arch.hvm_vmx.pi_blocking.refcnt) >= 0);
+    atomic_inc(&v->arch.hvm_vmx.pi_blocking.refcnt);
+}
+
+void vmx_pi_put_ref(struct vcpu *v)
+{
+    atomic_dec(&v->arch.hvm_vmx.pi_blocking.refcnt);
+    ASSERT(atomic_read(&v->arch.hvm_vmx.pi_blocking.refcnt) >= 0);
+}
+
+bool vmx_pi_in_use(struct vcpu *v)
+{
+    return !!atomic_read(&v->arch.hvm_vmx.pi_blocking.refcnt);
+}
+
 static void vmx_vcpu_block(struct vcpu *v)
 {
     unsigned long flags;
@@ -378,6 +395,9 @@ void vmx_pi_hooks_assign(struct domain *d)
 
     d->arch.hvm_domain.pi_ops.vcpu_block = vmx_vcpu_block;
     d->arch.hvm_domain.pi_ops.do_resume = vmx_pi_do_resume;
+    d->arch.hvm_domain.pi_ops.get_ref = vmx_pi_get_ref;
+    d->arch.hvm_domain.pi_ops.put_ref = vmx_pi_put_ref;
+    d->arch.hvm_domain.pi_ops.in_use = vmx_pi_in_use;
 }
 
 /* This function is called when pcidevs_lock is held */
@@ -416,6 +436,15 @@ void vmx_pi_hooks_deassign(struct domain *d)
     d->arch.hvm_domain.pi_ops.vcpu_block = NULL;
     d->arch.hvm_domain.pi_ops.switch_from = NULL;
     d->arch.hvm_domain.pi_ops.do_resume = NULL;
+    d->arch.hvm_domain.pi_ops.get_ref = NULL;
+    d->arch.hvm_domain.pi_ops.put_ref = NULL;
+    d->arch.hvm_domain.pi_ops.in_use = NULL;
+    /*
+     * If device is still using by guest, but we forcibly deassign it,
+     * then the 'refcnt' is not zero here. Clear it for re-assignment.
+     */
+    for_each_vcpu ( d, v )
+        atomic_set(&v->arch.hvm_vmx.pi_blocking.refcnt, 0);
 
     for_each_vcpu ( d, v )
         vmx_pi_unblock_vcpu(v);
