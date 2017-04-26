@@ -30,6 +30,7 @@
 #include "extern.h"
 
 #include <asm/apic.h>
+#include <asm/hvm/hvm.h>
 #include <asm/io_apic.h>
 #define nr_ioapic_entries(i)  nr_ioapic_entries[i]
 
@@ -622,6 +623,20 @@ static void pi_put_ref(struct pi_desc *pi_desc)
         v->domain->arch.hvm_domain.pi_ops.put_ref(v);
 }
 
+static bool pi_in_use(struct pi_desc *pi_desc)
+{
+    struct vcpu *v;
+
+    if ( !pi_desc )
+        return 0;
+
+    v = pi_desc_to_vcpu(pi_desc);
+    ASSERT(is_hvm_domain(v->domain));
+    if ( v->domain->arch.hvm_domain.pi_ops.in_use )
+        return v->domain->arch.hvm_domain.pi_ops.in_use(v);
+    return 0;
+}
+
 static int msi_msg_to_remap_entry(
     struct iommu *iommu, struct pci_dev *pdev,
     struct msi_desc *msi_desc, struct msi_msg *msg)
@@ -996,6 +1011,7 @@ int pi_update_irte(struct pi_desc *pi_desc, const struct pirq *pirq,
     struct msi_desc *msi_desc;
     struct pi_desc *old_pi_desc;
     int rc;
+    bool first_ref;
 
     desc = pirq_spin_lock_irq_desc(pirq, NULL);
     if ( !desc )
@@ -1009,7 +1025,10 @@ int pi_update_irte(struct pi_desc *pi_desc, const struct pirq *pirq,
     }
     old_pi_desc = msi_desc->pi_desc;
 
+    first_ref = !pi_in_use(pi_desc);
     pi_get_ref(pi_desc);
+    if ( pi_desc && first_ref )
+        arch_vcpu_block(pi_desc_to_vcpu(pi_desc));
     msi_desc->pi_desc = pi_desc;
     msi_desc->gvec = gvec;
 

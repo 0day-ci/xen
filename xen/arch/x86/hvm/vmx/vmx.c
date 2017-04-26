@@ -125,6 +125,14 @@ static void vmx_vcpu_block(struct vcpu *v)
     struct pi_desc *pi_desc = &v->arch.hvm_vmx.pi_desc;
     spinlock_t *pi_blocking_list_lock;
 
+    /* If no IRTE refers to 'pi_desc', no further operation needs */
+    if ( v->domain->arch.hvm_domain.pi_ops.in_use &&
+         !v->domain->arch.hvm_domain.pi_ops.in_use(v) )
+        return;
+
+    if ( !test_bit(_VPF_blocked, &v->pause_flags) )
+        return;
+
     /*
      * After pCPU goes down, the per-cpu PI blocking list is cleared.
      * To make sure the parameter vCPU is added to the chosen pCPU's
@@ -144,13 +152,8 @@ static void vmx_vcpu_block(struct vcpu *v)
 
     old_lock = cmpxchg(&v->arch.hvm_vmx.pi_blocking.lock, NULL,
                        pi_blocking_list_lock);
-
-    /*
-     * 'v->arch.hvm_vmx.pi_blocking.lock' should be NULL before
-     * being assigned to a new value, since the vCPU is currently
-     * running and it cannot be on any blocking list.
-     */
-    ASSERT(old_lock == NULL);
+    if ( old_lock )
+        goto out;
 
     atomic_inc(&per_cpu(vmx_pi_blocking, dest_cpu).counter);
     HVMTRACE_4D(VT_D_PI_BLOCK, v->domain->domain_id, v->vcpu_id, dest_cpu,
@@ -171,6 +174,10 @@ static void vmx_vcpu_block(struct vcpu *v)
     write_atomic(&pi_desc->nv, pi_wakeup_vector);
     write_atomic(&pi_desc->ndst,
                  (x2apic_enabled ? dest : MASK_INSR(dest, PI_xAPIC_NDST_MASK)));
+    return;
+
+ out:
+    spin_unlock_irqrestore(pi_blocking_list_lock, flags);
 }
 
 static void vmx_pi_switch_from(struct vcpu *v)
