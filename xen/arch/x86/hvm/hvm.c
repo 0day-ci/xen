@@ -473,6 +473,39 @@ static bool hvm_get_pending_event(struct vcpu *v, struct x86_event *info)
     return hvm_funcs.get_pending_event(v, info);
 }
 
+static void hvm_vm_event_set_registers(struct vcpu *v)
+{
+    ASSERT(v == current);
+
+    if ( v->arch.vm_event->set_gprs )
+    {
+        struct cpu_user_regs *regs = guest_cpu_user_regs();
+
+        regs->rax = v->arch.vm_event->gprs.rax;
+        regs->rbx = v->arch.vm_event->gprs.rbx;
+        regs->rcx = v->arch.vm_event->gprs.rcx;
+        regs->rdx = v->arch.vm_event->gprs.rdx;
+        regs->rsp = v->arch.vm_event->gprs.rsp;
+        regs->rbp = v->arch.vm_event->gprs.rbp;
+        regs->rsi = v->arch.vm_event->gprs.rsi;
+        regs->rdi = v->arch.vm_event->gprs.rdi;
+
+        regs->r8 = v->arch.vm_event->gprs.r8;
+        regs->r9 = v->arch.vm_event->gprs.r9;
+        regs->r10 = v->arch.vm_event->gprs.r10;
+        regs->r11 = v->arch.vm_event->gprs.r11;
+        regs->r12 = v->arch.vm_event->gprs.r12;
+        regs->r13 = v->arch.vm_event->gprs.r13;
+        regs->r14 = v->arch.vm_event->gprs.r14;
+        regs->r15 = v->arch.vm_event->gprs.r15;
+
+        regs->rflags = v->arch.vm_event->gprs.rflags;
+        regs->rip = v->arch.vm_event->gprs.rip;
+
+        v->arch.vm_event->set_gprs = 0;
+    }
+}
+
 void hvm_do_resume(struct vcpu *v)
 {
     check_wakeup_from_wait();
@@ -486,6 +519,8 @@ void hvm_do_resume(struct vcpu *v)
     if ( unlikely(v->arch.vm_event) )
     {
         struct monitor_write_data *w = &v->arch.vm_event->write_data;
+
+        hvm_vm_event_set_registers(v);
 
         if ( unlikely(v->arch.vm_event->emulate_flags) )
         {

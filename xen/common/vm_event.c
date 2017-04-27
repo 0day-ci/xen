@@ -357,6 +357,13 @@ void vm_event_resume(struct domain *d, struct vm_event_domain *ved)
 {
     vm_event_response_t rsp;
 
+    /*
+     * vm_event_resume() runs either from XEN_DOMCTL_VM_EVENT_OP_*, or
+     * EVTCHN_send from the introspection consumer.  Both contexts are
+     * guaranteed not to be the subject of vm_event responses.
+     */
+    ASSERT(d != current->domain);
+
     /* Pull all responses off the ring. */
     while ( vm_event_get_response(d, ved, &rsp) )
     {
@@ -373,13 +380,6 @@ void vm_event_resume(struct domain *d, struct vm_event_domain *ved)
             continue;
 
         v = d->vcpu[rsp.vcpu_id];
-
-        /*
-         * Make sure the vCPU state has been synchronized for the custom
-         * handlers.
-         */
-        if ( atomic_read(&v->vm_event_pause_count) )
-            sync_vcpu_execstate(v);
 
         /*
          * In some cases the response type needs extra handling, so here
