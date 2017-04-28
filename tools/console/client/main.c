@@ -76,7 +76,7 @@ static void usage(const char *program) {
 	       "\n"
 	       "  -h, --help       display this help and exit\n"
 	       "  -n, --num N      use console number N\n"
-	       "  --type TYPE      console type. must be 'pv' or 'serial'\n"
+	       "  --type TYPE      console type. must be 'pv', 'serial' or 'vuart'\n"
 	       "  --start-notify-fd N file descriptor used to notify parent\n"
 	       , program);
 }
@@ -264,6 +264,7 @@ typedef enum {
        CONSOLE_INVAL,
        CONSOLE_PV,
        CONSOLE_SERIAL,
+       CONSOLE_VUART,
 } console_type;
 
 static struct termios stdin_old_attr;
@@ -361,6 +362,8 @@ int main(int argc, char **argv)
 				type = CONSOLE_SERIAL;
 			else if (!strcmp(optarg, "pv"))
 				type = CONSOLE_PV;
+			else if (!strcmp(optarg, "vuart"))
+				type = CONSOLE_VUART;
 			else {
 				fprintf(stderr, "Invalid type argument\n");
 				fprintf(stderr, "Console types supported are: serial, pv\n");
@@ -435,6 +438,9 @@ int main(int argc, char **argv)
 			snprintf(path, strlen(dom_path) + strlen("/console/tty") + 1, "%s/console/tty", dom_path);
 		else
 			snprintf(path, strlen(dom_path) + strlen("/device/console/%d/tty") + 5, "%s/device/console/%d/tty", dom_path, num);
+	}
+	if (type == CONSOLE_VUART) {
+		snprintf(path, strlen(dom_path) + strlen("/console/vtty") + 1, "%s/console/vtty", dom_path);
 	}
 
 	/* FIXME consoled currently does not assume domain-0 doesn't have a
