@@ -36,6 +36,7 @@
 #include <asm/platform.h>
 #include "vtimer.h"
 #include "vuart.h"
+#include <xen/vpl011.h>
 
 DEFINE_PER_CPU(struct vcpu *, curr_vcpu);
 
@@ -631,6 +632,9 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
     if ( (rc = domain_vtimer_init(d, config)) != 0 )
         goto fail;
 
+    if ( domcr_flags & DOMCRF_vuart )
+        if ( (rc = domain_vpl011_init(d, config)) != 0 )
+            goto fail;
     update_domain_wallclock_time(d);
 
     /*
@@ -665,6 +669,8 @@ fail:
 
 void arch_domain_destroy(struct domain *d)
 {
+    domain_vpl011_deinit(d);
+
     /* IOMMU page table is shared with P2M, always call
      * iommu_domain_destroy() before p2m_teardown().
      */

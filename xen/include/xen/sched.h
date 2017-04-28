@@ -555,6 +555,10 @@ struct domain *domain_create(domid_t domid, unsigned int domcr_flags,
 #define _DOMCRF_xs_domain       5
 #define DOMCRF_xs_domain        (1U<<_DOMCRF_xs_domain)
 
+ /* DOMCRF_vuart: enable virtual uart emulation. Used for Aarch64. */
+#define _DOMCRF_vuart  7
+#define DOMCRF_vuart   (1U<<_DOMCRF_vuart)
+
 /*
  * rcu_lock_domain_by_id() is more efficient than get_domain_by_id().
  * This is the preferred function if the returned domain reference

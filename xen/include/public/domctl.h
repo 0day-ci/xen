@@ -63,6 +63,8 @@ struct xen_domctl_createdomain {
  /* Is this a xenstore domain? */
 #define _XEN_DOMCTL_CDF_xs_domain     4
 #define XEN_DOMCTL_CDF_xs_domain      (1U<<_XEN_DOMCTL_CDF_xs_domain)
+#define _XEN_DOMCTL_VUART_enable      6
+#define XEN_DOMCTL_VUART_enable       (1U<<_XEN_DOMCTL_VUART_enable)
     uint32_t flags;
     struct xen_arch_domainconfig config;
 };
