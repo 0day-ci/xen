@@ -886,6 +886,32 @@ int xc_vcpu_getcontext(xc_interface *xch,
                        vcpu_guest_context_any_t *ctxt);
 
 /**
+ * This function returns information about the pfn and the event channel
+ * to be used for setting up a virtual uart console.
+ *
+ * @parm xch a handle to an open hypervisor interface
+ * @parm domid the domain to get information from
+ * @parm vuart_pfn the pfn to be used for the ring buffer
+ * @return 0 on success, negative error on failure
+ */
+int xc_domain_vuart_set_pfn(xc_interface *xch,
+                            uint32_t domid,
+                            uint32_t vuart_pfn);
+
+/**
+ * This function returns information about the pfn and the event channel
+ * to be used for setting up a virtual console.
+ *
+ * @parm xch a handle to an open hypervisor interface
+ * @parm domid the domain to get information from
+ * @parm vuart_evtchn the event channel to be used for console events
+ * @return 0 on success, negative error on failure
+ */
+int xc_domain_vuart_get_evtchn(xc_interface *xch,
+                               uint32_t domid,
+                               uint32_t *vuart_evtchn);
+
+/**
  * This function returns information about the XSAVE state of a particular
  * vcpu of a domain. If extstate->size and extstate->xfeature_mask are 0,
  * the call is considered a query to retrieve them and the buffer is not

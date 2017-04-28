@@ -343,6 +343,45 @@ int xc_domain_get_guest_width(xc_interface *xch, uint32_t domid,
     return 0;
 }
 
+int xc_domain_vuart_set_pfn(xc_interface *xch,
+                            uint32_t domid,
+                            uint32_t vuart_pfn)
+{
+    DECLARE_DOMCTL;
+    int rc = 0;
+
+    domctl.cmd = XEN_DOMCTL_vuart_op;
+    domctl.domain = (domid_t)domid;
+    domctl.u.vuart_op.cmd = XEN_DOMCTL_VUART_OP_SET_PFN;
+    domctl.u.vuart_op.pfn = vuart_pfn;
+
+    if ( (rc = do_domctl(xch, &domctl)) < 0 )
+        return rc;
+
+    return rc;
+}
+
+int xc_domain_vuart_get_evtchn(xc_interface *xch,
+                               uint32_t domid,
+                               uint32_t *vuart_evtchn)
+{
+    DECLARE_DOMCTL;
+    int rc = 0;
+
+	*vuart_evtchn = -1;
+
+    domctl.cmd = XEN_DOMCTL_vuart_op;
+    domctl.domain = (domid_t)domid;
+    domctl.u.vuart_op.cmd = XEN_DOMCTL_VUART_OP_GET_EVTCHN;
+
+    if ( (rc = do_domctl(xch, &domctl)) < 0 )
+        return rc;
+
+    *vuart_evtchn = domctl.u.vuart_op.evtchn;
+
+    return rc;
+}
+
 int xc_domain_getinfo(xc_interface *xch,
                       uint32_t first_domid,
                       unsigned int max_doms,

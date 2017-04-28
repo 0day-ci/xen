@@ -1465,6 +1465,10 @@ long arch_do_domctl(
         recalculate_cpuid_policy(d);
         break;
 
+    case XEN_DOMCTL_vuart_op:
+        ret = -EOPNOTSUPP;
+        break;
+
     default:
         ret = iommu_do_domctl(domctl, d, u_domctl);
         break;

@@ -10,6 +10,7 @@
 #include <xen/sched.h>
 #include <xen/hypercall.h>
 #include <xen/iocap.h>
+#include <xen/guest_access.h>
 #include <xsm/xsm.h>
 #include <public/domctl.h>
 
@@ -119,6 +120,25 @@ long arch_do_domctl(struct xen_domctl *domctl, struct domain *d,
         d->disable_migrate = domctl->u.disable_migrate.disable;
         return 0;
 
+    case XEN_DOMCTL_vuart_op:
+    {
+        int rc;
+        if ( d->arch.vpl011.initialized )
+        {
+            if ( domctl->u.vuart_op.cmd == XEN_DOMCTL_VUART_OP_SET_PFN )
+            {
+                rc = vpl011_map_guest_page(d, domctl->u.vuart_op.pfn);
+            }
+            else
+            {
+                domctl->u.vuart_op.evtchn = d->arch.vpl011.evtchn;
+                rc = __copy_to_guest(u_domctl, domctl, 1);
+            }
+            return rc;
+        }
+        else
+            return -EINVAL;
+    }
     default:
     {
         int rc;
