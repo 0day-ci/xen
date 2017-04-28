@@ -52,6 +52,7 @@ obj-y += vm_event.o
 obj-y += vtimer.o
 obj-y += vpsci.o
 obj-y += vuart.o
+obj-$(CONFIG_VPL011_CONSOLE) += vpl011.o
 
 #obj-bin-y += ....o
 

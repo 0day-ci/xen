@@ -50,6 +50,11 @@ config HAS_ITS
         prompt "GICv3 ITS MSI controller support" if EXPERT = "y"
         depends on HAS_GICV3
 
+config VPL011_CONSOLE
+	bool "Emulated pl011 console support"
+	default y
+	---help---
+	  Allows a guest to use pl011 UART as a console
 endmenu
 
 menu "ARM errata workaround via the alternative framework"

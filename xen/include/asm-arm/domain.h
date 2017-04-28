@@ -11,6 +11,7 @@
 #include <public/hvm/params.h>
 #include <xen/serial.h>
 #include <xen/rbtree.h>
+#include <xen/vpl011.h>
 
 struct hvm_domain
 {
@@ -133,6 +134,8 @@ struct arch_domain
     struct {
         uint8_t privileged_call_enabled : 1;
     } monitor;
+
+    struct vpl011_s vpl011;
 }  __cacheline_aligned;
 
 struct arch_vcpu
