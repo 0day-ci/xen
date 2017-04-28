@@ -43,10 +43,24 @@ int libxl__arch_domain_prepare_config(libxl__gc *gc,
 {
     uint32_t nr_spis = 0;
     unsigned int i;
+    bool vpl011_enabled = !strcmp(d_config->b_info.vuart, "pl011");
+
+    /*
+     * If pl011 vuart is enabled then increment the nr_spis to allow allocation
+     * of SPI VIRQ for pl011.
+     */
+    if (vpl011_enabled)
+        nr_spis += (GUEST_VPL011_SPI - 32)+1;
 
     for (i = 0; i < d_config->b_info.num_irqs; i++) {
         uint32_t irq = d_config->b_info.irqs[i];
         uint32_t spi;
+
+        if (vpl011_enabled && irq == GUEST_VPL011_SPI)
+        {
+            LOG(ERROR, "Physical IRQ %d conflicting with pl011 SPI\n", irq);
+            return ERROR_FAIL;
+        }
 
         if (irq < 32)
             continue;
@@ -130,9 +144,10 @@ static struct arch_info {
     const char *guest_type;
     const char *timer_compat;
     const char *cpu_compat;
+    const char *uart_compat;
 } arch_info[] = {
-    {"xen-3.0-armv7l",  "arm,armv7-timer", "arm,cortex-a15" },
-    {"xen-3.0-aarch64", "arm,armv8-timer", "arm,armv8" },
+    {"xen-3.0-armv7l",  "arm,armv7-timer", "arm,cortex-a15", "arm,sbsa-uart" },
+    {"xen-3.0-aarch64", "arm,armv8-timer", "arm,armv8", "arm,sbsa-uart" },
 };
 
 /*
@@ -590,6 +605,38 @@ static int make_hypervisor_node(libxl__gc *gc, void *fdt,
     return 0;
 }
 
+static int make_vpl011_uart_node(libxl__gc *gc, void *fdt,
+                                 const struct arch_info *ainfo,
+                                 struct xc_dom_image *dom)
+{
+    int res;
+    gic_interrupt intr;
+
+    res = fdt_begin_node(fdt, "sbsa-pl011");
+    if (res) return res;
+
+    res = fdt_property_compat(gc, fdt, 1, ainfo->uart_compat);
+    if (res) return res;
+
+    res = fdt_property_regs(gc, fdt, ROOT_ADDRESS_CELLS, ROOT_SIZE_CELLS,
+                            1,
+                            GUEST_PL011_BASE, GUEST_PL011_SIZE);
+    if (res) return res;
+
+    set_interrupt(intr, GUEST_VPL011_SPI, 0xf, DT_IRQ_TYPE_LEVEL_HIGH);
+
+    res = fdt_property_interrupts(gc, fdt, &intr, 1);
+    if (res) return res;
+
+    /* Use a default baud rate of 115200. */
+    fdt_property_u32(fdt, "current-speed", 115200);
+
+    res = fdt_end_node(fdt);
+    if (res) return res;
+
+    return 0;
+}
+
 static const struct arch_info *get_arch_info(libxl__gc *gc,
                                              const struct xc_dom_image *dom)
 {
@@ -888,6 +935,9 @@ next_resize:
 
         FDT( make_timer_node(gc, fdt, ainfo, xc_config->clock_frequency) );
         FDT( make_hypervisor_node(gc, fdt, vers) );
+
+        if (!strcmp(info->vuart, "pl011"))
+            FDT( make_vpl011_uart_node(gc, fdt, ainfo, dom) );
 
         if (pfdt)
             FDT( copy_partial_fdt(gc, fdt, pfdt) );
