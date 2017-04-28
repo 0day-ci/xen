@@ -1135,6 +1135,10 @@ typedef struct {
     uint32_t num_vmemranges;
 
     xc_domain_configuration_t config;
+
+    unsigned long vuart_mfn;
+    uint32_t    vuart_port;
+    bool        vuart_enabled;
 } libxl__domain_build_state;
 
 _hidden int libxl__build_pre(libxl__gc *gc, uint32_t domid,

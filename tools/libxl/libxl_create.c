@@ -536,6 +536,9 @@ int libxl__domain_make(libxl__gc *gc, libxl_domain_config *d_config,
         flags |= libxl_defbool_val(info->oos) ? 0 : XEN_DOMCTL_CDF_oos_off;
     }
 
+    if (!strcmp(d_config->b_info.vuart, "pl011"))
+        flags |= XEN_DOMCTL_VUART_enable;
+
     /* Ultimately, handle is an array of 16 uint8_t, same as uuid */
     libxl_uuid_copy(ctx, (libxl_uuid *)handle, &info->uuid);
 
@@ -900,6 +903,11 @@ static void initiate_domain_create(libxl__egc *egc,
         goto error_out;
     }
 
+    if (!strcmp(d_config->b_info.vuart, "pl011"))
+        state->vuart_enabled = true;
+    else
+        state->vuart_enabled = false;
+
     if (d_config->c_info.type == LIBXL_DOMAIN_TYPE_HVM &&
         (libxl_defbool_val(d_config->b_info.u.hvm.nested_hvm) &&
         (libxl_defbool_val(d_config->b_info.u.hvm.altp2m) ||
@@ -917,6 +925,8 @@ static void initiate_domain_create(libxl__egc *egc,
         LOGD(ERROR, domid, "Cannot enable PoD and ALTP2M at the same time");
         goto error_out;
     }
+
+    state->config.console_domid = state->console_domid;
 
     ret = libxl__domain_make(gc, d_config, &domid, &state->config);
     if (ret) {

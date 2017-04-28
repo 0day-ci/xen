@@ -306,6 +306,12 @@
 #define LIBXL_HAVE_BUILDINFO_HVM_ACPI_LAPTOP_SLATE 1
 
 /*
+ * LIBXL_HAVE_VUART indicates that xenconsole/client supports
+ * virtual uart.
+ */
+#define LIBXL_HAVE_VUART 1
+
+/*
  * libxl ABI compatibility
  *
  * The only guarantee which libxl makes regarding ABI compatibility

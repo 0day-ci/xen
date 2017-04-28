@@ -105,6 +105,7 @@ libxl_console_type = Enumeration("console_type", [
     (0, "UNKNOWN"),
     (1, "SERIAL"),
     (2, "PV"),
+    (3, "VUART"),
     ])
 
 libxl_disk_format = Enumeration("disk_format", [
@@ -470,6 +471,7 @@ libxl_domain_build_info = Struct("domain_build_info",[
     ("disable_migrate", libxl_defbool),
     ("cpuid",           libxl_cpuid_policy_list),
     ("blkdev_start",    string),
+    ("vuart",           string),
 
     ("vnuma_nodes", Array(libxl_vnode_info, "num_vnuma_nodes")),
     

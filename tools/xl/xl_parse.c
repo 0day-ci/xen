@@ -916,6 +916,9 @@ void parse_config_data(const char *config_source,
     if (!xlu_cfg_get_long (config, "maxvcpus", &l, 0))
         b_info->max_vcpus = l;
 
+    if (xlu_cfg_replace_string(config, "vuart", &b_info->vuart, 0))
+        b_info->vuart = strdup("unknown");
+
     parse_vnuma_config(config, b_info);
 
     /* Set max_memkb to target_memkb and max_vcpus to avail_vcpus if
