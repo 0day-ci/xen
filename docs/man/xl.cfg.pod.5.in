@@ -1085,6 +1085,14 @@ Allow a guest to access specific physical IRQs.
 It is recommended to use this option only for trusted VMs under
 administrator control.
 
+If vuart console is enabled then irq 32 is reserved for vuart. By default
+vuart console is disabled. If user specifies the following option in
+the guest config file then vuart console is enabled.
+
+vuart = "pl011"
+
+vuart console is currently enabled only for ARM64.
+
 =item B<max_event_channels=N>
 
 Limit the guest to using at most N event channels (PV interrupts).

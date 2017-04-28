@@ -19,7 +19,19 @@ The first PV console path in xenstore remains:
 
 /local/domain/$DOMID/console
 
-the other PV consoles follow the conventional xenstore device path and
+The vuart console path in xenstore is defined as:
+
+/local/domain/$DOMID/console/vuart/0
+
+The vuart console provides access to pl011 UART on ARM64 systems. To
+enable vuart the following line has to be added the guest configuration
+file:
+
+vuart = "pl011"
+
+Also the console should be set to "ttyAMA0" instead of "hvc0".
+
+The other PV consoles follow the conventional xenstore device path and
 live in:
 
 /local/domain/$DOMID/device/console/$DEVID.
