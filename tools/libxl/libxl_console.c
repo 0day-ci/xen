@@ -67,6 +67,9 @@ int libxl_console_exec(libxl_ctx *ctx, uint32_t domid, int cons_num,
     case LIBXL_CONSOLE_TYPE_SERIAL:
         cons_type_s = "serial";
         break;
+    case LIBXL_CONSOLE_TYPE_VUART:
+        cons_type_s = "vuart";
+        break;
     default:
         goto out;
     }
@@ -326,6 +329,13 @@ int libxl__device_console_add(libxl__gc *gc, uint32_t domid,
         flexarray_append(ro_front, GCSPRINTF("%"PRIu32, state->console_port));
         flexarray_append(ro_front, "ring-ref");
         flexarray_append(ro_front, GCSPRINTF("%lu", state->console_mfn));
+        if (state->vuart_enabled)
+        {
+            flexarray_append(ro_front, "vuart/0/port");
+            flexarray_append(ro_front, GCSPRINTF("%"PRIu32, state->vuart_port));
+            flexarray_append(ro_front, "vuart/0/ring-ref");
+            flexarray_append(ro_front, GCSPRINTF("%lu", state->vuart_mfn));
+        }
     } else {
         flexarray_append(front, "state");
         flexarray_append(front, GCSPRINTF("%d", XenbusStateInitialising));

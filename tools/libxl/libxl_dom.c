@@ -434,6 +434,9 @@ int libxl__build_pre(libxl__gc *gc, uint32_t domid,
     state->store_port = xc_evtchn_alloc_unbound(ctx->xch, domid, state->store_domid);
     state->console_port = xc_evtchn_alloc_unbound(ctx->xch, domid, state->console_domid);
 
+    if (state->vuart_enabled)
+        xc_domain_vuart_get_evtchn(ctx->xch, domid, &state->vuart_port);
+
     if (info->type == LIBXL_DOMAIN_TYPE_HVM) {
         hvm_set_conf_params(ctx->xch, domid, info);
 #if defined(__i386__) || defined(__x86_64__)
@@ -788,6 +791,7 @@ int libxl__build_pv(libxl__gc *gc, uint32_t domid,
     if (xc_dom_translated(dom)) {
         state->console_mfn = dom->console_pfn;
         state->store_mfn = dom->xenstore_pfn;
+        state->vuart_mfn = dom->vuart_pfn;
     } else {
         state->console_mfn = xc_dom_p2m(dom, dom->console_pfn);
         state->store_mfn = xc_dom_p2m(dom, dom->xenstore_pfn);
