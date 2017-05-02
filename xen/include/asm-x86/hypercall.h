@@ -25,6 +25,10 @@ typedef struct {
 
 extern const hypercall_args_t hypercall_args_table[NR_hypercalls];
 
+#ifdef CONFIG_PV
+void pv_hypercall(struct cpu_user_regs *regs);
+#endif
+
 /*
  * Both do_mmuext_op() and do_mmu_update():
  * We steal the m.s.b. of the @count parameter to indicate whether this
