@@ -113,7 +113,7 @@ int hvm_save_one(struct domain *d, uint16_t typecode, uint16_t instance,
         const struct hvm_save_descriptor *desc;
 
         rv = -ENOENT;
-        for ( off = 0; off < (ctxt.cur - sizeof(*desc)); off += desc->length )
+        for ( off = 0; (off + sizeof(*desc)) < ctxt.cur; off += desc->length )
         {
             desc = (void *)(ctxt.data + off);
             /* Move past header */
