@@ -325,7 +325,8 @@ static always_inline void stac(void)
  *
  * @adj: extra stack pointer adjustment to be folded into the adjustment done
  *       anyway at the end of the macro
- * @compat: R8-R15 don't need reloading
+ * @compat: R8-R15 don't need reloading, but they are clobbered for added
+ *          safety against information leaks.
  */
 .macro RESTORE_ALL adj=0 compat=0
 .if !\compat
@@ -366,6 +367,16 @@ static always_inline void stac(void)
         LOAD_ONE_REG(bp, \compat)
         LOAD_ONE_REG(bx, \compat)
         subq  $-(UREGS_error_code-UREGS_r15+\adj), %rsp
+.if \compat
+        xor %r8d, %r8d
+        xor %r9d, %r9d
+        xor %r10d, %r10d
+        xor %r11d, %r11d
+        xor %r12d, %r12d
+        xor %r13d, %r13d
+        xor %r14d, %r14d
+        xor %r15d, %r15d
+.endif
 .endm
 
 #endif
