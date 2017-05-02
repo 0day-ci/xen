@@ -645,6 +645,14 @@ void load_system_tables(void)
 	tss->ist[IST_DF  - 1] = stack_top + IST_DF  * PAGE_SIZE;
 	tss->ist[IST_NMI - 1] = stack_top + IST_NMI * PAGE_SIZE;
 
+	/* Poision all other stack pointers to prevent their accidental use. */
+	tss->rsp1   = 0x8600111111111111ul;
+	tss->rsp2   = 0x8600222222222222ul;
+	tss->ist[3] = 0x8600444444444444ul;
+	tss->ist[4] = 0x8600555555555555ul;
+	tss->ist[5] = 0x8600666666666666ul;
+	tss->ist[6] = 0x8600777777777777ul;
+
 	_set_tssldt_desc(
 		gdt + TSS_ENTRY,
 		(unsigned long)tss,
