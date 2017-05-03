@@ -3842,6 +3842,7 @@ static void backend_watch_callback(libxl__egc *egc, libxl__ev_xswatch *watch,
     libxl__device *dev = NULL;
     libxl__ddomain_device *ddev = NULL;
     libxl__ddomain_guest *dguest = NULL;
+    bool new_dguest = false;
     bool free_ao = false;
 
     /* Check if event_path ends with "state" or "online" and truncate it. */
@@ -3888,6 +3889,7 @@ static void backend_watch_callback(libxl__egc *egc, libxl__ev_xswatch *watch,
         LIBXL_SLIST_INSERT_HEAD(&ddomain->guests, dguest, next);
         LOG(DEBUG, "added domain %u to the list of active guests",
                    dguest->domid);
+        new_dguest = true;
     }
     ddev = search_for_device(dguest, dev);
     if (ddev == NULL && state == XenbusStateClosed) {
@@ -3947,7 +3949,13 @@ skip:
     libxl__nested_ao_free(nested_ao);
     free(dev);
     free(ddev);
-    free(dguest);
+    if (new_dguest) {
+        LIBXL_SLIST_REMOVE(&ddomain->guests, dguest, libxl__ddomain_guest,
+                           next);
+        LOG(DEBUG, "removed domain %u from the list of active guests",
+                   dguest->domid);
+        free(dguest);
+    }
     return;
 }
 
