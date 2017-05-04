@@ -476,6 +476,7 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
     struct hsr_dabt dabt = info->dabt;
     struct vgic_irq_rank *rank;
     unsigned long flags;
+    unsigned int irq;
 
     switch ( reg )
     {
@@ -513,22 +514,11 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
         goto read_as_zero;
 
     case VRANGE32(GICD_IPRIORITYR, GICD_IPRIORITYRN):
-    {
-        uint32_t ipriorityr;
-
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 8, reg - GICD_IPRIORITYR, DABT_WORD);
-        if ( rank == NULL ) goto read_as_zero;
-
-        vgic_lock_rank(v, rank, flags);
-        ipriorityr = rank->ipriorityr[REG_RANK_INDEX(8, reg - GICD_IPRIORITYR,
-                                                     DABT_WORD)];
-        vgic_unlock_rank(v, rank, flags);
-
-        *r = vgic_reg32_extract(ipriorityr, info);
-
+        irq = reg - GICD_IPRIORITYR;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto read_as_zero;
+        *r = vgic_reg32_extract(gather_irq_info_priority(v, irq), info);
         return 1;
-    }
 
     case VRANGE32(GICD_ICFGR, GICD_ICFGRN):
     {
@@ -572,6 +562,7 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
     struct vgic_irq_rank *rank;
     uint32_t tr;
     unsigned long flags;
+    unsigned int irq;
 
     switch ( reg )
     {
@@ -630,16 +621,14 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
 
     case VRANGE32(GICD_IPRIORITYR, GICD_IPRIORITYRN):
     {
-        uint32_t *ipriorityr;
+        uint32_t ipriorityr;
 
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 8, reg - GICD_IPRIORITYR, DABT_WORD);
-        if ( rank == NULL ) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        ipriorityr = &rank->ipriorityr[REG_RANK_INDEX(8, reg - GICD_IPRIORITYR,
-                                                      DABT_WORD)];
-        vgic_reg32_update(ipriorityr, r, info);
-        vgic_unlock_rank(v, rank, flags);
+        irq = reg - GICD_IPRIORITYR;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto write_ignore;
+        ipriorityr = gather_irq_info_priority(v, irq);
+        vgic_reg32_update(&ipriorityr, r, info);
+        scatter_irq_info_priority(v, irq, ipriorityr);
         return 1;
     }
 

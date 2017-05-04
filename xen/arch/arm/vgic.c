@@ -225,18 +225,48 @@ struct vcpu *vgic_get_target_vcpu(struct vcpu *v, unsigned int virq)
     return v->domain->vcpu[target];
 }
 
-static int vgic_get_virq_priority(struct vcpu *v, unsigned int virq)
+static uint8_t extract_priority(struct pending_irq *p)
 {
-    struct vgic_irq_rank *rank = vgic_rank_irq(v, virq);
-    unsigned long flags;
-    int priority;
-
-    vgic_lock_rank(v, rank, flags);
-    priority = rank->priority[virq & INTERRUPT_RANK_MASK];
-    vgic_unlock_rank(v, rank, flags);
-
-    return priority;
+    return p->new_priority;
 }
+
+static void set_priority(struct pending_irq *p, uint8_t prio)
+{
+    p->new_priority = prio;
+}
+
+
+#define DEFINE_GATHER_IRQ_INFO(name, get_val, shift)                         \
+uint32_t gather_irq_info_##name(struct vcpu *v, unsigned int irq)            \
+{                                                                            \
+    uint32_t ret = 0, i;                                                     \
+    for ( i = 0; i < (32 / shift); i++ )                                     \
+    {                                                                        \
+        struct pending_irq *p = irq_to_pending(v, irq + i);                  \
+        spin_lock(&p->lock);                                                 \
+        ret |= get_val(p) << (shift * i);                                    \
+        spin_unlock(&p->lock);                                               \
+    }                                                                        \
+    return ret;                                                              \
+}
+
+#define DEFINE_SCATTER_IRQ_INFO(name, set_val, shift)                        \
+void scatter_irq_info_##name(struct vcpu *v, unsigned int irq,               \
+                             unsigned int value)                             \
+{                                                                            \
+    unsigned int i;                                                          \
+    for ( i = 0; i < (32 / shift); i++ )                                     \
+    {                                                                        \
+        struct pending_irq *p = irq_to_pending(v, irq + i);                  \
+        spin_lock(&p->lock);                                                 \
+        set_val(p, (value >> (shift * i)) & ((1 << shift) - 1));             \
+        spin_unlock(&p->lock);                                               \
+    }                                                                        \
+}
+
+/* grep fodder: gather_irq_info_priority, scatter_irq_info_priority below */
+DEFINE_GATHER_IRQ_INFO(priority, extract_priority, 8)
+DEFINE_SCATTER_IRQ_INFO(priority, set_priority, 8)
 
 bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq)
 {
@@ -471,12 +501,9 @@ void vgic_clear_pending_irqs(struct vcpu *v)
 
 void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 {
-    uint8_t priority;
     struct pending_irq *iter, *n = irq_to_pending(v, virq);
     unsigned long flags;
     bool running;
-
-    priority = vgic_get_virq_priority(v, virq);
 
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
@@ -497,7 +524,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
         goto out;
     }
 
-    n->priority = priority;
+    n->priority = n->new_priority;
 
     /* the irq is enabled */
     if ( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
@@ -505,7 +532,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 
     list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
     {
-        if ( iter->priority > priority )
+        if ( iter->priority > n->priority )
         {
             list_add_tail(&n->inflight, &iter->inflight);
             spin_unlock(&n->lock);

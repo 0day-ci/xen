@@ -71,7 +71,8 @@ struct pending_irq
     unsigned int irq;
 #define GIC_INVALID_LR         (uint8_t)~0
     uint8_t lr;
-    uint8_t priority;
+    uint8_t priority;           /* the priority of the currently inflight IRQ */
+    uint8_t new_priority;       /* the priority of newly triggered IRQs */
     /* inflight is used to append instances of pending_irq to
      * vgic.inflight_irqs */
     struct list_head inflight;
@@ -102,16 +103,6 @@ struct vgic_irq_rank {
 
     uint32_t ienable;
     uint32_t icfg[2];
-
-    /*
-     * Provide efficient access to the priority of an vIRQ while keeping
-     * the emulation simple.
-     * Note, this is working fine as long as Xen is using little endian.
-     */
-    union {
-        uint8_t priority[32];
-        uint32_t ipriorityr[8];
-    };
 
     /*
      * It's more convenient to store a target VCPU per vIRQ
@@ -178,6 +169,10 @@ static inline int REG_RANK_NR(int b, uint32_t n)
     default: BUG();
     }
 }
+
+uint32_t gather_irq_info_priority(struct vcpu *v, unsigned int irq);
+void scatter_irq_info_priority(struct vcpu *v, unsigned int irq,
+                               unsigned int value);
 
 #define VGIC_REG_MASK(size) ((~0UL) >> (BITS_PER_LONG - ((1 << (size)) * 8)))
 
