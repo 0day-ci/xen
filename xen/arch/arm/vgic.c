@@ -359,7 +359,7 @@ void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
         set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
         spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
         if ( !list_empty(&p->inflight) && !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
-            gic_raise_guest_irq(v_target, irq, p->priority);
+            gic_raise_guest_irq(v_target, p);
         spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
         if ( p->desc != NULL )
         {
@@ -485,7 +485,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 
     if ( !list_empty(&n->inflight) )
     {
-        gic_raise_inflight_irq(v, virq);
+        gic_raise_inflight_irq(v, n);
         goto out;
     }
 
@@ -493,7 +493,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 
     /* the irq is enabled */
     if ( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
-        gic_raise_guest_irq(v, virq, priority);
+        gic_raise_guest_irq(v, n);
 
     list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
     {

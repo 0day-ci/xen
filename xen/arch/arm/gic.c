@@ -391,10 +391,8 @@ void gic_remove_from_queues(struct vcpu *v, unsigned int virtual_irq)
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
 }
 
-void gic_raise_inflight_irq(struct vcpu *v, unsigned int virtual_irq)
+void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
 {
-    struct pending_irq *n = irq_to_pending(v, virtual_irq);
-
     ASSERT(spin_is_locked(&v->arch.vgic.lock));
 
     if ( list_empty(&n->lr_queue) )
@@ -405,12 +403,11 @@ void gic_raise_inflight_irq(struct vcpu *v, unsigned int virtual_irq)
 #ifdef GIC_DEBUG
     else
         gdprintk(XENLOG_DEBUG, "trying to inject irq=%u into d%dv%d, when it is still lr_pending\n",
-                 virtual_irq, v->domain->domain_id, v->vcpu_id);
+                 n->irq, v->domain->domain_id, v->vcpu_id);
 #endif
 }
 
-void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
-        unsigned int priority)
+void gic_raise_guest_irq(struct vcpu *v, struct pending_irq *p)
 {
     int i;
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
@@ -422,12 +419,12 @@ void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
         i = find_first_zero_bit(&this_cpu(lr_mask), nr_lrs);
         if (i < nr_lrs) {
             set_bit(i, &this_cpu(lr_mask));
-            gic_set_lr(i, irq_to_pending(v, virtual_irq), GICH_LR_PENDING);
+            gic_set_lr(i, p, GICH_LR_PENDING);
             return;
         }
     }
 
-    gic_add_to_lr_pending(v, irq_to_pending(v, virtual_irq));
+    gic_add_to_lr_pending(v, p);
 }
 
 static void gic_update_one_lr(struct vcpu *v, int i)
@@ -480,7 +477,7 @@ static void gic_update_one_lr(struct vcpu *v, int i)
         if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
              test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) &&
              !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
-            gic_raise_guest_irq(v, irq, p->priority);
+            gic_raise_guest_irq(v, p);
         else {
             list_del_init(&p->inflight);
             /*
