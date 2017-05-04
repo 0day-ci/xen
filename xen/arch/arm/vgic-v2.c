@@ -66,19 +66,21 @@ void vgic_v2_setup_hw(paddr_t dbase, paddr_t cbase, paddr_t csize,
  *
  * Note the byte offset will be aligned to an ITARGETSR<n> boundary.
  */
-static uint32_t vgic_fetch_itargetsr(struct vgic_irq_rank *rank,
-                                     unsigned int offset)
+static uint32_t vgic_fetch_itargetsr(struct vcpu *v, unsigned int offset)
 {
     uint32_t reg = 0;
     unsigned int i;
 
-    ASSERT(spin_is_locked(&rank->lock));
-
-    offset &= INTERRUPT_RANK_MASK;
     offset &= ~(NR_TARGETS_PER_ITARGETSR - 1);
 
     for ( i = 0; i < NR_TARGETS_PER_ITARGETSR; i++, offset++ )
-        reg |= (1 << read_atomic(&rank->vcpu[offset])) << (i * NR_BITS_PER_TARGET);
+    {
+        struct pending_irq *p = irq_to_pending(v, offset);
+
+        spin_lock(&p->lock);
+        reg |= (1 << p->vcpu_id) << (i * NR_BITS_PER_TARGET);
+        spin_unlock(&p->lock);
+    }
 
     return reg;
 }
@@ -89,32 +91,28 @@ static uint32_t vgic_fetch_itargetsr(struct vgic_irq_rank *rank,
  *
  * Note the byte offset will be aligned to an ITARGETSR<n> boundary.
  */
-static void vgic_store_itargetsr(struct domain *d, struct vgic_irq_rank *rank,
+static void vgic_store_itargetsr(struct domain *d,
                                  unsigned int offset, uint32_t itargetsr)
 {
     unsigned int i;
     unsigned int virq;
 
-    ASSERT(spin_is_locked(&rank->lock));
-
     /*
      * The ITARGETSR0-7, used for SGIs/PPIs, are implemented RO in the
      * emulation and should never call this function.
      *
-     * They all live in the first rank.
+     * They all live in the first four bytes of ITARGETSR.
      */
-    BUILD_BUG_ON(NR_INTERRUPT_PER_RANK != 32);
-    ASSERT(rank->index >= 1);
+    ASSERT(offset >= 4);
 
-    offset &= INTERRUPT_RANK_MASK;
+    virq = offset;
     offset &= ~(NR_TARGETS_PER_ITARGETSR - 1);
-
-    virq = rank->index * NR_INTERRUPT_PER_RANK + offset;
 
     for ( i = 0; i < NR_TARGETS_PER_ITARGETSR; i++, offset++, virq++ )
     {
         unsigned int new_target, old_target;
         uint8_t new_mask;
+        struct pending_irq *p = spi_to_pending(d, virq);
 
         /*
          * Don't need to mask as we rely on new_mask to fit for only one
@@ -151,16 +149,17 @@ static void vgic_store_itargetsr(struct domain *d, struct vgic_irq_rank *rank,
         /* The vCPU ID always starts from 0 */
         new_target--;
 
-        old_target = read_atomic(&rank->vcpu[offset]);
+        spin_lock(&p->lock);
+
+        old_target = p->vcpu_id;
 
         /* Only migrate the vIRQ if the target vCPU has changed */
         if ( new_target != old_target )
         {
-            if ( vgic_migrate_irq(d->vcpu[old_target],
-                             d->vcpu[new_target],
-                             virq) )
-                write_atomic(&rank->vcpu[offset], new_target);
+            if ( vgic_migrate_irq(p, d->vcpu[old_target], d->vcpu[new_target]) )
+                p->vcpu_id = new_target;
         }
+        spin_unlock(&p->lock);
     }
 }
 
@@ -168,9 +167,7 @@ static int vgic_v2_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
                                    register_t *r, void *priv)
 {
     struct hsr_dabt dabt = info->dabt;
-    struct vgic_irq_rank *rank;
     int gicd_reg = (int)(info->gpa - v->domain->arch.vgic.dbase);
-    unsigned long flags;
     unsigned int irq;
 
     perfc_incr(vgicd_reads);
@@ -259,11 +256,7 @@ static int vgic_v2_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
         uint32_t itargetsr;
 
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 8, gicd_reg - GICD_ITARGETSR, DABT_WORD);
-        if ( rank == NULL) goto read_as_zero;
-        vgic_lock_rank(v, rank, flags);
-        itargetsr = vgic_fetch_itargetsr(rank, gicd_reg - GICD_ITARGETSR);
-        vgic_unlock_rank(v, rank, flags);
+        itargetsr = vgic_fetch_itargetsr(v, gicd_reg - GICD_ITARGETSR);
         *r = vgic_reg32_extract(itargetsr, info);
 
         return 1;
@@ -385,10 +378,8 @@ static int vgic_v2_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
                                     register_t r, void *priv)
 {
     struct hsr_dabt dabt = info->dabt;
-    struct vgic_irq_rank *rank;
     int gicd_reg = (int)(info->gpa - v->domain->arch.vgic.dbase);
     uint32_t tr;
-    unsigned long flags;
     unsigned int irq;
 
     perfc_incr(vgicd_writes);
@@ -492,14 +483,10 @@ static int vgic_v2_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
         uint32_t itargetsr;
 
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 8, gicd_reg - GICD_ITARGETSR, DABT_WORD);
-        if ( rank == NULL) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        itargetsr = vgic_fetch_itargetsr(rank, gicd_reg - GICD_ITARGETSR);
+        itargetsr = vgic_fetch_itargetsr(v, gicd_reg - GICD_ITARGETSR);
         vgic_reg32_update(&itargetsr, r, info);
-        vgic_store_itargetsr(v->domain, rank, gicd_reg - GICD_ITARGETSR,
+        vgic_store_itargetsr(v->domain, gicd_reg - GICD_ITARGETSR,
                              itargetsr);
-        vgic_unlock_rank(v, rank, flags);
         return 1;
     }
 
