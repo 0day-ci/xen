@@ -224,20 +224,15 @@ static int vgic_v2_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
 
     case VRANGE32(GICD_ISENABLER, GICD_ISENABLERN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 1, gicd_reg - GICD_ISENABLER, DABT_WORD);
-        if ( rank == NULL) goto read_as_zero;
-        vgic_lock_rank(v, rank, flags);
-        *r = vgic_reg32_extract(rank->ienable, info);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (gicd_reg - GICD_ISENABLER) * 8;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto read_as_zero;
+        *r = vgic_reg32_extract(gather_irq_info_enabled(v, irq), info);
         return 1;
 
     case VRANGE32(GICD_ICENABLER, GICD_ICENABLERN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 1, gicd_reg - GICD_ICENABLER, DABT_WORD);
-        if ( rank == NULL) goto read_as_zero;
-        vgic_lock_rank(v, rank, flags);
-        *r = vgic_reg32_extract(rank->ienable, info);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (gicd_reg - GICD_ISENABLER) * 8;
+        *r = vgic_reg32_extract(gather_irq_info_enabled(v, irq), info);
         return 1;
 
     /* Read the pending status of an IRQ via GICD is not supported */
@@ -430,24 +425,19 @@ static int vgic_v2_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
 
     case VRANGE32(GICD_ISENABLER, GICD_ISENABLERN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 1, gicd_reg - GICD_ISENABLER, DABT_WORD);
-        if ( rank == NULL) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        tr = rank->ienable;
-        vgic_reg32_setbits(&rank->ienable, r, info);
-        vgic_enable_irqs(v, (rank->ienable) & (~tr), rank->index);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (gicd_reg - GICD_ISENABLER) * 8;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto write_ignore;
+        tr = gather_irq_info_enabled(v, irq);
+        vgic_reg32_setbits(&tr, r, info);
+        vgic_enable_irqs(v, irq, tr);
         return 1;
 
     case VRANGE32(GICD_ICENABLER, GICD_ICENABLERN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 1, gicd_reg - GICD_ICENABLER, DABT_WORD);
-        if ( rank == NULL) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        tr = rank->ienable;
-        vgic_reg32_clearbits(&rank->ienable, r, info);
-        vgic_disable_irqs(v, (~rank->ienable) & tr, rank->index);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (gicd_reg - GICD_ISENABLER) * 8;
+        tr = gather_irq_info_enabled(v, irq);
+        vgic_reg32_clearbits(&tr, r, info);
+        vgic_disable_irqs(v, irq, tr);
         return 1;
 
     case VRANGE32(GICD_ISPENDR, GICD_ISPENDRN):

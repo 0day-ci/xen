@@ -235,6 +235,11 @@ static void set_priority(struct pending_irq *p, uint8_t prio)
     p->new_priority = prio;
 }
 
+unsigned int extract_enabled(struct pending_irq *p)
+{
+    return test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) ? 1 : 0;
+}
+
 unsigned int extract_config(struct pending_irq *p)
 {
     return test_bit(GIC_IRQ_GUEST_EDGE, &p->status) ? 2 : 0;
@@ -280,6 +285,7 @@ void scatter_irq_info_##name(struct vcpu *v, unsigned int irq,               \
 /* grep fodder: gather_irq_info_priority, scatter_irq_info_priority below */
 DEFINE_GATHER_IRQ_INFO(priority, extract_priority, 8)
 DEFINE_SCATTER_IRQ_INFO(priority, set_priority, 8)
+DEFINE_GATHER_IRQ_INFO(enabled, extract_enabled, 1)
 DEFINE_GATHER_IRQ_INFO(config, extract_config, 2)
 DEFINE_SCATTER_IRQ_INFO(config, set_config, 2)
 
@@ -347,21 +353,19 @@ void arch_move_irqs(struct vcpu *v)
     }
 }
 
-void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n)
+void vgic_disable_irqs(struct vcpu *v, unsigned int irq, uint32_t r)
 {
     const unsigned long mask = r;
     struct pending_irq *p;
-    unsigned int irq;
     unsigned long flags;
     int i = 0;
     struct vcpu *v_target;
 
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
-        irq = i + (32 * n);
-        v_target = vgic_get_target_vcpu(v, irq);
-        p = irq_to_pending(v_target, irq);
+        v_target = vgic_get_target_vcpu(v, irq + i);
+        p = irq_to_pending(v_target, irq + i);
         clear_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
-        gic_remove_from_queues(v_target, irq);
+        gic_remove_from_queues(v_target, irq + i);
         if ( p->desc != NULL )
         {
             spin_lock_irqsave(&p->desc->lock, flags);
@@ -372,22 +376,21 @@ void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n)
     }
 }
 
-void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
+void vgic_enable_irqs(struct vcpu *v, unsigned int irq, uint32_t r)
 {
     const unsigned long mask = r;
     struct pending_irq *p;
-    unsigned int irq, int_type;
+    unsigned int int_type;
     unsigned long flags;
     int i = 0;
     struct vcpu *v_target;
     struct domain *d = v->domain;
 
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
-        irq = i + (32 * n);
-        v_target = vgic_get_target_vcpu(v, irq);
+        v_target = vgic_get_target_vcpu(v, irq + i);
 
         spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
-        p = irq_to_pending(v_target, irq);
+        p = irq_to_pending(v_target, irq + i);
         spin_lock(&p->lock);
 
         set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
@@ -406,7 +409,7 @@ void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
              * The irq cannot be a PPI, we only support delivery of SPIs
              * to guests.
              */
-            ASSERT(irq >= 32);
+            ASSERT(irq + i >= 32);
             if ( irq_type_set_by_domain(d) )
                 gic_set_irq_type(p->desc, int_type);
             p->desc->handler->enable(p->desc);

@@ -474,8 +474,6 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
                                             register_t *r)
 {
     struct hsr_dabt dabt = info->dabt;
-    struct vgic_irq_rank *rank;
-    unsigned long flags;
     unsigned int irq;
 
     switch ( reg )
@@ -487,20 +485,16 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
 
     case VRANGE32(GICD_ISENABLER, GICD_ISENABLERN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 1, reg - GICD_ISENABLER, DABT_WORD);
-        if ( rank == NULL ) goto read_as_zero;
-        vgic_lock_rank(v, rank, flags);
-        *r = vgic_reg32_extract(rank->ienable, info);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (reg - GICD_ISENABLER) * 8;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto read_as_zero;
+        *r = vgic_reg32_extract(gather_irq_info_enabled(v, irq), info);
         return 1;
 
     case VRANGE32(GICD_ICENABLER, GICD_ICENABLERN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 1, reg - GICD_ICENABLER, DABT_WORD);
-        if ( rank == NULL ) goto read_as_zero;
-        vgic_lock_rank(v, rank, flags);
-        *r = vgic_reg32_extract(rank->ienable, info);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (reg - GICD_ISENABLER) * 8;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto read_as_zero;
+        *r = vgic_reg32_extract(gather_irq_info_enabled(v, irq), info);
         return 1;
 
     /* Read the pending status of an IRQ via GICD/GICR is not supported */
@@ -550,9 +544,6 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
                                              register_t r)
 {
     struct hsr_dabt dabt = info->dabt;
-    struct vgic_irq_rank *rank;
-    uint32_t tr;
-    unsigned long flags;
     unsigned int irq;
 
     switch ( reg )
@@ -562,26 +553,32 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
         goto write_ignore_32;
 
     case VRANGE32(GICD_ISENABLER, GICD_ISENABLERN):
+    {
+        uint32_t new_reg, tr;
+
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 1, reg - GICD_ISENABLER, DABT_WORD);
-        if ( rank == NULL ) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        tr = rank->ienable;
-        vgic_reg32_setbits(&rank->ienable, r, info);
-        vgic_enable_irqs(v, (rank->ienable) & (~tr), rank->index);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (reg - GICD_ISENABLER) * 8;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto write_ignore;
+        new_reg = gather_irq_info_enabled(v, irq);
+        tr = new_reg;
+        vgic_reg32_setbits(&new_reg, r, info);
+        vgic_enable_irqs(v, irq, new_reg & (~tr));
         return 1;
+    }
 
     case VRANGE32(GICD_ICENABLER, GICD_ICENABLERN):
+    {
+        uint32_t new_reg, tr;
+
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 1, reg - GICD_ICENABLER, DABT_WORD);
-        if ( rank == NULL ) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        tr = rank->ienable;
-        vgic_reg32_clearbits(&rank->ienable, r, info);
-        vgic_disable_irqs(v, (~rank->ienable) & tr, rank->index);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (reg - GICD_ISENABLER) * 8;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto write_ignore;
+        new_reg = gather_irq_info_enabled(v, irq);
+        tr = new_reg;
+        vgic_reg32_clearbits(&new_reg, r, info);
+        vgic_disable_irqs(v, irq, (~new_reg) & tr);
         return 1;
+    }
 
     case VRANGE32(GICD_ISPENDR, GICD_ISPENDRN):
         if ( dabt.size != DABT_WORD ) goto bad_width;

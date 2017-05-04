@@ -104,8 +104,6 @@ struct vgic_irq_rank {
 
     uint8_t index;
 
-    uint32_t ienable;
-
     /*
      * It's more convenient to store a target VCPU per vIRQ
      * than the register ITARGETSR/IROUTER itself.
@@ -178,6 +176,7 @@ void scatter_irq_info_priority(struct vcpu *v, unsigned int irq,
 uint32_t gather_irq_info_config(struct vcpu *v, unsigned int irq);
 void scatter_irq_info_config(struct vcpu *v, unsigned int irq,
                              unsigned int value);
+uint32_t gather_irq_info_enabled(struct vcpu *v, unsigned int irq);
 
 #define VGIC_REG_MASK(size) ((~0UL) >> (BITS_PER_LONG - ((1 << (size)) * 8)))
 
@@ -311,8 +310,8 @@ extern struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq);
 extern struct vgic_irq_rank *vgic_rank_offset(struct vcpu *v, int b, int n, int s);
 extern struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq);
 extern bool vgic_emulate(struct cpu_user_regs *regs, union hsr hsr);
-extern void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n);
-extern void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n);
+extern void vgic_disable_irqs(struct vcpu *v, unsigned int irq, uint32_t r);
+extern void vgic_enable_irqs(struct vcpu *v, unsigned int irq, uint32_t r);
 extern void register_vgic_ops(struct domain *d, const struct vgic_ops *ops);
 int vgic_v2_init(struct domain *d, int *mmio_count);
 int vgic_v3_init(struct domain *d, int *mmio_count);
