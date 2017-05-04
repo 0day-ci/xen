@@ -81,6 +81,14 @@ struct pending_irq
      * TODO: when implementing irq migration, taking only the current
      * vgic lock is not going to be enough. */
     struct list_head lr_queue;
+    /* The lock protects the consistency of this structure. A single status bit
+     * can be read and/or set without holding the lock using the atomic
+     * set_bit/clear_bit/test_bit functions, however accessing multiple bits or
+     * relating to other members in this struct requires the lock.
+     * The list_head members are protected by their corresponding VCPU lock,
+     * it is not sufficient to hold this pending_irq lock here to query or
+     * change list order or affiliation. */
+    spinlock_t lock;
 };
 
 #define NR_INTERRUPT_PER_RANK   32
