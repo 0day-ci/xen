@@ -351,6 +351,7 @@ void gic_disable_cpu(void)
 static inline void gic_set_lr(int lr, struct pending_irq *p,
                               unsigned int state)
 {
+    ASSERT(spin_is_locked(&p->lock));
     ASSERT(!local_irq_is_enabled());
 
     gic_hw_ops->update_lr(lr, p, state);
@@ -413,6 +414,7 @@ void gic_raise_guest_irq(struct vcpu *v, struct pending_irq *p)
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
 
     ASSERT(spin_is_locked(&v->arch.vgic.lock));
+    ASSERT(spin_is_locked(&p->lock));
 
     if ( v == current && list_empty(&v->arch.vgic.lr_pending) )
     {
@@ -439,6 +441,7 @@ static void gic_update_one_lr(struct vcpu *v, int i)
     gic_hw_ops->read_lr(i, &lr_val);
     irq = lr_val.virq;
     p = irq_to_pending(v, irq);
+    spin_lock(&p->lock);
     if ( lr_val.state & GICH_LR_ACTIVE )
     {
         set_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
@@ -495,6 +498,7 @@ static void gic_update_one_lr(struct vcpu *v, int i)
             }
         }
     }
+    spin_unlock(&p->lock);
 }
 
 void gic_clear_lrs(struct vcpu *v)
@@ -545,14 +549,30 @@ static void gic_restore_pending_irqs(struct vcpu *v)
             /* No more free LRs: find a lower priority irq to evict */
             list_for_each_entry_reverse( p_r, inflight_r, inflight )
             {
+                if ( p_r->irq < p->irq )
+                {
+                    spin_lock(&p_r->lock);
+                    spin_lock(&p->lock);
+                }
+                else
+                {
+                    spin_lock(&p->lock);
+                    spin_lock(&p_r->lock);
+                }
                 if ( p_r->priority == p->priority )
+                {
+                    spin_unlock(&p->lock);
+                    spin_unlock(&p_r->lock);
                     goto out;
+                }
                 if ( test_bit(GIC_IRQ_GUEST_VISIBLE, &p_r->status) &&
                      !test_bit(GIC_IRQ_GUEST_ACTIVE, &p_r->status) )
                     goto found;
             }
             /* We didn't find a victim this time, and we won't next
              * time, so quit */
+            spin_unlock(&p->lock);
+            spin_unlock(&p_r->lock);
             goto out;
 
 found:
@@ -562,11 +582,17 @@ found:
             clear_bit(GIC_IRQ_GUEST_VISIBLE, &p_r->status);
             gic_add_to_lr_pending(v, p_r);
             inflight_r = &p_r->inflight;
+
+            spin_unlock(&p_r->lock);
         }
+        else
+            spin_lock(&p->lock);
 
         gic_set_lr(lr, p, GICH_LR_PENDING);
         list_del_init(&p->lr_queue);
         set_bit(lr, &this_cpu(lr_mask));
+
+        spin_unlock(&p->lock);
 
         /* We can only evict nr_lrs entries */
         lrs--;

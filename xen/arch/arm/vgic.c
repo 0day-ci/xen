@@ -356,11 +356,16 @@ void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
         irq = i + (32 * n);
         v_target = vgic_get_target_vcpu(v, irq);
-        p = irq_to_pending(v_target, irq);
-        set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+
         spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
+        p = irq_to_pending(v_target, irq);
+        spin_lock(&p->lock);
+
+        set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+
         if ( !list_empty(&p->inflight) && !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
             gic_raise_guest_irq(v_target, p);
+        spin_unlock(&p->lock);
         spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
         if ( p->desc != NULL )
         {
@@ -482,10 +487,12 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
         return;
     }
 
+    spin_lock(&n->lock);
     set_bit(GIC_IRQ_GUEST_QUEUED, &n->status);
 
     if ( !list_empty(&n->inflight) )
     {
+        spin_unlock(&n->lock);
         gic_raise_inflight_irq(v, n);
         goto out;
     }
@@ -501,10 +508,13 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
         if ( iter->priority > priority )
         {
             list_add_tail(&n->inflight, &iter->inflight);
+            spin_unlock(&n->lock);
             goto out;
         }
     }
     list_add_tail(&n->inflight, &v->arch.vgic.inflight_irqs);
+    spin_unlock(&n->lock);
+
 out:
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
     /* we have a new higher priority irq, inject it into the guest */
