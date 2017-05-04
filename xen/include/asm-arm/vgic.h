@@ -96,16 +96,6 @@ struct pending_irq
     spinlock_t lock;
 };
 
-#define NR_INTERRUPT_PER_RANK   32
-#define INTERRUPT_RANK_MASK (NR_INTERRUPT_PER_RANK - 1)
-
-/* Represents state corresponding to a block of 32 interrupts */
-struct vgic_irq_rank {
-    spinlock_t lock; /* Covers access to all other members of this struct */
-
-    uint8_t index;
-};
-
 struct sgi_target {
     uint8_t aff1;
     uint16_t list;
@@ -130,38 +120,8 @@ struct vgic_ops {
     const unsigned int max_vcpus;
 };
 
-/* Number of ranks of interrupt registers for a domain */
-#define DOMAIN_NR_RANKS(d) (((d)->arch.vgic.nr_spis+31)/32)
-
 #define vgic_lock(v)   spin_lock_irq(&(v)->domain->arch.vgic.lock)
 #define vgic_unlock(v) spin_unlock_irq(&(v)->domain->arch.vgic.lock)
-
-#define vgic_lock_rank(v, r, flags)   spin_lock_irqsave(&(r)->lock, flags)
-#define vgic_unlock_rank(v, r, flags) spin_unlock_irqrestore(&(r)->lock, flags)
-
-/*
- * Rank containing GICD_<FOO><n> for GICD_<FOO> with
- * <b>-bits-per-interrupt
- */
-static inline int REG_RANK_NR(int b, uint32_t n)
-{
-    switch ( b )
-    {
-    /*
-     * IRQ ranks are of size 32. So n cannot be shifted beyond 5 for 32
-     * and above. For 64-bit n is already shifted DBAT_DOUBLE_WORD
-     * by the caller
-     */
-    case 64:
-    case 32: return n >> 5;
-    case 16: return n >> 4;
-    case 8: return n >> 3;
-    case 4: return n >> 2;
-    case 2: return n >> 1;
-    case 1: return n;
-    default: BUG();
-    }
-}
 
 uint32_t gather_irq_info_priority(struct vcpu *v, unsigned int irq);
 void scatter_irq_info_priority(struct vcpu *v, unsigned int irq,
@@ -283,12 +243,6 @@ VGIC_REG_HELPERS(32, 0x3);
 
 enum gic_sgi_mode;
 
-/*
- * Offset of GICD_<FOO><n> with its rank, for GICD_<FOO> size <s> with
- * <b>-bits-per-interrupt.
- */
-#define REG_RANK_INDEX(b, n, s) ((((n) >> s) & ((b)-1)) % 32)
-
 #define vgic_num_irqs(d)        ((d)->arch.vgic.nr_spis + 32)
 
 extern int domain_vgic_init(struct domain *d, unsigned int nr_spis);
@@ -306,8 +260,6 @@ extern void vgic_put_pending_irq(struct domain *d, struct pending_irq *p);
 extern void vgic_put_pending_irq_unlock(struct domain *d,
                                         struct pending_irq *p);
 extern struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq);
-extern struct vgic_irq_rank *vgic_rank_offset(struct vcpu *v, int b, int n, int s);
-extern struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq);
 extern bool vgic_emulate(struct cpu_user_regs *regs, union hsr hsr);
 extern void vgic_disable_irqs(struct vcpu *v, unsigned int irq, uint32_t r);
 extern void vgic_enable_irqs(struct vcpu *v, unsigned int irq, uint32_t r);
