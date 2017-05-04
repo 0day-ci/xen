@@ -235,6 +235,19 @@ static void set_priority(struct pending_irq *p, uint8_t prio)
     p->new_priority = prio;
 }
 
+unsigned int extract_config(struct pending_irq *p)
+{
+    return test_bit(GIC_IRQ_GUEST_EDGE, &p->status) ? 2 : 0;
+}
+
+static void set_config(struct pending_irq *p, unsigned int config)
+{
+    if ( config < 2 )
+        clear_bit(GIC_IRQ_GUEST_EDGE, &p->status);
+    else
+        set_bit(GIC_IRQ_GUEST_EDGE, &p->status);
+}
+
 
 #define DEFINE_GATHER_IRQ_INFO(name, get_val, shift)                         \
 uint32_t gather_irq_info_##name(struct vcpu *v, unsigned int irq)            \
@@ -267,6 +280,8 @@ void scatter_irq_info_##name(struct vcpu *v, unsigned int irq,               \
 /* grep fodder: gather_irq_info_priority, scatter_irq_info_priority below */
 DEFINE_GATHER_IRQ_INFO(priority, extract_priority, 8)
 DEFINE_SCATTER_IRQ_INFO(priority, set_priority, 8)
+DEFINE_GATHER_IRQ_INFO(config, extract_config, 2)
+DEFINE_SCATTER_IRQ_INFO(config, set_config, 2)
 
 bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq)
 {
@@ -357,27 +372,11 @@ void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n)
     }
 }
 
-#define VGIC_ICFG_MASK(intr) (1 << ((2 * ((intr) % 16)) + 1))
-
-/* The function should be called with the rank lock taken */
-static inline unsigned int vgic_get_virq_type(struct vcpu *v, int n, int index)
-{
-    struct vgic_irq_rank *r = vgic_get_rank(v, n);
-    uint32_t tr = r->icfg[index >> 4];
-
-    ASSERT(spin_is_locked(&r->lock));
-
-    if ( tr & VGIC_ICFG_MASK(index) )
-        return IRQ_TYPE_EDGE_RISING;
-    else
-        return IRQ_TYPE_LEVEL_HIGH;
-}
-
 void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
 {
     const unsigned long mask = r;
     struct pending_irq *p;
-    unsigned int irq;
+    unsigned int irq, int_type;
     unsigned long flags;
     int i = 0;
     struct vcpu *v_target;
@@ -392,6 +391,8 @@ void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
         spin_lock(&p->lock);
 
         set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+        int_type = test_bit(GIC_IRQ_GUEST_EDGE, &p->status) ?
+                            IRQ_TYPE_EDGE_RISING : IRQ_TYPE_LEVEL_HIGH;
 
         if ( !list_empty(&p->inflight) && !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
             gic_raise_guest_irq(v_target, p);
@@ -399,15 +400,15 @@ void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
         spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
         if ( p->desc != NULL )
         {
-            irq_set_affinity(p->desc, cpumask_of(v_target->processor));
             spin_lock_irqsave(&p->desc->lock, flags);
+            irq_set_affinity(p->desc, cpumask_of(v_target->processor));
             /*
              * The irq cannot be a PPI, we only support delivery of SPIs
              * to guests.
              */
             ASSERT(irq >= 32);
             if ( irq_type_set_by_domain(d) )
-                gic_set_irq_type(p->desc, vgic_get_virq_type(v, n, i));
+                gic_set_irq_type(p->desc, int_type);
             p->desc->handler->enable(p->desc);
             spin_unlock_irqrestore(&p->desc->lock, flags);
         }

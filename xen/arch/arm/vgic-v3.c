@@ -521,20 +521,11 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
         return 1;
 
     case VRANGE32(GICD_ICFGR, GICD_ICFGRN):
-    {
-        uint32_t icfgr;
-
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 2, reg - GICD_ICFGR, DABT_WORD);
-        if ( rank == NULL ) goto read_as_zero;
-        vgic_lock_rank(v, rank, flags);
-        icfgr = rank->icfg[REG_RANK_INDEX(2, reg - GICD_ICFGR, DABT_WORD)];
-        vgic_unlock_rank(v, rank, flags);
-
-        *r = vgic_reg32_extract(icfgr, info);
-
+        irq = (reg - GICD_IPRIORITYR) * 4;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto read_as_zero;
+        *r = vgic_reg32_extract(gather_irq_info_config(v, irq), info);
         return 1;
-    }
 
     default:
         printk(XENLOG_G_ERR
@@ -636,17 +627,19 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
         goto write_ignore_32;
 
     case VRANGE32(GICD_ICFGR + 4, GICD_ICFGRN): /* PPI + SPIs */
+    {
+        uint32_t icfgr;
+
         /* ICFGR1 for PPI's, which is implementation defined
            if ICFGR1 is programmable or not. We chose to program */
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 2, reg - GICD_ICFGR, DABT_WORD);
-        if ( rank == NULL ) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        vgic_reg32_update(&rank->icfg[REG_RANK_INDEX(2, reg - GICD_ICFGR,
-                                                     DABT_WORD)],
-                          r, info);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (reg - GICD_ICFGR) * 4;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto write_ignore;
+        icfgr = gather_irq_info_config(v, irq);
+        vgic_reg32_update(&icfgr, r, info);
+        scatter_irq_info_config(v, irq, icfgr);
         return 1;
+    }
 
     default:
         printk(XENLOG_G_ERR

@@ -278,20 +278,10 @@ static int vgic_v2_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
         goto read_reserved;
 
     case VRANGE32(GICD_ICFGR, GICD_ICFGRN):
-    {
-        uint32_t icfgr;
-
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 2, gicd_reg - GICD_ICFGR, DABT_WORD);
-        if ( rank == NULL) goto read_as_zero;
-        vgic_lock_rank(v, rank, flags);
-        icfgr = rank->icfg[REG_RANK_INDEX(2, gicd_reg - GICD_ICFGR, DABT_WORD)];
-        vgic_unlock_rank(v, rank, flags);
-
-        *r = vgic_reg32_extract(icfgr, info);
-
+        irq = (gicd_reg - GICD_ICFGR) * 4;
+        *r = vgic_reg32_extract(gather_irq_info_config(v, irq), info);
         return 1;
-    }
 
     case VRANGE32(0xD00, 0xDFC):
         goto read_impl_defined;
@@ -534,15 +524,16 @@ static int vgic_v2_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
         goto write_ignore_32;
 
     case VRANGE32(GICD_ICFGR2, GICD_ICFGRN): /* SPIs */
+    {
+        uint32_t icfgr;
+
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 2, gicd_reg - GICD_ICFGR, DABT_WORD);
-        if ( rank == NULL) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        vgic_reg32_update(&rank->icfg[REG_RANK_INDEX(2, gicd_reg - GICD_ICFGR,
-                                                     DABT_WORD)],
-                          r, info);
-        vgic_unlock_rank(v, rank, flags);
+        irq = (gicd_reg - GICD_ICFGR) * 4;
+        icfgr = gather_irq_info_config(v, irq);
+        vgic_reg32_update(&icfgr, r, info);
+        scatter_irq_info_config(v, irq, icfgr);
         return 1;
+    }
 
     case VRANGE32(0xD00, 0xDFC):
         goto write_impl_defined;

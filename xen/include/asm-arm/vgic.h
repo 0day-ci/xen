@@ -60,12 +60,15 @@ struct pending_irq
      * vcpu while it is still inflight and on an GICH_LR register on the
      * old vcpu.
      *
+     * GIC_IRQ_GUEST_EDGE: the IRQ is an edge triggered interrupt.
+     *
      */
 #define GIC_IRQ_GUEST_QUEUED   0
 #define GIC_IRQ_GUEST_ACTIVE   1
 #define GIC_IRQ_GUEST_VISIBLE  2
 #define GIC_IRQ_GUEST_ENABLED  3
 #define GIC_IRQ_GUEST_MIGRATING   4
+#define GIC_IRQ_GUEST_EDGE     5
     unsigned long status;
     struct irq_desc *desc; /* only set it the irq corresponds to a physical irq */
     unsigned int irq;
@@ -102,7 +105,6 @@ struct vgic_irq_rank {
     uint8_t index;
 
     uint32_t ienable;
-    uint32_t icfg[2];
 
     /*
      * It's more convenient to store a target VCPU per vIRQ
@@ -173,6 +175,9 @@ static inline int REG_RANK_NR(int b, uint32_t n)
 uint32_t gather_irq_info_priority(struct vcpu *v, unsigned int irq);
 void scatter_irq_info_priority(struct vcpu *v, unsigned int irq,
                                unsigned int value);
+uint32_t gather_irq_info_config(struct vcpu *v, unsigned int irq);
+void scatter_irq_info_config(struct vcpu *v, unsigned int irq,
+                             unsigned int value);
 
 #define VGIC_REG_MASK(size) ((~0UL) >> (BITS_PER_LONG - ((1 << (size)) * 8)))
 
