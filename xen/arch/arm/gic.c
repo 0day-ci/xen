@@ -136,9 +136,7 @@ void gic_route_irq_to_xen(struct irq_desc *desc, unsigned int priority)
 int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
                            struct irq_desc *desc, unsigned int priority)
 {
-    /* Use vcpu0 to retrieve the pending_irq struct. Given that we only
-     * route SPIs to guests, it doesn't make any difference. */
-    struct pending_irq *p = irq_to_pending(d->vcpu[0], virq);
+    struct pending_irq *p = vgic_get_pending_irq(d, NULL, virq);
 
     ASSERT(spin_is_locked(&desc->lock));
     /* Caller has already checked that the IRQ is an SPI */
@@ -148,7 +146,10 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
     if ( p->desc ||
          /* The VIRQ should not be already enabled by the guest */
          test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) )
+    {
+        vgic_put_pending_irq(d, p);
         return -EBUSY;
+    }
 
     desc->handler = gic_hw_ops->gic_guest_irq_type;
     set_bit(_IRQ_GUEST, &desc->status);
@@ -159,6 +160,7 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
 
     p->desc = desc;
 
+    vgic_put_pending_irq(d, p);
     return 0;
 }
 
@@ -166,7 +168,7 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
 int gic_remove_irq_from_guest(struct domain *d, unsigned int virq,
                               struct irq_desc *desc)
 {
-    struct pending_irq *p = irq_to_pending(d->vcpu[0], virq);
+    struct pending_irq *p = vgic_get_pending_irq(d, NULL, virq);
 
     ASSERT(spin_is_locked(&desc->lock));
     ASSERT(test_bit(_IRQ_GUEST, &desc->status));
@@ -189,13 +191,18 @@ int gic_remove_irq_from_guest(struct domain *d, unsigned int virq,
          */
         if ( test_bit(_IRQ_INPROGRESS, &desc->status) ||
              !test_bit(_IRQ_DISABLED, &desc->status) )
+        {
+            vgic_put_pending_irq(d, p);
             return -EBUSY;
+        }
     }
 
     clear_bit(_IRQ_GUEST, &desc->status);
     desc->handler = &no_irq_type;
 
     p->desc = NULL;
+
+    vgic_put_pending_irq(d, p);
 
     return 0;
 }
@@ -383,13 +390,14 @@ static inline void gic_add_to_lr_pending(struct vcpu *v, struct pending_irq *n)
 
 void gic_remove_from_queues(struct vcpu *v, unsigned int virtual_irq)
 {
-    struct pending_irq *p = irq_to_pending(v, virtual_irq);
+    struct pending_irq *p = vgic_get_pending_irq(v->domain, v, virtual_irq);
     unsigned long flags;
 
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
     if ( !list_empty(&p->lr_queue) )
         list_del_init(&p->lr_queue);
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    vgic_put_pending_irq(v->domain, p);
 }
 
 void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
@@ -406,6 +414,7 @@ void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
         gdprintk(XENLOG_DEBUG, "trying to inject irq=%u into d%dv%d, when it is still lr_pending\n",
                  n->irq, v->domain->domain_id, v->vcpu_id);
 #endif
+    vgic_put_pending_irq(v->domain, n);
 }
 
 void gic_raise_guest_irq(struct vcpu *v, struct pending_irq *p)
@@ -440,8 +449,9 @@ static void gic_update_one_lr(struct vcpu *v, int i)
 
     gic_hw_ops->read_lr(i, &lr_val);
     irq = lr_val.virq;
-    p = irq_to_pending(v, irq);
+    p = vgic_get_pending_irq(v->domain, v, irq);
     spin_lock(&p->lock);
+
     if ( lr_val.state & GICH_LR_ACTIVE )
     {
         set_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
@@ -499,7 +509,7 @@ static void gic_update_one_lr(struct vcpu *v, int i)
             }
         }
     }
-    spin_unlock(&p->lock);
+    vgic_put_pending_irq_unlock(v->domain, p);
 }
 
 void gic_clear_lrs(struct vcpu *v)

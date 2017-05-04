@@ -245,17 +245,16 @@ static void set_config(struct pending_irq *p, unsigned int config)
         set_bit(GIC_IRQ_GUEST_EDGE, &p->status);
 }
 
-
 #define DEFINE_GATHER_IRQ_INFO(name, get_val, shift)                         \
 uint32_t gather_irq_info_##name(struct vcpu *v, unsigned int irq)            \
 {                                                                            \
     uint32_t ret = 0, i;                                                     \
     for ( i = 0; i < (32 / shift); i++ )                                     \
     {                                                                        \
-        struct pending_irq *p = irq_to_pending(v, irq + i);                  \
+        struct pending_irq *p = vgic_get_pending_irq(v->domain, v, irq + i); \
         spin_lock(&p->lock);                                                 \
         ret |= get_val(p) << (shift * i);                                    \
-        spin_unlock(&p->lock);                                               \
+        vgic_put_pending_irq_unlock(v->domain, p);                           \
     }                                                                        \
     return ret;                                                              \
 }
@@ -267,10 +266,10 @@ void scatter_irq_info_##name(struct vcpu *v, unsigned int irq,               \
     unsigned int i;                                                          \
     for ( i = 0; i < (32 / shift); i++ )                                     \
     {                                                                        \
-        struct pending_irq *p = irq_to_pending(v, irq + i);                  \
+        struct pending_irq *p = vgic_get_pending_irq(v->domain, v, irq + i); \
         spin_lock(&p->lock);                                                 \
         set_val(p, (value >> (shift * i)) & ((1 << shift) - 1));             \
-        spin_unlock(&p->lock);                                               \
+        vgic_put_pending_irq_unlock(v->domain, p);                           \
     }                                                                        \
 }
 
@@ -332,13 +331,13 @@ void arch_move_irqs(struct vcpu *v)
 
     for ( i = 32; i < vgic_num_irqs(d); i++ )
     {
-        p = irq_to_pending(d->vcpu[0], i);
+        p = vgic_get_pending_irq(d, NULL, i);
         spin_lock(&p->lock);
         v_target = vgic_get_target_vcpu(d, p);
 
         if ( v_target == v && !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
             irq_set_affinity(p->desc, cpu_mask);
-        spin_unlock(&p->lock);
+        vgic_put_pending_irq_unlock(d, p);
     }
 }
 
@@ -351,7 +350,7 @@ void vgic_disable_irqs(struct vcpu *v, unsigned int irq, uint32_t r)
     struct vcpu *v_target;
 
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
-        p = irq_to_pending(v, irq + i);
+        p = vgic_get_pending_irq(v->domain, v, irq + i);
         v_target = vgic_get_target_vcpu(v->domain, p);
         clear_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
         gic_remove_from_queues(v_target, irq + i);
@@ -361,6 +360,7 @@ void vgic_disable_irqs(struct vcpu *v, unsigned int irq, uint32_t r)
             p->desc->handler->disable(p->desc);
             spin_unlock_irqrestore(&p->desc->lock, flags);
         }
+        vgic_put_pending_irq(v->domain, p);
         i++;
     }
 }
@@ -376,7 +376,7 @@ void vgic_enable_irqs(struct vcpu *v, unsigned int irq, uint32_t r)
     struct domain *d = v->domain;
 
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
-        p = irq_to_pending(v, irq + i);
+        p = vgic_get_pending_irq(d, v, irq + i);
         v_target = vgic_get_target_vcpu(d, p);
 
         spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
@@ -404,6 +404,7 @@ void vgic_enable_irqs(struct vcpu *v, unsigned int irq, uint32_t r)
             p->desc->handler->enable(p->desc);
             spin_unlock_irqrestore(&p->desc->lock, flags);
         }
+        vgic_put_pending_irq(v->domain, p);
         i++;
     }
 }
@@ -461,23 +462,39 @@ bool vgic_to_sgi(struct vcpu *v, register_t sgir, enum gic_sgi_mode irqmode,
     return true;
 }
 
-struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq)
-{
-    struct pending_irq *n;
-    /* Pending irqs allocation strategy: the first vgic.nr_spis irqs
-     * are used for SPIs; the rests are used for per cpu irqs */
-    if ( irq < 32 )
-        n = &v->arch.vgic.pending_irqs[irq];
-    else
-        n = &v->domain->arch.vgic.pending_irqs[irq - 32];
-    return n;
-}
-
 struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq)
 {
     ASSERT(irq >= NR_LOCAL_IRQS);
 
     return &d->arch.vgic.pending_irqs[irq - 32];
+}
+
+struct pending_irq *vgic_get_pending_irq(struct domain *d, struct vcpu *v,
+                                         unsigned int irq)
+{
+    struct pending_irq *n;
+
+    /* Pending irqs allocation strategy: the first vgic.nr_spis irqs
+     * are used for SPIs; the rests are used for per cpu irqs */
+    if ( irq < 32 )
+    {
+        ASSERT(v);
+        n = &v->arch.vgic.pending_irqs[irq];
+    }
+    else
+        n = spi_to_pending(d, irq);
+
+    return n;
+}
+
+void vgic_put_pending_irq(struct domain *d, struct pending_irq *p)
+{
+}
+
+void vgic_put_pending_irq_unlock(struct domain *d, struct pending_irq *p)
+{
+    spin_unlock(&p->lock);
+    vgic_put_pending_irq(d, p);
 }
 
 void vgic_clear_pending_irqs(struct vcpu *v)
@@ -494,7 +511,7 @@ void vgic_clear_pending_irqs(struct vcpu *v)
 
 void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 {
-    struct pending_irq *iter, *n = irq_to_pending(v, virq);
+    struct pending_irq *iter, *n = vgic_get_pending_irq(v->domain, v, virq);
     unsigned long flags;
     bool running;
 
@@ -504,6 +521,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     if ( test_bit(_VPF_down, &v->pause_flags) )
     {
         spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+        vgic_put_pending_irq(v->domain, n);
         return;
     }
 
@@ -536,6 +554,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     spin_unlock(&n->lock);
 
 out:
+    vgic_put_pending_irq(v->domain, n);
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
     /* we have a new higher priority irq, inject it into the guest */
     running = v->is_running;
@@ -550,12 +569,13 @@ out:
 void vgic_vcpu_inject_spi(struct domain *d, unsigned int virq)
 {
     struct vcpu *v;
-    struct pending_irq *p = irq_to_pending(d->vcpu[0], virq);
+    struct pending_irq *p = vgic_get_pending_irq(d, NULL, virq);
 
     /* the IRQ needs to be an SPI */
     ASSERT(virq >= 32 && virq <= vgic_num_irqs(d));
 
     v = vgic_get_target_vcpu(d, p);
+    vgic_put_pending_irq(d, p);
     vgic_vcpu_inject_irq(v, virq);
 }
 

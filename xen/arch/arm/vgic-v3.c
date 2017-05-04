@@ -105,10 +105,10 @@ static uint64_t vgic_fetch_irouter(struct vcpu *v, unsigned int offset)
     /* There is exactly 1 vIRQ per IROUTER */
     offset /= NR_BYTES_PER_IROUTER;
 
-    p = irq_to_pending(v, offset);
+    p = vgic_get_pending_irq(v->domain, v, offset);
     spin_lock(&p->lock);
     aff = vcpuid_to_vaffinity(p->vcpu_id);
-    spin_unlock(&p->lock);
+    vgic_put_pending_irq_unlock(v->domain, p);
 
     return aff;
 }

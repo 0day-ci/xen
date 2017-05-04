@@ -75,11 +75,11 @@ static uint32_t vgic_fetch_itargetsr(struct vcpu *v, unsigned int offset)
 
     for ( i = 0; i < NR_TARGETS_PER_ITARGETSR; i++, offset++ )
     {
-        struct pending_irq *p = irq_to_pending(v, offset);
+        struct pending_irq *p = vgic_get_pending_irq(v->domain, v, offset);
 
         spin_lock(&p->lock);
         reg |= (1 << p->vcpu_id) << (i * NR_BITS_PER_TARGET);
-        spin_unlock(&p->lock);
+        vgic_put_pending_irq_unlock(v->domain, p);
     }
 
     return reg;
