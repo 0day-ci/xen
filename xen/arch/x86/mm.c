@@ -3249,73 +3249,74 @@ long do_mmuext_op(
                 break;
             type = PGT_l4_page_table;
 
-        pin_page: {
-            struct page_info *page;
-
-            /* Ignore pinning of invalid paging levels. */
-            if ( (op.cmd - MMUEXT_PIN_L1_TABLE) > (CONFIG_PAGING_LEVELS - 1) )
-                break;
-
-            if ( paging_mode_refcounts(pg_owner) )
-                break;
-
-            page = get_page_from_gfn(pg_owner, op.arg1.mfn, NULL, P2M_ALLOC);
-            if ( unlikely(!page) )
+        pin_page:
             {
-                rc = -EINVAL;
-                break;
-            }
+                struct page_info *page;
 
-            rc = get_page_type_preemptible(page, type);
-            if ( unlikely(rc) )
-            {
-                if ( rc == -EINTR )
-                    rc = -ERESTART;
-                else if ( rc != -ERESTART )
-                    gdprintk(XENLOG_WARNING,
-                             "Error %d while pinning mfn %" PRI_mfn "\n",
-                            rc, page_to_mfn(page));
-                if ( page != curr->arch.old_guest_table )
-                    put_page(page);
-                break;
-            }
+                /* Ignore pinning of invalid paging levels. */
+                if ( (op.cmd - MMUEXT_PIN_L1_TABLE) > (CONFIG_PAGING_LEVELS - 1) )
+                    break;
 
-            rc = xsm_memory_pin_page(XSM_HOOK, d, pg_owner, page);
-            if ( !rc && unlikely(test_and_set_bit(_PGT_pinned,
-                                                  &page->u.inuse.type_info)) )
-            {
-                gdprintk(XENLOG_WARNING,
-                         "mfn %" PRI_mfn " already pinned\n", page_to_mfn(page));
-                rc = -EINVAL;
-            }
+                if ( paging_mode_refcounts(pg_owner) )
+                    break;
 
-            if ( unlikely(rc) )
-                goto pin_drop;
-
-            /* A page is dirtied when its pin status is set. */
-            paging_mark_dirty(pg_owner, _mfn(page_to_mfn(page)));
-
-            /* We can race domain destruction (domain_relinquish_resources). */
-            if ( unlikely(pg_owner != d) )
-            {
-                int drop_ref;
-                spin_lock(&pg_owner->page_alloc_lock);
-                drop_ref = (pg_owner->is_dying &&
-                            test_and_clear_bit(_PGT_pinned,
-                                               &page->u.inuse.type_info));
-                spin_unlock(&pg_owner->page_alloc_lock);
-                if ( drop_ref )
+                page = get_page_from_gfn(pg_owner, op.arg1.mfn, NULL, P2M_ALLOC);
+                if ( unlikely(!page) )
                 {
-        pin_drop:
-                    if ( type == PGT_l1_page_table )
-                        put_page_and_type(page);
-                    else
-                        curr->arch.old_guest_table = page;
+                    rc = -EINVAL;
+                    break;
                 }
-            }
 
-            break;
-        }
+                rc = get_page_type_preemptible(page, type);
+                if ( unlikely(rc) )
+                {
+                    if ( rc == -EINTR )
+                        rc = -ERESTART;
+                    else if ( rc != -ERESTART )
+                        gdprintk(XENLOG_WARNING,
+                                 "Error %d while pinning mfn %" PRI_mfn "\n",
+                                 rc, page_to_mfn(page));
+                    if ( page != curr->arch.old_guest_table )
+                        put_page(page);
+                    break;
+                }
+
+                rc = xsm_memory_pin_page(XSM_HOOK, d, pg_owner, page);
+                if ( !rc && unlikely(test_and_set_bit(_PGT_pinned,
+                                                      &page->u.inuse.type_info)) )
+                {
+                    gdprintk(XENLOG_WARNING,
+                             "mfn %" PRI_mfn " already pinned\n", page_to_mfn(page));
+                    rc = -EINVAL;
+                }
+
+                if ( unlikely(rc) )
+                    goto pin_drop;
+
+                /* A page is dirtied when its pin status is set. */
+                paging_mark_dirty(pg_owner, _mfn(page_to_mfn(page)));
+
+                /* We can race domain destruction (domain_relinquish_resources). */
+                if ( unlikely(pg_owner != d) )
+                {
+                    int drop_ref;
+                    spin_lock(&pg_owner->page_alloc_lock);
+                    drop_ref = (pg_owner->is_dying &&
+                                test_and_clear_bit(_PGT_pinned,
+                                                   &page->u.inuse.type_info));
+                    spin_unlock(&pg_owner->page_alloc_lock);
+                    if ( drop_ref )
+                    {
+                    pin_drop:
+                        if ( type == PGT_l1_page_table )
+                            put_page_and_type(page);
+                        else
+                            curr->arch.old_guest_table = page;
+                    }
+                }
+
+                break;
+            }
 
         case MMUEXT_UNPIN_TABLE: {
             struct page_info *page;
@@ -3478,7 +3479,7 @@ long do_mmuext_op(
             else
                 rc = -EPERM;
             break;
-    
+
         case MMUEXT_INVLPG_ALL:
             if ( unlikely(d != pg_owner) )
                 rc = -EPERM;
