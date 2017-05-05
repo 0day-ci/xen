@@ -78,6 +78,7 @@ typedef enum {
 typedef unsigned int p2m_query_t;
 #define P2M_ALLOC    (1u<<0)   /* Populate PoD and paged-out entries */
 #define P2M_UNSHARE  (1u<<1)   /* Break CoW sharing */
+#define P2M_PRE_RECALC (1u<<2)   /* Get p2m type before recalc */
 
 /* We use bitmaps and maks to handle groups of types */
 #define p2m_to_mask(_t) (1UL << (_t))

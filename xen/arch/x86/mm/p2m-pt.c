@@ -840,8 +840,11 @@ pod_retry_l3:
             mfn = _mfn(l3e_get_pfn(*l3e) +
                        l2_table_offset(addr) * L1_PAGETABLE_ENTRIES +
                        l1_table_offset(addr));
-            *t = p2m_recalc_type(recalc || _needs_recalc(flags),
-                                 p2m_flags_to_type(flags), p2m, gfn);
+            if ( !(q & P2M_PRE_RECALC) )
+                *t = p2m_recalc_type(recalc || _needs_recalc(flags),
+                                p2m_flags_to_type(flags), p2m, gfn);
+            else
+                *t = p2m_flags_to_type(flags);
             unmap_domain_page(l3e);
 
             ASSERT(mfn_valid(mfn) || !p2m_is_ram(*t));
@@ -879,8 +882,11 @@ pod_retry_l2:
     if ( flags & _PAGE_PSE )
     {
         mfn = _mfn(l2e_get_pfn(*l2e) + l1_table_offset(addr));
-        *t = p2m_recalc_type(recalc || _needs_recalc(flags),
-                             p2m_flags_to_type(flags), p2m, gfn);
+        if ( !(q & P2M_PRE_RECALC) )
+            *t = p2m_recalc_type(recalc || _needs_recalc(flags),
+                                p2m_flags_to_type(flags), p2m, gfn);
+        else
+            *t = p2m_flags_to_type(flags);
         unmap_domain_page(l2e);
         
         ASSERT(mfn_valid(mfn) || !p2m_is_ram(*t));
@@ -916,7 +922,10 @@ pod_retry_l1:
         return INVALID_MFN;
     }
     mfn = _mfn(l1e_get_pfn(*l1e));
-    *t = p2m_recalc_type(recalc || _needs_recalc(flags), l1t, p2m, gfn);
+    if ( !(q & P2M_PRE_RECALC) )
+        *t = p2m_recalc_type(recalc || _needs_recalc(flags), l1t, p2m, gfn);
+    else
+        *t = l1t;
     unmap_domain_page(l1e);
 
     ASSERT(mfn_valid(mfn) || !p2m_is_ram(*t) || p2m_is_paging(*t));

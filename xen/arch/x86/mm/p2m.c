@@ -1020,6 +1020,8 @@ void p2m_finish_type_change(struct domain *d,
     p2m_type_t t;
     unsigned long gfn = gfn_x(first_gfn);
     unsigned long last_gfn = gfn + max_nr - 1;
+    mfn_t mfn;
+    p2m_access_t a;
 
     ASSERT(ot != nt);
     ASSERT(p2m_is_changeable(ot) && p2m_is_changeable(nt));
@@ -1029,10 +1031,10 @@ void p2m_finish_type_change(struct domain *d,
     last_gfn = min(last_gfn, p2m->max_mapped_pfn);
     while ( gfn <= last_gfn )
     {
-        get_gfn_query_unlocked(d, gfn, &t);
-
+        mfn = p2m->get_entry(p2m, gfn, &t, &a, P2M_PRE_RECALC, NULL, NULL);
         if ( t == ot )
-            p2m_change_type_one(d, gfn, t, nt);
+            p2m_set_entry(p2m, gfn, mfn, PAGE_ORDER_4K, nt,
+                          p2m->default_access);
 
         gfn++;
     }

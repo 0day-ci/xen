@@ -991,8 +991,11 @@ static mfn_t ept_get_entry(struct p2m_domain *p2m,
 
     if ( is_epte_valid(ept_entry) )
     {
-        *t = p2m_recalc_type(recalc || ept_entry->recalc,
-                             ept_entry->sa_p2mt, p2m, gfn);
+        if ( !(q & P2M_PRE_RECALC) )
+            *t = p2m_recalc_type(recalc || ept_entry->recalc,
+                                 ept_entry->sa_p2mt, p2m, gfn);
+        else
+            *t = ept_entry->sa_p2mt;
         *a = ept_entry->access;
         if ( sve )
             *sve = ept_entry->suppress_ve;
