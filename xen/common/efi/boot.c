@@ -40,6 +40,8 @@
   { 0x605dab50, 0xe046, 0x4300, {0xab, 0xb6, 0x3d, 0xd8, 0x10, 0xdd, 0x8b, 0x23} }
 #define APPLE_PROPERTIES_PROTOCOL_GUID \
   { 0x91bd12fe, 0xf6c3, 0x44fb, { 0xa5, 0xb7, 0x51, 0x22, 0xab, 0x30, 0x3a, 0xe0} }
+#define EFI_PROPERTIES_TABLE_GUID \
+  { 0x880aaca3, 0x4adc, 0x4a04, { 0x90, 0x79, 0xb7, 0x47, 0x34, 0x08, 0x25, 0xe5} }
 
 typedef EFI_STATUS
 (/* _not_ EFIAPI */ *EFI_SHIM_LOCK_VERIFY) (
@@ -170,6 +172,15 @@ static CHAR16 __initdata newline[] = L"\r\n";
 static char __section(".bss.page_aligned") __aligned(PAGE_SIZE)
     ebmalloc_mem[EBMALLOC_SIZE];
 static unsigned long __initdata ebmalloc_allocated;
+
+struct efi_properties_table {
+    u32 version;
+    u32 length;
+    u64 memory_protection_attribute;
+};
+
+u64 __initdata efi_properties_tbl_addr;
+u32 __initdata efi_properties_tbl_size;
 
 /* EFI boot allocator. */
 static void __init __maybe_unused *ebmalloc(size_t size)
@@ -809,6 +820,7 @@ static void __init efi_tables(void)
         static EFI_GUID __initdata mps_guid = MPS_TABLE_GUID;
         static EFI_GUID __initdata smbios_guid = SMBIOS_TABLE_GUID;
         static EFI_GUID __initdata smbios3_guid = SMBIOS3_TABLE_GUID;
+        static EFI_GUID __initdata properties_guid = EFI_PROPERTIES_TABLE_GUID;
 
         if ( match_guid(&acpi2_guid, &efi_ct[i].VendorGuid) )
 	       efi.acpi20 = (long)efi_ct[i].VendorTable;
@@ -820,6 +832,14 @@ static void __init efi_tables(void)
 	       efi.smbios = (long)efi_ct[i].VendorTable;
         if ( match_guid(&smbios3_guid, &efi_ct[i].VendorGuid) )
 	       efi.smbios3 = (long)efi_ct[i].VendorTable;
+        if ( match_guid(&properties_guid, &efi_ct[i].VendorGuid) )
+        {
+            struct efi_properties_table *properties;
+
+            efi_properties_tbl_addr = (long)efi_ct[i].VendorTable;
+            properties = (struct efi_properties_table *)efi_properties_tbl_addr;
+            efi_properties_tbl_size = properties->length;
+        }
     }
 
 #ifndef CONFIG_ARM /* TODO - disabled until implemented on ARM */

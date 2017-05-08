@@ -209,6 +209,14 @@ static void __init efi_arch_process_memory_map(EFI_SYSTEM_TABLE *SystemTable,
         }
     }
 
+    if ( efi_properties_tbl_addr && efi_properties_tbl_size )
+    {
+        ++e;
+        e->addr = efi_properties_tbl_addr;
+        e->size = efi_properties_tbl_size;
+        e->type = E820_RESERVED;
+        ++e820_raw.nr_map;
+    }
 }
 
 static void *__init efi_arch_allocate_mmap_buffer(UINTN map_size)

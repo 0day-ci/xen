@@ -5,6 +5,7 @@
 #include <efi/efidevp.h>
 #include <efi/eficapsule.h>
 #include <efi/efiapi.h>
+#include <xen/init.h>
 #include <xen/efi.h>
 #include <xen/spinlock.h>
 #include <asm/page.h>
@@ -39,3 +40,6 @@ extern UINT64 efi_boot_max_var_store_size, efi_boot_remain_var_store_size,
 
 extern UINT64 efi_apple_properties_addr;
 extern UINTN efi_apple_properties_len;
+
+extern u64 __initdata efi_properties_tbl_addr;
+extern u32 __initdata efi_properties_tbl_size;
