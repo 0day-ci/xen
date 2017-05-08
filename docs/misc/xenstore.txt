@@ -46,7 +46,8 @@ them to within 2048 bytes.  (See XENSTORE_*_PATH_MAX in xs_wire.h.)
 Communication with xenstore is via either sockets, or event channel
 and shared memory, as specified in io/xs_wire.h: each message in
 either direction is a header formatted as a struct xsd_sockmsg
-followed by xsd_sockmsg.len bytes of payload.
+followed by xsd_sockmsg.len bytes of payload. The header fields are
+all in little endian byte order.
 
 The payload syntax varies according to the type field.  Generally
 requests each generate a reply with an identical type, req_id and
