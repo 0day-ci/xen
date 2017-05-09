@@ -502,7 +502,7 @@ static int ept_invalidate_emt_range(struct p2m_domain *p2m,
  * - zero if no adjustment was done,
  * - a positive value if at least one adjustment was done.
  */
-static int resolve_misconfig(struct p2m_domain *p2m, unsigned long gfn)
+static int ept_resolve_misconfig(struct p2m_domain *p2m, unsigned long gfn)
 {
     struct ept_data *ept = &p2m->ept;
     unsigned int level = ept->wl;
@@ -659,7 +659,7 @@ bool_t ept_handle_misconfig(uint64_t gpa)
     p2m_lock(p2m);
 
     spurious = curr->arch.hvm_vmx.ept_spurious_misconfig;
-    rc = resolve_misconfig(p2m, PFN_DOWN(gpa));
+    rc = ept_resolve_misconfig(p2m, PFN_DOWN(gpa));
     curr->arch.hvm_vmx.ept_spurious_misconfig = 0;
 
     p2m_unlock(p2m);
@@ -707,7 +707,7 @@ ept_set_entry(struct p2m_domain *p2m, unsigned long gfn, mfn_t mfn,
         return -EINVAL;
 
     /* Carry out any eventually pending earlier changes first. */
-    ret = resolve_misconfig(p2m, gfn);
+    ret = ept_resolve_misconfig(p2m, gfn);
     if ( ret < 0 )
         return ret;
 
@@ -1238,6 +1238,7 @@ int ept_p2m_init(struct p2m_domain *p2m)
 
     p2m->set_entry = ept_set_entry;
     p2m->get_entry = ept_get_entry;
+    p2m->recalc = ept_resolve_misconfig;
     p2m->change_entry_type_global = ept_change_entry_type_global;
     p2m->change_entry_type_range = ept_change_entry_type_range;
     p2m->memory_type_changed = ept_memory_type_changed;

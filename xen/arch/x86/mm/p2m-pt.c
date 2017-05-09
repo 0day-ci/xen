@@ -367,7 +367,7 @@ static int p2m_pt_set_recalc_range(struct p2m_domain *p2m,
  * GFN. Propagate the re-calculation flag down to the next page table level
  * for entries not involved in the translation of the given GFN.
  */
-static int do_recalc(struct p2m_domain *p2m, unsigned long gfn)
+static int p2m_pt_do_recalc(struct p2m_domain *p2m, unsigned long gfn)
 {
     void *table;
     unsigned long gfn_remainder = gfn;
@@ -493,7 +493,7 @@ int p2m_pt_handle_deferred_changes(uint64_t gpa)
     int rc;
 
     p2m_lock(p2m);
-    rc = do_recalc(p2m, PFN_DOWN(gpa));
+    rc = p2m_pt_do_recalc(p2m, PFN_DOWN(gpa));
     p2m_unlock(p2m);
 
     return rc;
@@ -555,7 +555,7 @@ p2m_pt_set_entry(struct p2m_domain *p2m, unsigned long gfn, mfn_t mfn,
     }
 
     /* Carry out any eventually pending earlier changes first. */
-    rc = do_recalc(p2m, gfn);
+    rc = p2m_pt_do_recalc(p2m, gfn);
     if ( rc < 0 )
         return rc;
 
@@ -1153,6 +1153,7 @@ void p2m_pt_init(struct p2m_domain *p2m)
 {
     p2m->set_entry = p2m_pt_set_entry;
     p2m->get_entry = p2m_pt_get_entry;
+    p2m->recalc = p2m_pt_do_recalc;
     p2m->change_entry_type_global = p2m_pt_change_entry_type_global;
     p2m->change_entry_type_range = p2m_pt_change_entry_type_range;
     p2m->write_p2m_entry = paging_write_p2m_entry;

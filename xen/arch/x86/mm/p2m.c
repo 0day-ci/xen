@@ -1013,26 +1013,18 @@ void p2m_change_type_range(struct domain *d,
 
 /* Synchronously modify the p2m type for a range of gfns from ot to nt. */
 void p2m_finish_type_change(struct domain *d,
-                            gfn_t first_gfn, unsigned long max_nr,
-                            p2m_type_t ot, p2m_type_t nt)
+                            gfn_t first_gfn, unsigned long max_nr)
 {
     struct p2m_domain *p2m = p2m_get_hostp2m(d);
-    p2m_type_t t;
     unsigned long gfn = gfn_x(first_gfn);
     unsigned long last_gfn = gfn + max_nr - 1;
-
-    ASSERT(ot != nt);
-    ASSERT(p2m_is_changeable(ot) && p2m_is_changeable(nt));
 
     p2m_lock(p2m);
 
     last_gfn = min(last_gfn, p2m->max_mapped_pfn);
     while ( gfn <= last_gfn )
     {
-        get_gfn_query_unlocked(d, gfn, &t);
-
-        if ( t == ot )
-            p2m_change_type_one(d, gfn, t, nt);
+        p2m->recalc(p2m, gfn);
 
         gfn++;
     }
