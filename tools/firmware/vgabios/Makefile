@@ -11,13 +11,16 @@ RELVERS = `pwd | sed "s-.*/--" | sed "s/vgabios//" | sed "s/-//"`
 VGABIOS_DATE = "-DVGABIOS_DATE=\"$(VGABIOS_REL_DATE)\""
 
 .PHONY: all
-all: bios cirrus-bios
+all: bios cirrus-bios stdvga-bios
 
 .PHONY: bios
 bios: biossums vgabios.bin vgabios.debug.bin 
 
 .PHONY: cirrus-bios
 cirrus-bios: vgabios-cirrus.bin vgabios-cirrus.debug.bin
+
+.PHONY: stdvga-bios
+stdvga-bios: vgabios-stdvga.bin vgabios-stdvga.debug.bin
 
 .PHONY: clean
 clean:
@@ -30,13 +33,15 @@ distclean: clean
 
 .PHONY: release
 release: 
-	VGABIOS_VERS=\"-DVGABIOS_VERS=\\\"$(RELVERS)\\\"\" make bios cirrus-bios
+	VGABIOS_VERS=\"-DVGABIOS_VERS=\\\"$(RELVERS)\\\"\" make bios cirrus-bios stdvga-bios
 	/bin/rm -f  *.o *.s *.ld86 \
           temp.awk.* vgabios.*.orig _vgabios_.*.c core *.bak .#*
 	cp VGABIOS-lgpl-latest.bin ../$(RELEASE).bin
 	cp VGABIOS-lgpl-latest.debug.bin ../$(RELEASE).debug.bin
 	cp VGABIOS-lgpl-latest.cirrus.bin ../$(RELEASE).cirrus.bin
 	cp VGABIOS-lgpl-latest.cirrus.debug.bin ../$(RELEASE).cirrus.debug.bin
+	cp VGABIOS-lgpl-latest.stdvga.bin ../$(RELEASE).stdvga.bin
+	cp VGABIOS-lgpl-latest.stdvga.debug.bin ../$(RELEASE).stdvga.debug.bin
 	tar czvf ../$(RELEASE).tgz --exclude CVS -C .. $(RELEASE)/
 
 vgabios.bin: biossums vgabios.c vgabios.h vgafonts.h vgatables.h vbe.h vbe.c vbetables.h
@@ -58,6 +63,26 @@ vgabios.debug.bin: biossums vgabios.c vgabios.h vgafonts.h vgatables.h vbe.h vbe
 	cp vgabios.debug.bin VGABIOS-lgpl-latest.debug.bin
 	./biossums VGABIOS-lgpl-latest.debug.bin
 	ls -l VGABIOS-lgpl-latest.debug.bin
+
+vgabios-stdvga.bin: biossums vgabios.c vgabios.h vgafonts.h vgatables.h vbe.h vbe.c vbetables.h
+	$(GCC) -E -P vgabios.c $(VGABIOS_VERS) -DVBE -DPCIBIOS -DPCI_VID=0x1234 -DPCI_DID=0x1111 $(VGABIOS_DATE) > _vgabios-stdvga_.c
+	$(BCC) -o vgabios-stdvga.s -C-c -D__i86__ -S -0 _vgabios-stdvga_.c
+	sed -e 's/^\.text//' -e 's/^\.data//' vgabios-stdvga.s > _vgabios-stdvga_.s
+	$(AS86) _vgabios-stdvga_.s -b vgabios-stdvga.bin -u -w- -g -0 -j -O -l vgabios-stdvga.txt
+	rm -f _vgabios-stdvga_.s _vgabios-stdvga_.c vgabios-stdvga.s
+	cp vgabios-stdvga.bin VGABIOS-lgpl-latest.stdvga.bin
+	./biossums VGABIOS-lgpl-latest.stdvga.bin
+	ls -l VGABIOS-lgpl-latest.stdvga.bin
+
+vgabios-stdvga.debug.bin: biossums vgabios.c vgabios.h vgafonts.h vgatables.h vbe.h vbe.c vbetables.h
+	$(GCC) -E -P vgabios.c $(VGABIOS_VERS) -DVBE -DPCIBIOS -DPCI_VID=0x1234 -DPCI_DID=0x1111 -DDEBUG $(VGABIOS_DATE) > _vgabios-stdvga-debug_.c
+	$(BCC) -o vgabios-stdvga-debug.s -C-c -D__i86__ -S -0 _vgabios-stdvga-debug_.c
+	sed -e 's/^\.text//' -e 's/^\.data//' vgabios-stdvga-debug.s > _vgabios-stdvga-debug_.s
+	$(AS86) _vgabios-stdvga-debug_.s -b vgabios-stdvga-debug.bin -u -w- -g -0 -j -O -l vgabios-stdvga-debug.txt
+	rm -f _vgabios-stdvga-debug_.s _vgabios-stdvga-debug_.c vgabios-stdvga-debug.s
+	cp vgabios-stdvga-debug.bin VGABIOS-lgpl-latest.stdvga.debug.bin
+	./biossums VGABIOS-lgpl-latest.stdvga.debug.bin
+	ls -l VGABIOS-lgpl-latest.stdvga.debug.bin
 
 vgabios-cirrus.bin: biossums vgabios.c vgabios.h vgafonts.h vgatables.h clext.c
 	$(GCC) -E -P vgabios.c $(VGABIOS_VERS) -DCIRRUS -DPCIBIOS $(VGABIOS_DATE) > _vgabios-cirrus_.c

@@ -914,6 +914,7 @@ Bit16u *AX;Bit16u CX; Bit16u ES;Bit16u DI;
         ModeInfoListItem  *cur_info;
         Boolean           using_lfb;
         ModeInfoBlockCompact   info;
+        Bit16u            lfb_addr=0;
 
 #ifdef DEBUG
         printf("VBE vbe_biosfn_return_mode_information ES%x DI%x CX%x\n",ES,DI,CX);
@@ -957,6 +958,14 @@ Bit16u *AX;Bit16u CX; Bit16u ES;Bit16u DI;
                 outw(VBE_DISPI_IOPORT_INDEX,VBE_DISPI_INDEX_LFB_ADDRESS_L);
                 info.PhysBasePtr |= inw(VBE_DISPI_IOPORT_DATA);
 #endif 							
+#ifdef PCI_VID
+                if ((Bit16u)(info.PhysBasePtr >> 16) == 0 &&
+                    (Bit16u)info.PhysBasePtr == 0)
+                  lfb_addr = pci_get_lfb_addr(PCI_VID);
+
+                if (lfb_addr > 0)
+                  info.PhysBasePtr = ((Bit32u)lfb_addr << 16);
+#endif
                 result = 0x4f;
 
                 // copy updates in mode_info_block back

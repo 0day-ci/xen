@@ -45,7 +45,7 @@ CIRRUSVGA_DEBUG ?= n
 ROMBIOS_DIR := ../rombios
 
 ifeq ($(CONFIG_ROMBIOS),y)
-STDVGA_ROM    := ../vgabios/VGABIOS-lgpl-latest.bin
+STDVGA_ROM    := ../vgabios/VGABIOS-lgpl-latest.stdvga.bin
 ifeq ($(CIRRUSVGA_DEBUG),y)
 CIRRUSVGA_ROM := ../vgabios/VGABIOS-lgpl-latest.cirrus.debug.bin
 else
