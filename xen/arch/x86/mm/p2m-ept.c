@@ -1238,6 +1238,7 @@ int ept_p2m_init(struct p2m_domain *p2m)
 
     p2m->set_entry = ept_set_entry;
     p2m->get_entry = ept_get_entry;
+    p2m->recalc = resolve_misconfig;
     p2m->change_entry_type_global = ept_change_entry_type_global;
     p2m->change_entry_type_range = ept_change_entry_type_range;
     p2m->memory_type_changed = ept_memory_type_changed;
