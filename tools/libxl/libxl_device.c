@@ -1602,7 +1602,7 @@ static void backend_watch_callback(libxl__egc *egc, libxl__ev_xswatch *watch,
     STATE_AO_GC(nested_ao);
     char *p, *path;
     const char *sstate, *sonline;
-    int state, online, rc, num_devs;
+    int state, online, rc;
     libxl__device *dev;
     libxl__ddomain_device *ddev = NULL;
     libxl__ddomain_guest *dguest = NULL;
@@ -1684,21 +1684,9 @@ static void backend_watch_callback(libxl__egc *egc, libxl__ev_xswatch *watch,
              path);
         rc = remove_device(egc, nested_ao, dguest, ddev);
         if (rc > 0)
-            free_ao = true;
+            libxl__nested_ao_free(nested_ao);
 
-        free(ddev->dev);
-        free(ddev);
-        /* If this was the last device in the domain, remove it from the list */
-        num_devs = dguest->num_vifs + dguest->num_vbds + dguest->num_qdisks;
-        if (num_devs == 0) {
-            LIBXL_SLIST_REMOVE(&ddomain->guests, dguest, libxl__ddomain_guest,
-                               next);
-            LOGD(DEBUG, dguest->domid, "Removed domain from the list of active guests");
-            /* Clear any leftovers in libxl/<domid> */
-            libxl__xs_rm_checked(gc, XBT_NULL,
-                                 GCSPRINTF("libxl/%u", dguest->domid));
-            free(dguest);
-        }
+        goto clean;
     }
 
     if (free_ao)
@@ -1708,10 +1696,20 @@ static void backend_watch_callback(libxl__egc *egc, libxl__ev_xswatch *watch,
 
 skip:
     libxl__nested_ao_free(nested_ao);
+clean:
     if (ddev)
         free(ddev->dev);
     free(ddev);
-    free(dguest);
+    if (dguest != NULL &&
+        dguest->num_vifs + dguest->num_vbds + dguest->num_qdisks == 0) {
+        LIBXL_SLIST_REMOVE(&ddomain->guests, dguest, libxl__ddomain_guest,
+                           next);
+        LOGD(DEBUG, dguest->domid, "Removed domain from the list of active guests");
+        /* Clear any leftovers in libxl/<domid> */
+        libxl__xs_rm_checked(gc, XBT_NULL,
+                             GCSPRINTF("libxl/%u", dguest->domid));
+        free(dguest);
+    }
     return;
 }
 
