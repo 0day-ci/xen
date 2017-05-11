@@ -3556,10 +3556,9 @@ long do_mmuext_op(
                 break;
             }
 
-            /* A page is dirtied when it's being cleared. */
-            paging_mark_dirty(pg_owner, _mfn(page_to_mfn(page)));
-
             clear_domain_page(_mfn(page_to_mfn(page)));
+
+            paging_mark_dirty(pg_owner, _mfn(page_to_mfn(page)));
 
             put_page_and_type(page);
             break;
@@ -3594,11 +3593,10 @@ long do_mmuext_op(
                 break;
             }
 
-            /* A page is dirtied when it's being copied to. */
-            paging_mark_dirty(pg_owner, _mfn(page_to_mfn(dst_page)));
-
             copy_domain_page(_mfn(page_to_mfn(dst_page)),
                              _mfn(page_to_mfn(src_page)));
+
+            paging_mark_dirty(pg_owner, _mfn(page_to_mfn(dst_page)));
 
             put_page_and_type(dst_page);
             put_page(src_page);
