@@ -42,7 +42,7 @@ int strnicmp(const char *s1, const char *s2, size_t len)
 #endif
 
 #ifndef __HAVE_ARCH_STRCASECMP
-int strcasecmp(const char *s1, const char *s2)
+int (strcasecmp)(const char *s1, const char *s2)
 {
     int c1, c2;
 
@@ -117,7 +117,7 @@ EXPORT_SYMBOL(strlcat);
  * @cs: One string
  * @ct: Another string
  */
-int strcmp(const char * cs,const char * ct)
+int (strcmp)(const char *cs, const char *ct)
 {
 	register signed char __res;
 
@@ -137,7 +137,7 @@ int strcmp(const char * cs,const char * ct)
  * @ct: Another string
  * @count: The maximum number of bytes to compare
  */
-int strncmp(const char * cs,const char * ct,size_t count)
+int (strncmp)(const char *cs, const char *ct, size_t count)
 {
 	register signed char __res = 0;
 
@@ -157,7 +157,7 @@ int strncmp(const char * cs,const char * ct,size_t count)
  * @s: The string to be searched
  * @c: The character to search for
  */
-char * strchr(const char * s, int c)
+char *(strchr)(const char *s, int c)
 {
 	for(; *s != (char) c; ++s)
 		if (*s == '\0')
@@ -172,7 +172,7 @@ char * strchr(const char * s, int c)
  * @s: The string to be searched
  * @c: The character to search for
  */
-char * strrchr(const char * s, int c)
+char *(strrchr)(const char *s, int c)
 {
        const char *p = s + strlen(s);
        do {
@@ -188,7 +188,7 @@ char * strrchr(const char * s, int c)
  * strlen - Find the length of a string
  * @s: The string to be sized
  */
-size_t strlen(const char * s)
+size_t (strlen)(const char * s)
 {
 	const char *sc;
 
@@ -409,7 +409,7 @@ void * memscan(void * addr, int c, size_t size)
  * @s1: The string to be searched
  * @s2: The string to search for
  */
-char * strstr(const char * s1,const char * s2)
+char *(strstr)(const char *s1, const char *s2)
 {
 	int l1, l2;
 
