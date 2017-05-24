@@ -54,6 +54,7 @@
 #define DO_TRC_HVM_TRAP             DEFAULT_HVM_MISC
 #define DO_TRC_HVM_TRAP_DEBUG       DEFAULT_HVM_MISC
 #define DO_TRC_HVM_VLAPIC           DEFAULT_HVM_MISC
+#define DO_TRC_HVM_PI_LIST_ADD      DEFAULT_HVM_MISC
 
 
 #define TRC_PAR_LONG(par) ((par)&0xFFFFFFFF),((par)>>32)

@@ -53,6 +53,7 @@
 #define TRC_HVM_ENTRYEXIT   0x00081000   /* VMENTRY and #VMEXIT       */
 #define TRC_HVM_HANDLER     0x00082000   /* various HVM handlers      */
 #define TRC_HVM_EMUL        0x00084000   /* emulated devices */
+#define TRC_HVM_ASYNC       0x00088000   /* Asynchronous events */
 
 #define TRC_SCHED_MIN       0x00021000   /* Just runstate changes */
 #define TRC_SCHED_CLASS     0x00022000   /* Scheduler-specific    */
@@ -234,6 +235,7 @@
 #define TRC_HVM_TRAP             (TRC_HVM_HANDLER + 0x23)
 #define TRC_HVM_TRAP_DEBUG       (TRC_HVM_HANDLER + 0x24)
 #define TRC_HVM_VLAPIC           (TRC_HVM_HANDLER + 0x25)
+#define TRC_HVM_PI_LIST_ADD      (TRC_HVM_HANDLER + 0x26)
 
 #define TRC_HVM_IOPORT_WRITE    (TRC_HVM_HANDLER + 0x216)
 #define TRC_HVM_IOMEM_WRITE     (TRC_HVM_HANDLER + 0x217)
@@ -256,6 +258,9 @@
 #define TRC_HVM_EMUL_PIC_NEGEDGE       (TRC_HVM_EMUL + 0xF)
 #define TRC_HVM_EMUL_PIC_PEND_IRQ_CALL (TRC_HVM_EMUL + 0x10)
 #define TRC_HVM_EMUL_LAPIC_PIC_INTR    (TRC_HVM_EMUL + 0x11)
+
+/* Trace asynconous events for HVM */
+#define TRC_HVM_ASYNC_PI_LIST_DEL      (TRC_HVM_ASYNC + 0x1)
 
 /* trace events for per class */
 #define TRC_PM_FREQ_CHANGE      (TRC_HW_PM + 0x01)
