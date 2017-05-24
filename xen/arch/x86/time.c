@@ -41,6 +41,9 @@
 static char __initdata opt_clocksource[10];
 string_param("clocksource", opt_clocksource);
 
+static unsigned int __read_mostly opt_vtsc_tolerance;
+integer_param("vtsc-tolerance", opt_vtsc_tolerance);
+
 unsigned long __read_mostly cpu_khz;  /* CPU clock frequency in kHz. */
 DEFINE_SPINLOCK(rtc_lock);
 unsigned long pit0_ticks;
@@ -2009,6 +2012,8 @@ void tsc_set_info(struct domain *d,
                   uint32_t tsc_mode, uint64_t elapsed_nsec,
                   uint32_t gtsc_khz, uint32_t incarnation)
 {
+    uint32_t khz_diff, tolerated;
+
     if ( is_idle_domain(d) || is_hardware_domain(d) )
     {
         d->arch.vtsc = 0;
@@ -2024,6 +2029,13 @@ void tsc_set_info(struct domain *d,
         d->arch.vtsc_offset = get_s_time() - elapsed_nsec;
         d->arch.tsc_khz = gtsc_khz ?: cpu_khz;
         set_time_scale(&d->arch.vtsc_to_ns, d->arch.tsc_khz * 1000);
+        if (!opt_vtsc_tolerance) {
+            tolerated = d->arch.tsc_khz == cpu_khz;
+        } else {
+            khz_diff = cpu_khz > d->arch.tsc_khz ?
+                       cpu_khz - d->arch.tsc_khz : d->arch.tsc_khz - cpu_khz;
+            tolerated = khz_diff <= opt_vtsc_tolerance;
+        }
 
         /*
          * In default mode use native TSC if the host has safe TSC and
@@ -2033,7 +2045,7 @@ void tsc_set_info(struct domain *d,
          * d->arch.tsc_khz == cpu_khz. Thus no need to check incarnation.
          */
         if ( tsc_mode == TSC_MODE_DEFAULT && host_tsc_is_safe() &&
-             (d->arch.tsc_khz == cpu_khz ||
+             (tolerated ||
               (is_hvm_domain(d) &&
                hvm_get_tsc_scaling_ratio(d->arch.tsc_khz))) )
         {

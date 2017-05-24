@@ -1723,6 +1723,16 @@ Note that if **watchdog** option is also specified vpmu will be turned off.
 As the virtualisation is not 100% safe, don't use the vpmu flag on
 production systems (see http://xenbits.xen.org/xsa/advisory-163.html)!
 
+### vtsc-tolerance
+> `= <integer>`
+
+> Default: `0`
+
+Specify the tolerated difference of pCPUs clock frequency in kHz.
+This option affects only domUs which have tsc\_mode=default enabled.
+If the frequency expected by a domU is within the tolerance range tsc
+will remain native. Otherwise tsc emulation will be used for the domU.
+
 ### vwfi
 > `= trap | native
 
