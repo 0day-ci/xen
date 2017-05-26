@@ -155,6 +155,15 @@
 #define VM_EVENT_X86_CR4    2
 #define VM_EVENT_X86_XCR0   3
 
+/* vm_event_write_ctrlreg default bit mask
+ * If the changed bit in the control register is masked the event is
+ * not triggered
+ */
+#define VM_EVENT_X86_CR0_DEFAULT_MASK	        0x00000000
+#define VM_EVENT_X86_CR3_DEFAULT_MASK	        0x00000000
+#define VM_EVENT_X86_CR4_DEFAULT_MASK	        0x00000080
+#define VM_EVENT_X86_XCR0_DEFAULT_MASK	        0x00000000
+
 /*
  * Using custom vCPU structs (i.e. not hvm_hw_cpu) for both x86 and ARM
  * so as to not fill the vm_event ring buffer too quickly.

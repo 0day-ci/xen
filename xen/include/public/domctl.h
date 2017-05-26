@@ -37,7 +37,7 @@
 #include "hvm/save.h"
 #include "memory.h"
 
-#define XEN_DOMCTL_INTERFACE_VERSION 0x0000000d
+#define XEN_DOMCTL_INTERFACE_VERSION 0x0000000e
 
 /*
  * NB. xen_domctl.domain is an IN/OUT parameter for this operation.
@@ -1107,6 +1107,10 @@ struct xen_domctl_monitor_op {
             uint8_t sync;
             /* Send event only on a change of value */
             uint8_t onchangeonly;
+            /* Send event only if the changed bit in the control register
+             * is not masked
+             */
+            unsigned long bitmask;
         } mov_to_cr;
 
         struct {
