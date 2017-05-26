@@ -279,6 +279,8 @@ CHECKPOLICY=
 Use clang instead of GCC.
 clang=y
 
+The version string of the built-in seabios can be adjusted with:
+SEABIOS_EXTRAVERSION=
 
 Systemd support
 ===============

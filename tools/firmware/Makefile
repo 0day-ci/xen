@@ -5,6 +5,8 @@ include $(XEN_ROOT)/tools/Rules.mk
 TARGET      := hvmloader/hvmloader
 INST_DIR := $(DESTDIR)$(XENFIRMWAREDIR)
 
+SEABIOS_EXTRAVERSION ?= "-prebuilt.xen.org"
+
 SUBDIRS-y :=
 SUBDIRS-$(CONFIG_OVMF) += ovmf-dir
 SUBDIRS-$(CONFIG_SEABIOS) += seabios-dir
@@ -35,7 +37,7 @@ ifeq ($(CONFIG_ROMBIOS),y)
 	false ; \
 	fi
 endif
-	$(MAKE) $(LD32BIT-y) CC=$(CC) PYTHON=$(PYTHON) subdirs-$@
+	$(MAKE) $(LD32BIT-y) CC=$(CC) PYTHON=$(PYTHON) EXTRAVERSION=$(SEABIOS_EXTRAVERSION) subdirs-$@
 
 
 .PHONY: install
