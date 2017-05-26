@@ -114,22 +114,18 @@ guest_walk_tables(struct vcpu *v, struct p2m_domain *p2m,
     ASSERT(!(walk & PFEC_implicit) ||
            !(walk & (PFEC_insn_fetch | PFEC_user_mode)));
 
-    /*
-     * PFEC_insn_fetch is only used as an input to pagetable walking if NX or
-     * SMEP are enabled.  Otherwise, instruction fetches are indistinguishable
-     * from data reads.
-     *
-     * This property can be demonstrated on real hardware by having NX and
-     * SMEP inactive, but SMAP active, and observing that EFLAGS.AC determines
-     * whether a pagefault occures for supervisor execution on user mappings.
-     */
-    if ( !(guest_nx_enabled(v) || guest_smep_enabled(v)) )
-        walk &= ~PFEC_insn_fetch;
-
     perfc_incr(guest_walk);
     memset(gw, 0, sizeof(*gw));
     gw->va = va;
-    gw->pfec = walk & (PFEC_insn_fetch | PFEC_user_mode | PFEC_write_access);
+    gw->pfec = walk & (PFEC_user_mode | PFEC_write_access);
+
+    /*
+     * PFEC_insn_fetch is only reported if NX or SMEP are enabled.  Hardware
+     * still distingueses instruction fetches during determination of access
+     * rights.
+     */
+    if ( guest_nx_enabled(v) || guest_smep_enabled(v) )
+        gw->pfec |= (walk & PFEC_insn_fetch);
 
 #if GUEST_PAGING_LEVELS >= 3 /* PAE or 64... */
 #if GUEST_PAGING_LEVELS >= 4 /* 64-bit only... */
