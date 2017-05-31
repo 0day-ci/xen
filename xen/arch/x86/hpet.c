@@ -189,11 +189,10 @@ again:
     {
         s_time_t deadline;
 
-        rmb();
-        deadline = per_cpu(timer_deadline, cpu);
-        rmb();
         if ( !cpumask_test_cpu(cpu, ch->cpumask) )
             continue;
+
+        deadline = ACCESS_ONCE(per_cpu(timer_deadline, cpu));
 
         if ( deadline <= now )
             __cpumask_set_cpu(cpu, &mask);
@@ -697,8 +696,9 @@ void hpet_broadcast_enter(void)
 {
     unsigned int cpu = smp_processor_id();
     struct hpet_event_channel *ch = per_cpu(cpu_bc_channel, cpu);
+    s_time_t deadline = this_cpu(timer_deadline);
 
-    if ( per_cpu(timer_deadline, cpu) == 0 )
+    if ( deadline == 0 )
         return;
 
     if ( !ch )
@@ -715,8 +715,8 @@ void hpet_broadcast_enter(void)
 
     spin_lock(&ch->lock);
     /* reprogram if current cpu expire time is nearer */
-    if ( per_cpu(timer_deadline, cpu) < ch->next_event )
-        reprogram_hpet_evt_channel(ch, per_cpu(timer_deadline, cpu), NOW(), 1);
+    if ( deadline < ch->next_event )
+        reprogram_hpet_evt_channel(ch, deadline, NOW(), 1);
     spin_unlock(&ch->lock);
 }
 
@@ -724,8 +724,9 @@ void hpet_broadcast_exit(void)
 {
     unsigned int cpu = smp_processor_id();
     struct hpet_event_channel *ch = per_cpu(cpu_bc_channel, cpu);
+    s_time_t deadline = this_cpu(timer_deadline);
 
-    if ( per_cpu(timer_deadline, cpu) == 0 )
+    if ( deadline == 0 )
         return;
 
     if ( !ch )
@@ -733,7 +734,7 @@ void hpet_broadcast_exit(void)
 
     /* Reprogram the deadline; trigger timer work now if it has passed. */
     enable_APIC_timer();
-    if ( !reprogram_timer(per_cpu(timer_deadline, cpu)) )
+    if ( !reprogram_timer(deadline) )
         raise_softirq(TIMER_SOFTIRQ);
 
     cpumask_clear_cpu(cpu, ch->cpumask);
