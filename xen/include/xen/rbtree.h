@@ -66,4 +66,8 @@ static inline void rb_link_node(struct rb_node * node, struct rb_node * parent,
     *rb_link = node;
 }
 
+/* Postorder iteration - always visit the parent after its children */
+extern struct rb_node *rb_first_postorder(const struct rb_root *);
+extern struct rb_node *rb_next_postorder(const struct rb_node *);
+
 #endif /* __RBTREE_H__ */
