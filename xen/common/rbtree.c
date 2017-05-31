@@ -110,11 +110,8 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root)
 
             if (parent->rb_right == node)
             {
-                register struct rb_node *tmp;
                 __rb_rotate_left(parent, root);
-                tmp = parent;
                 parent = node;
-                node = tmp;
             }
 
             rb_set_black(parent);
@@ -135,11 +132,8 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root)
 
             if (parent->rb_left == node)
             {
-                register struct rb_node *tmp;
                 __rb_rotate_right(parent, root);
-                tmp = parent;
                 parent = node;
-                node = tmp;
             }
 
             rb_set_black(parent);
