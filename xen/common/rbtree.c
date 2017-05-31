@@ -65,6 +65,22 @@ static inline struct rb_node *rb_red_parent(struct rb_node *red)
     return (struct rb_node *)red->__rb_parent_color;
 }
 
+static inline void
+__rb_change_child(struct rb_node *old, struct rb_node *new,
+                 struct rb_node *parent, struct rb_root *root)
+{
+    if (parent)
+    {
+        if (parent->rb_left == old)
+            parent->rb_left = new;
+        else
+            parent->rb_right = new;
+    } else
+        root->rb_node = new;
+}
+
+
+
 /*
  * Helper function for rotations:
  * - old's parent and color get assigned to new
@@ -77,13 +93,7 @@ __rb_rotate_set_parents(struct rb_node *old, struct rb_node *new,
     struct rb_node *parent = rb_parent(old);
     new->__rb_parent_color = old->__rb_parent_color;
     rb_set_parent_color(old, new, color);
-    if (parent) {
-        if (parent->rb_left == old)
-            parent->rb_left = new;
-        else
-            parent->rb_right = new;
-    } else
-        root->rb_node = new;
+    __rb_change_child(old, new, parent, root);
 }
 
 void rb_insert_color(struct rb_node *node, struct rb_root *root)
@@ -381,14 +391,7 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
         while ((left = node->rb_left) != NULL)
             node = left;
 
-        if (rb_parent(old))
-        {
-            if (rb_parent(old)->rb_left == old)
-                rb_parent(old)->rb_left = node;
-            else
-                rb_parent(old)->rb_right = node;
-        } else
-            root->rb_node = node;
+        __rb_change_child(old, node, rb_parent(old), root);
 
         child = node->rb_right;
         parent = rb_parent(node);
@@ -418,15 +421,8 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
 
     if (child)
         rb_set_parent(child, parent);
-    if (parent)
-    {
-        if (parent->rb_left == node)
-            parent->rb_left = child;
-        else
-            parent->rb_right = child;
-    }
-    else
-        root->rb_node = child;
+
+    __rb_change_child(node, child, parent, root);
 
  color:
     if (color == RB_BLACK)
@@ -523,14 +519,8 @@ void rb_replace_node(struct rb_node *victim, struct rb_node *new,
     struct rb_node *parent = rb_parent(victim);
 
     /* Set the surrounding nodes to point to the replacement */
-    if (parent) {
-        if (victim == parent->rb_left)
-            parent->rb_left = new;
-        else
-            parent->rb_right = new;
-    } else {
-        root->rb_node = new;
-    }
+    __rb_change_child(victim, new, parent, root);
+
     if (victim->rb_left)
         rb_set_parent(victim->rb_left, new);
     if (victim->rb_right)
