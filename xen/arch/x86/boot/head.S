@@ -377,8 +377,10 @@ __start:
         cld
         cli
 
-        /* Load default Xen image load base address. */
-        mov     $sym_offs(__image_base__),%esi
+        /* Calculate the load base address. */
+        call    1f
+1:      pop     %esi
+        sub     $sym_offs(1b), %esi
 
         /* Bootloaders may set multiboot{1,2}.mem_lower to a nonzero value. */
         xor     %edx,%edx
@@ -410,15 +412,6 @@ __start:
         cmp     %edi,MB2_fixed_total_size(%ebx)
         jbe     trampoline_bios_setup
 
-        /* Get Xen image load base address from Multiboot2 information. */
-        cmpl    $MULTIBOOT2_TAG_TYPE_LOAD_BASE_ADDR,MB2_tag_type(%ecx)
-        jne     .Lmb2_mem_lower
-
-        mov     MB2_load_base_addr(%ecx),%esi
-        sub     $XEN_IMG_OFFSET,%esi
-        jmp     .Lmb2_next_tag
-
-.Lmb2_mem_lower:
         /* Get mem_lower from Multiboot2 information. */
         cmpl    $MULTIBOOT2_TAG_TYPE_BASIC_MEMINFO,MB2_tag_type(%ecx)
         cmove   MB2_mem_lower(%ecx),%edx
