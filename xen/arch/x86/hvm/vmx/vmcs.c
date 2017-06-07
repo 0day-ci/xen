@@ -47,7 +47,7 @@ boolean_param("vpid", opt_vpid_enabled);
 static bool_t __read_mostly opt_unrestricted_guest_enabled = 1;
 boolean_param("unrestricted_guest", opt_unrestricted_guest_enabled);
 
-static bool_t __read_mostly opt_apicv_enabled = 1;
+bool __read_mostly opt_apicv_enabled = true;
 boolean_param("apicv", opt_apicv_enabled);
 
 /*

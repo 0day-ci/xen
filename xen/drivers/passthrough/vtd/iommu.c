@@ -32,6 +32,7 @@
 #include <xen/keyhandler.h>
 #include <asm/msi.h>
 #include <asm/irq.h>
+#include <asm/hvm/vmx/vmcs.h>
 #include <asm/hvm/vmx/vmx.h>
 #include <asm/p2m.h>
 #include <mach_apic.h>
@@ -2266,8 +2267,10 @@ int __init intel_vtd_setup(void)
          * We cannot use posted interrupt if X86_FEATURE_CX16 is
          * not supported, since we count on this feature to
          * atomically update 16-byte IRTE in posted format.
+         * VT-d PI implementation relies on APICv. Thus, disable
+         * VT-d PI when APICv is disabled.
          */
-        if ( !cap_intr_post(iommu->cap) || !cpu_has_cx16 )
+        if ( !cap_intr_post(iommu->cap) || !cpu_has_cx16 || !opt_apicv_enabled )
             iommu_intpost = 0;
 
         if ( !vtd_ept_page_compatible(iommu) )

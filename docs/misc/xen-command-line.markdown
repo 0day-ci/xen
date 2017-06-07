@@ -173,7 +173,8 @@ to boot on systems with the following errata:
 
 Permit Xen to use APIC Virtualisation Extensions.  This is an optimisation
 available as part of VT-x, and allows hardware to take care of the guests APIC
-handling, rather than requiring emulation in Xen.
+handling, rather than requiring emulation in Xen. IOMMU-side interrupt posting
+relies on this extensions, see **iommu** parameter below.
 
 ### apic\_verbosity
 > `= verbose | debug`
@@ -1001,7 +1002,8 @@ debug hypervisor only).
 > Default: `false`
 
 >> Control the use of interrupt posting, which depends on the availability of
->> interrupt remapping.
+>> interrupt remapping and CPU-side interrupt posting, which in turn requires
+>> **APIC Virtualization Extensions** above is not disabled.
 
 > `qinval` (VT-d)
 
