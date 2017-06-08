@@ -63,6 +63,12 @@
  *      Backends, which support reporting of multi-touch events
  *      should set this to 1.
  *
+ * feature-vkbd-standalone
+ *      Values:         <uint>
+ *
+ *      Backends, which support a standalone vkbd, without requiring a vfb
+ *      device, should set this to 1.
+ *
  *------------------------- Pointer Device Parameters ------------------------
  *
  * width
@@ -97,6 +103,13 @@
  *      Values:         <uint>
  *
  *      Request backend to report multi-touch events.
+ *
+ * request-vkbd-standalone
+ *      Values:         <uint>
+ *
+ *      Request backend to connect vkbd device without waiting for the
+ *      vfb device. Any absolute coordinates will NOT be scaled to
+ *      screen size, and will remain in the range [0, 0x7fff]
  *
  *----------------------- Request Transport Parameters -----------------------
  *
@@ -165,8 +178,10 @@
 
 #define XENKBD_FIELD_FEAT_ABS_POINTER  "feature-abs-pointer"
 #define XENKBD_FIELD_FEAT_MTOUCH       "feature-multi-touch"
+#define XENKBD_FIELD_FEAT_STANDALONE   "feature-vkbd-standalone"
 #define XENKBD_FIELD_REQ_ABS_POINTER   "request-abs-pointer"
 #define XENKBD_FIELD_REQ_MTOUCH        "request-multi-touch"
+#define XENKBD_FIELD_REQ_STANDALONE    "request-vkbd-standalone"
 #define XENKBD_FIELD_RING_GREF         "page-gref"
 #define XENKBD_FIELD_EVT_CHANNEL       "event-channel"
 #define XENKBD_FIELD_WIDTH             "width"
