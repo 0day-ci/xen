@@ -32,6 +32,7 @@
  * passed to the guest when appropriate battery ports are read/written to.
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -100,7 +101,8 @@ FILE *get_next_battery_file(DIR *battery_dir,
 {
     FILE *file = 0;
     struct dirent *dir_entries;
-    char file_name[32];
+    char *file_name = NULL;
+    int rc = 0;
     
     do 
     {
@@ -110,12 +112,16 @@ FILE *get_next_battery_file(DIR *battery_dir,
         if ( strlen(dir_entries->d_name) < 4 )
             continue;
         if ( battery_info_type == BIF ) 
-            snprintf(file_name, 32, BATTERY_INFO_FILE_PATH,
-                     dir_entries->d_name);
+	    rc = asprintf(&file_name, BATTERY_INFO_FILE_PATH,
+			  dir_entries->d_name);
         else 
-            snprintf(file_name, 32, BATTERY_STATE_FILE_PATH,
-                     dir_entries->d_name);
-        file = fopen(file_name, "r");
+            rc = asprintf(&file_name, BATTERY_STATE_FILE_PATH,
+			  dir_entries->d_name);
+
+	if ( -1 != rc ) {
+	    file = fopen(file_name, "r");
+	    free(file_name);
+	}
     } while ( !file );
 
     return file;
