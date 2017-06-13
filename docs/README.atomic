@@ -1,0 +1,116 @@
+Atomic operations in Xen
+========================
+
+Data structures in Xen memory which can be accessed by multiple CPUs
+at the same time need to be protected against getting corrupted.
+The easiest way to do this is using a lock (spinlock in Xen's case),
+that guarantees that only one CPU can access that memory at a given point
+in time, also allows protecting whole data structures against becoming
+inconsistent. For most use cases this should be the way to go and programmers
+should stop reading here.
+
+However sometimes taking and releasing a lock is too costly or creates
+deadlocks or potential contention, so some lockless accesses are used.
+Those atomic accesses need to be done very carefully to be correct.
+
+Xen offers three kinds of atomic primitives that deal with those accesses:
+
+ACCESS_ONCE()
+-------------
+A macro basically casting the access to a volatile data type. That prevents
+the compiler from accessing that memory location multiple times, effectively
+caching this value (either in a register or on the stack).
+In terms of atomicity this prevents inconsistent values for a certain shared
+variable if used multiple times across the same function, as the compiler is
+normally free to re-read the value from memory at any time - given that it
+doesn't know that another entity might change this value. Consider the
+following code:
+===========
+        int x = shared_pointer->counter;
+
+        some_var = x + something_else;
+        function_call(x);
+===========
+The compiler is free to actually *not* use a local variable, instead derefence
+the pointer and directly access the shared memory twice when using the value
+of "x" in the assignment and in the function call. Now if some other CPU
+changes the value of "counter" meanwhile, the value of "x" is different,
+which violates the program semantic. The compiler is not to blame here,
+because it cannot know that this memory could change behind its back.
+The solution here is to use ACCESS_ONCE, which casts the access with the
+"volatile" keyword, thus making sure that the compiler knows that
+accessing this memory has side effects, so it needs to cache the value:
+===========
+        int x = ACCESS_ONCE(shared_pointer->counter);
+
+        some_var = x + something_else;
+        function_call(x);
+===========
+
+What ACCESS_ONCE does *not* guarantee though is this access is done in a
+single instruction, so complex or non-native or unaligned data types are
+not guaranteed to be atomic. If for instance counter would be a 64-bit value
+on a 32-bit system, the compiler would probably generate two load instructions,
+which could end up in reading a wrong value if some other CPU changes the other
+half of the variable in between those two reads.
+However accessing _aligned and native_ data types is guaranteed to be atomic
+in the architectures supported by Xen, so ACCESS_ONCE is safe to use when
+these conditions are met.
+We expect a variable to be aligned if it comes from a non-packed struct or
+some other compiler-generated address, as sane compilers will not generate
+unaligned accesses by default.
+Extra care must be taken however if the address is coming from a crafted
+pointer or some address passed in by a non-trusted source (guests).
+
+read_atomic()/write_atomic()
+----------------------------
+read_atomic() and write_atomic() are macros that make sure that the access
+to this variable happens using a single machine instruction. This guarantees
+the access to be atomic when the address is aligned (on all architectures
+supported by Xen).
+For most practical cases the generated code does not differ from what
+the compiler would generate anyway, but it makes sure that a change to an
+unsuitable data type would break compilation, also it annotates this access
+as being potentially concurrent (to a human reader).
+Also this macro does not check whether the address is actually aligned,
+though it is assumed that the compiler only generates aligned addresses
+unless being told otherwise explicitly. In the latter case it would be the
+responsibility of the coder to ensure atomicity using other means.
+
+atomic_read()/atomic_write() (and other variants starting with "atomic_")
+-------------------------------------------------------------------------
+(Not to be confused with the above!)
+Those (group of) functions work on a special atomic_t data type, which wraps
+an "int" in a structure to avoid accidential messing with the data type
+(for instance due to implicit casts). As a side effect this guarantees that
+this variable is aligned (though this would apply to most other "int"
+declarations as well). This special data type also makes sure that any
+accesses are only valid using those special accessor functions, which
+make sure that the atomic property is always preserved.
+On top of the basic read/write accesses this also provides read-modify-write
+primitives which use architecture specific means to guarantee atomic accesses
+(atomic_inc(), atomic_dec_and_test(), ...).
+
+
+It has to be noted that following the letters of the C standard a
+standards-compliant compiler has quite some freedom to generate code which
+would make a lot of accesses non-atomic (for instance splitting a 32-bit
+read into a series of four 8-bit reads).
+However a sane compiler, especially when following a certain ABI, would
+for instance always try to align variables and use as few machine
+instructions as possible, so for practical purposes most accesses are
+actually atomic without further ado, especially when being confined to
+certain architectures (like x86, ARM and ARM64 in Xen).
+
+So for practical purposes we assume a sane compiler to be used for Xen,
+with the following properties:
+- Compiler generated addresses for native-data-typed variables are aligned.
+- Simple read/write accesses to a native and aligned data type from compiler
+  generated addresses are done using a single machine instruction.
+
+This makes read and write accesses to ints and longs (and their respective
+unsigned counter parts) naturally atomic.
+However it would be beneficial to use atomic primitives anyway to annotate
+the code as being concurrent and to prevent silent breakage when changing
+the code. Modern compilers tend to optimize quite well, often resulting in
+the same code to be generated for both the annotated and naive version.
