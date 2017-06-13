@@ -1283,7 +1283,7 @@ static int gicv3_iomem_deny_access(const struct domain *d)
     unsigned long mfn, nr;
 
     mfn = dbase >> PAGE_SHIFT;
-    nr = DIV_ROUND_UP(SZ_64K, PAGE_SIZE);
+    nr = PFN_UP(SZ_64K);
     rc = iomem_deny_access(d, mfn, mfn + nr);
     if ( rc )
         return rc;
@@ -1291,7 +1291,7 @@ static int gicv3_iomem_deny_access(const struct domain *d)
     for ( i = 0; i < gicv3.rdist_count; i++ )
     {
         mfn = gicv3.rdist_regions[i].base >> PAGE_SHIFT;
-        nr = DIV_ROUND_UP(gicv3.rdist_regions[i].size, PAGE_SIZE);
+        nr = PFN_UP(gicv3.rdist_regions[i].size);
         rc = iomem_deny_access(d, mfn, mfn + nr);
         if ( rc )
             return rc;
@@ -1300,7 +1300,7 @@ static int gicv3_iomem_deny_access(const struct domain *d)
     if ( cbase != INVALID_PADDR )
     {
         mfn = cbase >> PAGE_SHIFT;
-        nr = DIV_ROUND_UP(csize, PAGE_SIZE);
+        nr = PFN_UP(csize);
         rc = iomem_deny_access(d, mfn, mfn + nr);
         if ( rc )
             return rc;
@@ -1309,7 +1309,7 @@ static int gicv3_iomem_deny_access(const struct domain *d)
     if ( vbase != INVALID_PADDR )
     {
         mfn = vbase >> PAGE_SHIFT;
-        nr = DIV_ROUND_UP(csize, PAGE_SIZE);
+        nr = PFN_UP(csize);
         return iomem_deny_access(d, mfn, mfn + nr);
     }
 
