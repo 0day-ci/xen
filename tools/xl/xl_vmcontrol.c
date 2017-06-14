@@ -30,8 +30,6 @@
 #include "xl_utils.h"
 #include "xl_parse.h"
 
-static int fd_lock = -1;
-
 static void pause_domain(uint32_t domid)
 {
     libxl_domain_pause(ctx, domid);
@@ -549,71 +547,6 @@ static void autoconnect_vncviewer(uint32_t domid, int autopass)
     vncviewer(domid, autopass);
     _exit(EXIT_FAILURE);
 }
-
-static int acquire_lock(void)
-{
-    int rc;
-    struct flock fl;
-
-    /* lock already acquired */
-    if (fd_lock >= 0)
-        return ERROR_INVAL;
-
-    fl.l_type = F_WRLCK;
-    fl.l_whence = SEEK_SET;
-    fl.l_start = 0;
-    fl.l_len = 0;
-    fd_lock = open(lockfile, O_WRONLY|O_CREAT, S_IWUSR);
-    if (fd_lock < 0) {
-        fprintf(stderr, "cannot open the lockfile %s errno=%d\n", lockfile, errno);
-        return ERROR_FAIL;
-    }
-    if (fcntl(fd_lock, F_SETFD, FD_CLOEXEC) < 0) {
-        close(fd_lock);
-        fprintf(stderr, "cannot set cloexec to lockfile %s errno=%d\n", lockfile, errno);
-        return ERROR_FAIL;
-    }
-get_lock:
-    rc = fcntl(fd_lock, F_SETLKW, &fl);
-    if (rc < 0 && errno == EINTR)
-        goto get_lock;
-    if (rc < 0) {
-        fprintf(stderr, "cannot acquire lock %s errno=%d\n", lockfile, errno);
-        rc = ERROR_FAIL;
-    } else
-        rc = 0;
-    return rc;
-}
-
-static int release_lock(void)
-{
-    int rc;
-    struct flock fl;
-
-    /* lock not acquired */
-    if (fd_lock < 0)
-        return ERROR_INVAL;
-
-release_lock:
-    fl.l_type = F_UNLCK;
-    fl.l_whence = SEEK_SET;
-    fl.l_start = 0;
-    fl.l_len = 0;
-
-    rc = fcntl(fd_lock, F_SETLKW, &fl);
-    if (rc < 0 && errno == EINTR)
-        goto release_lock;
-    if (rc < 0) {
-        fprintf(stderr, "cannot release lock %s, errno=%d\n", lockfile, errno);
-        rc = ERROR_FAIL;
-    } else
-        rc = 0;
-    close(fd_lock);
-    fd_lock = -1;
-
-    return rc;
-}
-
 
 static void autoconnect_console(libxl_ctx *ctx_ignored,
                                 libxl_event *ev, void *priv)

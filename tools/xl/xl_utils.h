@@ -146,6 +146,9 @@ uint32_t find_domain(const char *p) __attribute__((warn_unused_result));
 void print_bitmap(uint8_t *map, int maplen, FILE *stream);
 
 int do_daemonize(char *name, const char *pidfile);
+
+int acquire_lock(void);
+int release_lock(void);
 #endif /* XL_UTILS_H */
 
 /*
