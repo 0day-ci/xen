@@ -591,6 +591,11 @@ struct cmd_spec cmd_table[] = {
       "Issue a qemu monitor command to the device model of a domain",
       "<Domain> <Command>",
     },
+    { "lock",
+      &main_lock, 0, 0,
+      "Lock a domain, prevent other xl processes from manipulating it",
+      "<Domain>",
+    },
 };
 
 int cmdtable_len = sizeof(cmd_table)/sizeof(struct cmd_spec);

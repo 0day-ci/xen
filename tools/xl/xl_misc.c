@@ -14,6 +14,7 @@
 
 #include <limits.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <libxl.h>
 #include <libxl_utils.h>
@@ -342,6 +343,42 @@ int main_config_update(int argc, char **argv)
     free(config_data);
     free(extra_config);
     return 0;
+}
+
+struct lock_arg {
+    uint32_t domid;
+};
+
+static int lock_fn(void *p)
+{
+    struct lock_arg *arg = p;
+
+    fprintf(stderr, "Now I have the lock for %u\n", arg->domid);
+
+    sleep(10);
+
+    fprintf(stderr, "Done\n");
+
+    return 0;
+}
+
+int main_lock(int argc, char **argv)
+{
+    uint32_t domid;
+    struct lock_arg arg;
+    int rc;
+
+    domid = find_domain(argv[optind++]);
+
+    fprintf(stderr, "About to lock %u\n", domid);
+
+    arg.domid = domid;
+
+    rc = with_lock(domid, lock_fn, &arg);
+    fprintf(stderr, "with_lock returned, rc = %d\n", rc);
+    if (rc)
+        return EXIT_FAILURE;
+    return EXIT_SUCCESS;
 }
 
 /*
