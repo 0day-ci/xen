@@ -104,18 +104,10 @@ static void do_tasklet_work(unsigned int cpu, struct list_head *list)
 }
 
 /* VCPU context work */
-void do_tasklet(void)
+void do_tasklet(unsigned int cpu)
 {
-    unsigned int cpu = smp_processor_id();
     unsigned long *work_to_do = &per_cpu(tasklet_work_to_do, cpu);
     struct list_head *list = &per_cpu(tasklet_list, cpu);
-
-    /*
-     * Work must be enqueued *and* scheduled. Otherwise there is no work to
-     * do, and/or scheduler needs to run to update idle vcpu priority.
-     */
-    if ( likely(*work_to_do != (TASKLET_enqueued|TASKLET_scheduled)) )
-        return;
 
     spin_lock_irq(&tasklet_lock);
 
