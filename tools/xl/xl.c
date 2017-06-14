@@ -35,7 +35,8 @@ int force_execution;
 int autoballoon = -1;
 char *blkdev_start;
 int run_hotplug_scripts = 1;
-char *lockfile;
+char *xl_global_lockfile;
+int  xl_global_fd_lock = -1;
 char *default_vifscript = NULL;
 char *default_bridge = NULL;
 char *default_gatewaydev = NULL;
@@ -117,14 +118,14 @@ static void parse_global_config(const char *configfile,
     if (!xlu_cfg_get_long (config, "run_hotplug_scripts", &l, 0))
         run_hotplug_scripts = l;
 
-    if (!xlu_cfg_get_string (config, "lockfile", &buf, 0))
-        lockfile = strdup(buf);
+    if (!xlu_cfg_get_string (config, "xl_global_lockfile", &buf, 0))
+        xl_global_lockfile = strdup(buf);
     else {
-        lockfile = strdup(XL_LOCK_FILE);
+        xl_global_lockfile = strdup(XL_LOCK_FILE);
     }
 
-    if (!lockfile) {
-        fprintf(stderr, "failed to allocate lockfile\n");
+    if (!xl_global_lockfile) {
+        fprintf(stderr, "failed to allocate xl_global_lockfile\n");
         exit(1);
     }
 
@@ -295,9 +296,9 @@ static void xl_ctx_free(void)
         xtl_logger_destroy((xentoollog_logger*)logger);
         logger = NULL;
     }
-    if (lockfile) {
-        free(lockfile);
-        lockfile = NULL;
+    if (xl_global_lockfile) {
+        free(xl_global_lockfile);
+        xl_global_lockfile = NULL;
     }
 }
 

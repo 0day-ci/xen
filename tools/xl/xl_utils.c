@@ -316,50 +316,51 @@ out:
     return ret;
 }
 
-static int fd_lock = -1;
-
-int acquire_lock(void)
+int acquire_lock(const char *lockfile, int *fd_lock)
 {
     int rc;
     struct flock fl;
 
     /* lock already acquired */
-    if (fd_lock >= 0)
+    if (*fd_lock >= 0)
         return ERROR_INVAL;
 
     fl.l_type = F_WRLCK;
     fl.l_whence = SEEK_SET;
     fl.l_start = 0;
     fl.l_len = 0;
-    fd_lock = open(lockfile, O_WRONLY|O_CREAT, S_IWUSR);
-    if (fd_lock < 0) {
-        fprintf(stderr, "cannot open the lockfile %s errno=%d\n", lockfile, errno);
+    *fd_lock = open(lockfile, O_WRONLY|O_CREAT, S_IWUSR);
+    if (*fd_lock < 0) {
+        fprintf(stderr, "cannot open the lockfile %s errno=%d\n",
+                lockfile, errno);
         return ERROR_FAIL;
     }
-    if (fcntl(fd_lock, F_SETFD, FD_CLOEXEC) < 0) {
-        close(fd_lock);
-        fprintf(stderr, "cannot set cloexec to lockfile %s errno=%d\n", lockfile, errno);
+    if (fcntl(*fd_lock, F_SETFD, FD_CLOEXEC) < 0) {
+        close(*fd_lock);
+        fprintf(stderr, "cannot set cloexec to lockfile %s errno=%d\n",
+                lockfile, errno);
         return ERROR_FAIL;
     }
 get_lock:
-    rc = fcntl(fd_lock, F_SETLKW, &fl);
+    rc = fcntl(*fd_lock, F_SETLKW, &fl);
     if (rc < 0 && errno == EINTR)
         goto get_lock;
     if (rc < 0) {
-        fprintf(stderr, "cannot acquire lock %s errno=%d\n", lockfile, errno);
+        fprintf(stderr, "cannot acquire lock %s errno=%d\n",
+                lockfile, errno);
         rc = ERROR_FAIL;
     } else
         rc = 0;
     return rc;
 }
 
-int release_lock(void)
+int release_lock(const char *lockfile, int *fd_lock)
 {
     int rc;
     struct flock fl;
 
     /* lock not acquired */
-    if (fd_lock < 0)
+    if (*fd_lock < 0)
         return ERROR_INVAL;
 
 release_lock:
@@ -368,16 +369,17 @@ release_lock:
     fl.l_start = 0;
     fl.l_len = 0;
 
-    rc = fcntl(fd_lock, F_SETLKW, &fl);
+    rc = fcntl(*fd_lock, F_SETLKW, &fl);
     if (rc < 0 && errno == EINTR)
         goto release_lock;
     if (rc < 0) {
-        fprintf(stderr, "cannot release lock %s, errno=%d\n", lockfile, errno);
+        fprintf(stderr, "cannot release lock %s, errno=%d\n",
+                lockfile, errno);
         rc = ERROR_FAIL;
     } else
         rc = 0;
-    close(fd_lock);
-    fd_lock = -1;
+    close(*fd_lock);
+    *fd_lock = -1;
 
     return rc;
 }

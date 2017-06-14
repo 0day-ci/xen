@@ -147,8 +147,8 @@ void print_bitmap(uint8_t *map, int maplen, FILE *stream);
 
 int do_daemonize(char *name, const char *pidfile);
 
-int acquire_lock(void);
-int release_lock(void);
+int acquire_lock(const char *lockfile, int *fd_lock);
+int release_lock(const char *lockfile, int *fd_lock);
 #endif /* XL_UTILS_H */
 
 /*

@@ -265,7 +265,8 @@ extern int claim_mode;
 extern bool progress_use_cr;
 extern xentoollog_level minmsglevel;
 #define minmsglevel_default XTL_PROGRESS
-extern char *lockfile;
+extern char *xl_global_lockfile;
+extern int  xl_global_fd_lock;
 extern char *default_vifscript;
 extern char *default_bridge;
 extern char *default_gatewaydev;

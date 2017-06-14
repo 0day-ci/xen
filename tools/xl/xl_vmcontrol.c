@@ -776,7 +776,7 @@ int create_domain(struct domain_create *dom_info)
 start:
     assert(domid == INVALID_DOMID);
 
-    rc = acquire_lock();
+    rc = acquire_lock(xl_global_lockfile, &xl_global_fd_lock);
     if (rc < 0)
         goto error_out;
 
@@ -838,7 +838,7 @@ start:
     if ( ret )
         goto error_out;
 
-    release_lock();
+    release_lock(xl_global_lockfile, &xl_global_fd_lock);
 
     if (restore_fd_to_close >= 0) {
         if (close(restore_fd_to_close))
@@ -1012,7 +1012,7 @@ start:
     }
 
 error_out:
-    release_lock();
+    release_lock(xl_global_lockfile, &xl_global_fd_lock);
     if (libxl_domid_valid_guest(domid)) {
         libxl_domain_destroy(ctx, domid, 0);
         domid = INVALID_DOMID;
