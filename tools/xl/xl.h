@@ -292,6 +292,7 @@ extern void printf_info_sexp(int domid, libxl_domain_config *d_config, FILE *fh)
 
 #define XL_GLOBAL_CONFIG XEN_CONFIG_DIR "/xl.conf"
 #define XL_LOCK_FILE XEN_LOCK_DIR "/xl"
+#define XL_DOMAIN_LOCK_FILE_FMT XEN_LOCK_DIR "/xl-%u"
 
 #endif /* XL_H */
 

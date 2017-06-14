@@ -149,6 +149,9 @@ int do_daemonize(char *name, const char *pidfile);
 
 int acquire_lock(const char *lockfile, int *fd_lock);
 int release_lock(const char *lockfile, int *fd_lock);
+
+typedef int (*domain_fn)(void *arg);
+int with_lock(uint32_t domid, domain_fn fn, void *arg);
 #endif /* XL_UTILS_H */
 
 /*

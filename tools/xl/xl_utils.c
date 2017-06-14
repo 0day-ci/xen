@@ -27,6 +27,25 @@
 #include "xl.h"
 #include "xl_utils.h"
 
+int with_lock(uint32_t domid, domain_fn fn, void *arg)
+{
+    char filename[sizeof(XL_DOMAIN_LOCK_FILE_FMT)+15];
+    int fd_lock = -1;
+    int rc;
+
+    snprintf(filename, sizeof(filename), XL_DOMAIN_LOCK_FILE_FMT, domid);
+
+    rc = acquire_lock(filename, &fd_lock);
+    if (rc) goto out;
+
+    rc = fn(arg);
+
+    release_lock(filename, &fd_lock);
+
+out:
+    return rc;
+}
+
 void dolog(const char *file, int line, const char *func, char *fmt, ...)
 {
     va_list ap;
