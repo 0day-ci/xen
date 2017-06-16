@@ -67,6 +67,7 @@ struct pci_dev {
     enum pdev_type {
         DEV_TYPE_PCI_UNKNOWN,
         DEV_TYPE_PCIe_ENDPOINT,
+        DEV_TYPE_RC_ENDPOINT,       // Root Complex Integrated Endpoint
         DEV_TYPE_PCIe_BRIDGE,       // PCIe root port, switch
         DEV_TYPE_PCIe2PCI_BRIDGE,   // PCIe-to-PCI/PCIx bridge
         DEV_TYPE_PCI2PCIe_BRIDGE,   // PCI/PCIx-to-PCIe bridge

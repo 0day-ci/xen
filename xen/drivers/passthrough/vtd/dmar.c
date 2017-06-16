@@ -219,7 +219,12 @@ struct acpi_drhd_unit *acpi_find_matched_drhd_unit(const struct pci_dev *pdev)
     else if ( pdev->info.is_virtfn )
     {
         bus = pdev->info.physfn.bus;
-        devfn = PCI_SLOT(pdev->info.physfn.devfn) ? 0 : pdev->info.physfn.devfn;
+        /* ARI is not appliable to Root Complex Integrated Endpoints */
+        if ( PCI_SLOT(pdev->info.physfn.devfn) &&
+             (pdev->type != DEV_TYPE_RC_ENDPOINT) )
+            devfn = 0;
+        else
+            devfn = pdev->info.physfn.devfn;
     }
     else
     {

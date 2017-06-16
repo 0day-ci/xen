@@ -1493,6 +1493,7 @@ static int domain_context_mapping(struct domain *domain, u8 devfn,
         break;
 
     case DEV_TYPE_PCIe_ENDPOINT:
+    case DEV_TYPE_RC_ENDPOINT:
         if ( iommu_debug )
             printk(VTDPREFIX "d%d:PCIe: map %04x:%02x:%02x.%u\n",
                    domain->domain_id, seg, bus,
@@ -1644,6 +1645,7 @@ static int domain_context_unmap(struct domain *domain, u8 devfn,
         goto out;
 
     case DEV_TYPE_PCIe_ENDPOINT:
+    case DEV_TYPE_RC_ENDPOINT:
         if ( iommu_debug )
             printk(VTDPREFIX "d%d:PCIe: unmap %04x:%02x:%02x.%u\n",
                    domain->domain_id, seg, bus,

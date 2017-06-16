@@ -345,6 +345,7 @@ static struct pci_dev *alloc_pdev(struct pci_seg *pseg, u8 bus, u8 devfn)
             break;
 
         case DEV_TYPE_PCIe_ENDPOINT:
+        case DEV_TYPE_RC_ENDPOINT:
             pos = pci_find_cap_offset(pseg->nr, bus, PCI_SLOT(devfn),
                                       PCI_FUNC(devfn), PCI_CAP_ID_EXP);
             BUG_ON(!pos);
@@ -854,23 +855,24 @@ int pci_release_devices(struct domain *d)
 
 enum pdev_type pdev_type(u16 seg, u8 bus, u8 devfn)
 {
-    u16 class_device, creg;
-    u8 d = PCI_SLOT(devfn), f = PCI_FUNC(devfn);
+    uint8_t d = PCI_SLOT(devfn), f = PCI_FUNC(devfn);
     int pos = pci_find_cap_offset(seg, bus, d, f, PCI_CAP_ID_EXP);
+    int pcie_type = -1;
 
-    class_device = pci_conf_read16(seg, bus, d, f, PCI_CLASS_DEVICE);
-    switch ( class_device )
+    if ( pos )
+        pcie_type = MASK_EXTR(pci_conf_read16(seg, bus, d, f,
+                                  pos + PCI_EXP_FLAGS), PCI_EXP_FLAGS_TYPE);
+    switch ( pci_conf_read16(seg, bus, d, f, PCI_CLASS_DEVICE) )
     {
     case PCI_CLASS_BRIDGE_PCI:
-        if ( !pos )
-            return DEV_TYPE_LEGACY_PCI_BRIDGE;
-        creg = pci_conf_read16(seg, bus, d, f, pos + PCI_EXP_FLAGS);
-        switch ( (creg & PCI_EXP_FLAGS_TYPE) >> 4 )
+        switch ( pcie_type )
         {
         case PCI_EXP_TYPE_PCI_BRIDGE:
             return DEV_TYPE_PCIe2PCI_BRIDGE;
         case PCI_EXP_TYPE_PCIE_BRIDGE:
             return DEV_TYPE_PCI2PCIe_BRIDGE;
+        case -1:
+            return DEV_TYPE_LEGACY_PCI_BRIDGE;
         }
         return DEV_TYPE_PCIe_BRIDGE;
     case PCI_CLASS_BRIDGE_HOST:
@@ -880,7 +882,15 @@ enum pdev_type pdev_type(u16 seg, u8 bus, u8 devfn)
         return DEV_TYPE_PCI_UNKNOWN;
     }
 
-    return pos ? DEV_TYPE_PCIe_ENDPOINT : DEV_TYPE_PCI;
+    switch ( pcie_type )
+    {
+    case PCI_EXP_TYPE_RC_END:
+        return DEV_TYPE_RC_ENDPOINT;
+    case -1:
+        return DEV_TYPE_PCI;
+    }
+
+    return DEV_TYPE_PCIe_ENDPOINT;
 }
 
 /*
