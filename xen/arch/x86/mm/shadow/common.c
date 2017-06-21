@@ -235,12 +235,16 @@ hvm_emulate_insn_fetch(enum x86_segment seg,
 {
     struct sh_emulate_ctxt *sh_ctxt =
         container_of(ctxt, struct sh_emulate_ctxt, ctxt);
-    unsigned int insn_off = offset - sh_ctxt->insn_buf_eip;
+    /* Careful, as offset can wrap or truncate WRT insn_buf_eip. */
+    uint8_t insn_off = offset - sh_ctxt->insn_buf_eip;
 
     ASSERT(seg == x86_seg_cs);
 
-    /* Fall back if requested bytes are not in the prefetch cache. */
-    if ( unlikely((insn_off + bytes) > sh_ctxt->insn_buf_bytes) )
+    /*
+     * Fall back if requested bytes are not in the prefetch cache, but always
+     * perform the zero-length read for segmentation purposes.
+     */
+    if ( !bytes || unlikely((insn_off + bytes) > sh_ctxt->insn_buf_bytes) )
         return hvm_read(seg, offset, p_data, bytes,
                         hvm_access_insn_fetch, sh_ctxt);
 
