@@ -118,6 +118,8 @@ struct host_its {
     const struct dt_device_node *dt_node;
     paddr_t addr;
     paddr_t size;
+    /* A unique value to identify each ITS */
+    u32 translation_id;
     void __iomem *its_base;
     unsigned int devid_bits;
     unsigned int evid_bits;
