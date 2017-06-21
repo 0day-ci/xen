@@ -141,6 +141,8 @@ void gicv3_its_dt_init(const struct dt_device_node *node);
 #ifdef CONFIG_ACPI
 int gicv3_its_acpi_init(struct acpi_subtable_header *header,
                                     const unsigned long end);
+u32 gicv3_its_madt_generic_translator_size(void);
+u32 gicv3_its_make_hwdom_madt(u8 *base_ptr, u32 offset);
 #endif
 
 /* Deny iomem access for its */
@@ -212,6 +214,16 @@ static inline int gicv3_its_acpi_init(struct acpi_subtable_header *header,
                                     const unsigned long end)
 {
     return false;
+}
+
+static inline u32 gicv3_its_madt_generic_translator_size(void)
+{
+    return 0;
+}
+
+static inline u32 gicv3_its_make_hwdom_madt(u8 *base_ptr, u32 offset)
+{
+    return 0;
 }
 #endif
 

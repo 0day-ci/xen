@@ -924,6 +924,40 @@ int gicv3_its_deny_access(const struct domain *d)
     return rc;
 }
 
+#ifdef CONFIG_ACPI
+u32 gicv3_its_madt_generic_translator_size(void)
+{
+    const struct host_its *its_data;
+    u32 size = 0;
+
+    list_for_each_entry(its_data, &host_its_list, entry)
+        size += sizeof(struct acpi_madt_generic_translator);
+
+    return size;
+}
+
+u32 gicv3_its_make_hwdom_madt(u8 *base_ptr, u32 offset)
+{
+    struct acpi_madt_generic_translator *gic_its;
+    const struct host_its *its_data;
+    u32 table_len = offset, size;
+
+    /* Update GIC ITS information in hardware domain's MADT */
+    list_for_each_entry(its_data, &host_its_list, entry)
+    {
+        size = sizeof(struct acpi_madt_generic_translator);
+        gic_its = (struct acpi_madt_generic_translator *)(base_ptr
+                   + table_len);
+        gic_its->header.type = ACPI_MADT_TYPE_GENERIC_TRANSLATOR;
+        gic_its->header.length = size;
+        gic_its->base_address = its_data->addr;
+        gic_its->translation_id = its_data->translation_id;
+        table_len +=  size;
+    }
+
+    return table_len;
+}
+#endif
 /*
  * Create the respective guest DT nodes from a list of host ITSes.
  * This copies the reg property, so the guest sees the ITS at the same address
