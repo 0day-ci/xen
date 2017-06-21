@@ -105,6 +105,7 @@
 
 #include <xen/device_tree.h>
 #include <xen/rbtree.h>
+#include <xen/acpi.h>
 
 #define HOST_ITS_FLUSH_CMD_QUEUE        (1U << 0)
 #define HOST_ITS_USES_PTA               (1U << 1)
@@ -136,6 +137,11 @@ extern struct list_head host_its_list;
 
 /* Parse the host DT and pick up all host ITSes. */
 void gicv3_its_dt_init(const struct dt_device_node *node);
+
+#ifdef CONFIG_ACPI
+int gicv3_its_acpi_init(struct acpi_subtable_header *header,
+                                    const unsigned long end);
+#endif
 
 bool gicv3_its_host_has_its(void);
 
@@ -197,6 +203,14 @@ void gicv3_lpi_update_host_entry(uint32_t host_lpi, int domain_id,
 static inline void gicv3_its_dt_init(const struct dt_device_node *node)
 {
 }
+
+#ifdef CONFIG_ACPI
+static inline int gicv3_its_acpi_init(struct acpi_subtable_header *header,
+                                    const unsigned long end)
+{
+    return false;
+}
+#endif
 
 static inline bool gicv3_its_host_has_its(void)
 {

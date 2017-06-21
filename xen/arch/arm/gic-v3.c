@@ -1567,6 +1567,12 @@ static void __init gicv3_acpi_init(void)
 
     gicv3.rdist_stride = 0;
 
+    count = acpi_table_parse_madt(ACPI_MADT_TYPE_GENERIC_TRANSLATOR,
+                                  gicv3_its_acpi_init, 0);
+
+    if ( count <= 0 )
+        panic("GICv3: Can't get ITS entry");
+
     /*
      * In ACPI, 0 is considered as the invalid address. However the rest
      * of the initialization rely on the invalid address to be

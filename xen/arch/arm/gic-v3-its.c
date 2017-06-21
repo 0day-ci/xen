@@ -33,6 +33,7 @@
 
 #define ITS_CMD_QUEUE_SZ                SZ_1M
 
+#define ACPI_GICV3_ITS_MEM_SIZE (SZ_64K)
 /*
  * No lock here, as this list gets only populated upon boot while scanning
  * firmware tables for all host ITSes, and only gets iterated afterwards.
@@ -976,11 +977,35 @@ int gicv3_its_make_hwdom_dt_nodes(const struct domain *d,
     return res;
 }
 
+/* Common function for addind to host_its_list
+*/
+static int add_to_host_its_list(u64 addr, u64 size,
+                      u32 translation_id, const void *node)
+{
+    struct host_its *its_data;
+    its_data = xzalloc(struct host_its);
+
+    if ( !its_data )
+        return -1;
+
+    if ( node )
+        its_data->dt_node = node;
+
+    its_data->addr = addr;
+    its_data->size = size;
+    its_data->translation_id = translation_id;
+    printk("GICv3: Found ITS @0x%lx\n", addr);
+
+    list_add_tail(&its_data->entry, &host_its_list);
+
+    return 0;
+}
+
 /* Scan the DT for any ITS nodes and create a list of host ITSes out of it. */
 void gicv3_its_dt_init(const struct dt_device_node *node)
 {
     const struct dt_device_node *its = NULL;
-    struct host_its *its_data;
+    static int its_id = 1;
 
     /*
      * Check for ITS MSI subnodes. If any, add the ITS register
@@ -996,19 +1021,23 @@ void gicv3_its_dt_init(const struct dt_device_node *node)
         if ( dt_device_get_address(its, 0, &addr, &size) )
             panic("GICv3: Cannot find a valid ITS frame address");
 
-        its_data = xzalloc(struct host_its);
-        if ( !its_data )
-            panic("GICv3: Cannot allocate memory for ITS frame");
-
-        its_data->addr = addr;
-        its_data->size = size;
-        its_data->dt_node = its;
-
-        printk("GICv3: Found ITS @0x%lx\n", addr);
-
-        list_add_tail(&its_data->entry, &host_its_list);
+        if ( add_to_host_its_list(addr, size, its_id++, its) )
+            panic("GICV3: Adding Host ITS failed ");
     }
 }
+
+#ifdef CONFIG_ACPI
+int gicv3_its_acpi_init(struct acpi_subtable_header *header, const unsigned long end)
+{
+    struct acpi_madt_generic_translator *its_entry;
+
+    its_entry = (struct acpi_madt_generic_translator *)header;
+
+    return add_to_host_its_list(its_entry->base_address,
+                        ACPI_GICV3_ITS_MEM_SIZE,
+                        its_entry->translation_id, NULL);
+}
+#endif
 
 /*
  * Local variables:
