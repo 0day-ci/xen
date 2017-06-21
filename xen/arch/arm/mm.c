@@ -1083,7 +1083,7 @@ void arch_dump_shared_mem_info(void)
 
 int donate_page(struct domain *d, struct page_info *page, unsigned int memflags)
 {
-    ASSERT(0);
+    ASSERT_UNREACHABLE();
     return -ENOSYS;
 }
 
@@ -1095,7 +1095,7 @@ int steal_page(
 
 int page_is_ram_type(unsigned long mfn, unsigned long mem_type)
 {
-    ASSERT(0);
+    ASSERT_UNREACHABLE();
     return 0;
 }
 
