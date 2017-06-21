@@ -170,6 +170,10 @@ clean:: $(addprefix _clean_, $(subdir-all))
 _clean_%/: FORCE
 	$(MAKE) -f $(BASEDIR)/Rules.mk -C $* clean
 
+ifeq ($(CONFIG_TRACE_PC),y)
+$(objs-need-tracing): CFLAGS += -fsanitize-coverage=trace-pc
+endif
+
 %.o: %.c Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 

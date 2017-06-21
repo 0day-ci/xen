@@ -1572,6 +1572,8 @@ int xc_domctl(xc_interface *xch, struct xen_domctl *domctl);
 int xc_sysctl(xc_interface *xch, struct xen_sysctl *sysctl);
 
 int xc_version(xc_interface *xch, int cmd, void *arg);
+int xc_edge_trace(xc_interface *xch, domid_t dom_id, int mode,
+    unsigned int size, uint64_t *buf);
 
 int xc_flask_op(xc_interface *xch, xen_flask_op_t *op);
 

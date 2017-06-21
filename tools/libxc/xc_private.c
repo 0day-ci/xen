@@ -530,6 +530,28 @@ int xc_version(xc_interface *xch, int cmd, void *arg)
     return rc;
 }
 
+int xc_edge_trace(xc_interface *xch,
+    domid_t dom_id, int mode, unsigned int size, uint64_t* arg)
+{
+    int rc;
+
+    DECLARE_HYPERCALL_BOUNCE(arg, size * sizeof(uint64_t),
+        XC_HYPERCALL_BUFFER_BOUNCE_OUT);
+
+    if ( xc_hypercall_bounce_pre(xch, arg) )
+    {
+        PERROR("Could not bounce buffer for edge_trace hypercall");
+        return -ENOMEM;
+    }
+
+    rc = do_edge_trace(xch, dom_id, mode, size, HYPERCALL_BUFFER(arg));
+
+    xc_hypercall_bounce_post(xch, arg);
+
+    return rc;
+}
+
+
 unsigned long xc_make_page_below_4G(
     xc_interface *xch, uint32_t domid, unsigned long mfn)
 {
