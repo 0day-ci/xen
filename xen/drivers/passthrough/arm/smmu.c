@@ -2272,6 +2272,7 @@ static const struct of_device_id arm_smmu_of_match[] = {
 	{ .compatible = "arm,mmu-400", .data = (void *)ARM_SMMU_V1 },
 	{ .compatible = "arm,mmu-401", .data = (void *)ARM_SMMU_V1 },
 	{ .compatible = "arm,mmu-500", .data = (void *)ARM_SMMU_V2 },
+	{ .compatible = "cavium,smmu-v2", .data = (void *)ARM_SMMU_V2 },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, arm_smmu_of_match);
