@@ -39,7 +39,6 @@
 #include <asm/event.h>
 #include <asm/regs.h>
 #include <asm/cpregs.h>
-#include <asm/psci.h>
 #include <asm/mmio.h>
 #include <asm/cpufeature.h>
 #include <asm/flushtlb.h>
@@ -1450,113 +1449,6 @@ static void do_debug_trap(struct cpu_user_regs *regs, unsigned int code)
 }
 #endif
 
-/* helper function for checking arm mode 32/64 bit */
-static inline int psci_mode_check(struct domain *d, register_t fid)
-{
-        return !( is_64bit_domain(d)^( (fid & PSCI_0_2_64BIT) >> 30 ) );
-}
-
-static void do_trap_psci(struct cpu_user_regs *regs)
-{
-    register_t fid = get_user_reg(regs,0);
-
-    /* preloading in case psci_mode_check fails */
-    set_user_reg(regs, 0, PSCI_INVALID_PARAMETERS);
-    switch( fid )
-    {
-    case PSCI_cpu_off:
-        {
-            uint32_t pstate = get_user_reg(regs, 1);
-            perfc_incr(vpsci_cpu_off);
-            set_user_reg(regs, 0, do_psci_cpu_off(pstate));
-        }
-        break;
-    case PSCI_cpu_on:
-        {
-            uint32_t vcpuid =  get_user_reg(regs, 1);
-            register_t epoint = get_user_reg(regs, 2);
-            perfc_incr(vpsci_cpu_on);
-            set_user_reg(regs, 0, do_psci_cpu_on(vcpuid, epoint));
-        }
-        break;
-    case PSCI_0_2_FN_PSCI_VERSION:
-        perfc_incr(vpsci_version);
-        set_user_reg(regs, 0, do_psci_0_2_version());
-        break;
-    case PSCI_0_2_FN_CPU_OFF:
-        perfc_incr(vpsci_cpu_off);
-        set_user_reg(regs, 0, do_psci_0_2_cpu_off());
-        break;
-    case PSCI_0_2_FN_MIGRATE_INFO_TYPE:
-        perfc_incr(vpsci_migrate_info_type);
-        set_user_reg(regs, 0, do_psci_0_2_migrate_info_type());
-        break;
-    case PSCI_0_2_FN_MIGRATE_INFO_UP_CPU:
-    case PSCI_0_2_FN64_MIGRATE_INFO_UP_CPU:
-        perfc_incr(vpsci_migrate_info_up_cpu);
-        if ( psci_mode_check(current->domain, fid) )
-            set_user_reg(regs, 0, do_psci_0_2_migrate_info_up_cpu());
-        break;
-    case PSCI_0_2_FN_SYSTEM_OFF:
-        perfc_incr(vpsci_system_off);
-        do_psci_0_2_system_off();
-        set_user_reg(regs, 0, PSCI_INTERNAL_FAILURE);
-        break;
-    case PSCI_0_2_FN_SYSTEM_RESET:
-        perfc_incr(vpsci_system_reset);
-        do_psci_0_2_system_reset();
-        set_user_reg(regs, 0, PSCI_INTERNAL_FAILURE);
-        break;
-    case PSCI_0_2_FN_CPU_ON:
-    case PSCI_0_2_FN64_CPU_ON:
-        perfc_incr(vpsci_cpu_on);
-        if ( psci_mode_check(current->domain, fid) )
-        {
-            register_t vcpuid = get_user_reg(regs, 1);
-            register_t epoint = get_user_reg(regs, 2);
-            register_t cid = get_user_reg(regs, 3);
-            set_user_reg(regs, 0,
-                         do_psci_0_2_cpu_on(vcpuid, epoint, cid));
-        }
-        break;
-    case PSCI_0_2_FN_CPU_SUSPEND:
-    case PSCI_0_2_FN64_CPU_SUSPEND:
-        perfc_incr(vpsci_cpu_suspend);
-        if ( psci_mode_check(current->domain, fid) )
-        {
-            uint32_t pstate = get_user_reg(regs, 1);
-            register_t epoint = get_user_reg(regs, 2);
-            register_t cid = get_user_reg(regs, 3);
-            set_user_reg(regs, 0,
-                         do_psci_0_2_cpu_suspend(pstate, epoint, cid));
-        }
-        break;
-    case PSCI_0_2_FN_AFFINITY_INFO:
-    case PSCI_0_2_FN64_AFFINITY_INFO:
-        perfc_incr(vpsci_cpu_affinity_info);
-        if ( psci_mode_check(current->domain, fid) )
-        {
-            register_t taff = get_user_reg(regs, 1);
-            uint32_t laff = get_user_reg(regs, 2);
-            set_user_reg(regs, 0,
-                         do_psci_0_2_affinity_info(taff, laff));
-        }
-        break;
-    case PSCI_0_2_FN_MIGRATE:
-    case PSCI_0_2_FN64_MIGRATE:
-        perfc_incr(vpsci_cpu_migrate);
-        if ( psci_mode_check(current->domain, fid) )
-        {
-            uint32_t tcpu = get_user_reg(regs, 1);
-            set_user_reg(regs, 0, do_psci_0_2_migrate(tcpu));
-        }
-        break;
-    default:
-        domain_crash_synchronous();
-        return;
-    }
-}
-
 #ifdef CONFIG_ARM_64
 #define HYPERCALL_RESULT_REG(r) (r)->x0
 #define HYPERCALL_ARG1(r) (r)->x0
@@ -2888,8 +2780,12 @@ asmlinkage void do_trap_guest_sync(struct cpu_user_regs *regs)
             return do_debug_trap(regs, hsr.iss & 0x00ff);
 #endif
         if ( hsr.iss == 0 )
-            return do_trap_psci(regs);
-        do_trap_hypercall(regs, (register_t *)&regs->r12, hsr.iss);
+        {
+            if ( !vsmc_handle_call(regs) )
+                domain_crash_synchronous();
+        }
+        else
+            do_trap_hypercall(regs, (register_t *)&regs->r12, hsr.iss);
         break;
 #ifdef CONFIG_ARM_64
     case HSR_EC_HVC64:
@@ -2900,8 +2796,12 @@ asmlinkage void do_trap_guest_sync(struct cpu_user_regs *regs)
             return do_debug_trap(regs, hsr.iss & 0x00ff);
 #endif
         if ( hsr.iss == 0 )
-            return do_trap_psci(regs);
-        do_trap_hypercall(regs, &regs->x16, hsr.iss);
+        {
+            if ( !vsmc_handle_call(regs) )
+                domain_crash_synchronous();
+        }
+        else
+            do_trap_hypercall(regs, &regs->x16, hsr.iss);
         break;
     case HSR_EC_SMC64:
         /*

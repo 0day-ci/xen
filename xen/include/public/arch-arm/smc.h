@@ -42,4 +42,9 @@ typedef struct {
                                     0x9a, 0xcf, 0x79, 0xd1, \
                                     0x8d, 0xde, 0xe6, 0x67)
 
+/* Standard Service Call UID. Randomly generated with 3rd party tool */
+#define SSC_SMCCC_UID ARM_SMCCC_UID(0xf863386f, 0x4b39, 0x4cbd, \
+                                    0x92, 0x20, 0xce, 0x16, \
+                                    0x41, 0xe5, 0x9f, 0x6f)
+
 #endif	/* __XEN_PUBLIC_ARCH_ARM_SMC_H__ */

@@ -22,6 +22,7 @@
 #include <xen/stdbool.h>
 #include <xen/types.h>
 #include <public/arch-arm/smc.h>
+#include <asm/psci.h>
 #include <asm/vsmc.h>
 #include <asm/regs.h>
 
@@ -43,6 +44,14 @@
 /* Number of functions currently supported by Hypervisor Service. */
 #define XEN_SMCCC_FUNCTION_COUNT 3
 
+/* Standard Service version. Check comment for Hypervisor Service for rules */
+#define SSC_SMCCC_MAJOR_REVISION 0
+#define SSC_SMCCC_MINOR_REVISION 1
+
+/* Number of functions currently supported by Standard Service Service. */
+#define SSC_SMCCC_FUNCTION_COUNT 13
+
+
 /* SMCCC interface for hypervisor. Tell about itself. */
 static bool handle_hypervisor(struct cpu_user_regs *regs)
 {
@@ -60,6 +69,127 @@ static bool handle_hypervisor(struct cpu_user_regs *regs)
     case ARM_SMCCC_FUNC_CALL_REVISION:
         set_user_reg(regs, 0, XEN_SMCCC_MAJOR_REVISION);
         set_user_reg(regs, 1, XEN_SMCCC_MINOR_REVISION);
+        return true;
+    }
+    return false;
+}
+
+/* old (arvm7) PSCI interface */
+static bool handle_arch(struct cpu_user_regs *regs)
+{
+    switch ( get_user_reg(regs,0) & 0xFFFFFFFF )
+    {
+    case PSCI_cpu_off:
+    {
+        uint32_t pstate = get_user_reg(regs, 1);
+        perfc_incr(vpsci_cpu_off);
+        set_user_reg(regs, 0, do_psci_cpu_off(pstate));
+    }
+    return true;
+    case PSCI_cpu_on:
+    {
+        uint32_t vcpuid = get_user_reg(regs, 1);
+        register_t epoint = get_user_reg(regs, 2);
+        perfc_incr(vpsci_cpu_on);
+        set_user_reg(regs, 0, do_psci_cpu_on(vcpuid, epoint));
+    }
+    return true;
+    }
+    return false;
+}
+
+/* helper function for checking arm mode 32/64 bit */
+static inline int psci_mode_check(struct domain *d, register_t fid)
+{
+        return !( is_64bit_domain(d)^( (fid & PSCI_0_2_64BIT) >> 30 ) );
+}
+
+/* PSCI 2.0 interface */
+static bool handle_ssc(struct cpu_user_regs *regs)
+{
+    register_t fid = get_user_reg(regs, 0);
+
+    switch ( ARM_SMCCC_FUNC_NUM(fid) )
+    {
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_PSCI_VERSION):
+        perfc_incr(vpsci_version);
+        set_user_reg(regs, 0, do_psci_0_2_version());
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_CPU_OFF):
+        perfc_incr(vpsci_cpu_off);
+        set_user_reg(regs, 0, do_psci_0_2_cpu_off());
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_MIGRATE_INFO_TYPE):
+        perfc_incr(vpsci_migrate_info_type);
+        set_user_reg(regs, 0, do_psci_0_2_migrate_info_type());
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_MIGRATE_INFO_UP_CPU):
+        perfc_incr(vpsci_migrate_info_up_cpu);
+        if ( psci_mode_check(current->domain, fid) )
+            set_user_reg(regs, 0, do_psci_0_2_migrate_info_up_cpu());
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_SYSTEM_OFF):
+        perfc_incr(vpsci_system_off);
+        do_psci_0_2_system_off();
+        set_user_reg(regs, 0, PSCI_INTERNAL_FAILURE);
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_SYSTEM_RESET):
+        perfc_incr(vpsci_system_reset);
+        do_psci_0_2_system_reset();
+        set_user_reg(regs, 0, PSCI_INTERNAL_FAILURE);
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_CPU_ON):
+        perfc_incr(vpsci_cpu_on);
+        if ( psci_mode_check(current->domain, fid) )
+        {
+            register_t vcpuid = get_user_reg(regs, 1);
+            register_t epoint = get_user_reg(regs, 2);
+            register_t cid = get_user_reg(regs, 3);
+            set_user_reg(regs, 0,
+                         do_psci_0_2_cpu_on(vcpuid, epoint, cid));
+        }
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_CPU_SUSPEND):
+        perfc_incr(vpsci_cpu_suspend);
+        if ( psci_mode_check(current->domain, fid) )
+        {
+            uint32_t pstate = get_user_reg(regs, 1);
+            register_t epoint = get_user_reg(regs, 2);
+            register_t cid = get_user_reg(regs, 3);
+            set_user_reg(regs, 0,
+                         do_psci_0_2_cpu_suspend(pstate, epoint, cid));
+        }
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_AFFINITY_INFO):
+        perfc_incr(vpsci_cpu_affinity_info);
+        if ( psci_mode_check(current->domain, fid) )
+        {
+            register_t taff = get_user_reg(regs, 1);
+            uint32_t laff = get_user_reg(regs,2);
+            set_user_reg(regs, 0,
+                         do_psci_0_2_affinity_info(taff, laff));
+        }
+        return true;
+    case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_MIGRATE):
+        perfc_incr(vpsci_cpu_migrate);
+        if ( psci_mode_check(current->domain, fid) )
+        {
+            uint32_t tcpu = get_user_reg(regs, 1);
+            set_user_reg(regs, 0, do_psci_0_2_migrate(tcpu));
+        }
+        return true;
+    case ARM_SMCCC_FUNC_CALL_COUNT:
+        set_user_reg(regs, 0, SSC_SMCCC_FUNCTION_COUNT);
+        return true;
+    case ARM_SMCCC_FUNC_CALL_UID:
+        set_user_reg(regs, 0, SSC_SMCCC_UID.a[0]);
+        set_user_reg(regs, 1, SSC_SMCCC_UID.a[1]);
+        set_user_reg(regs, 2, SSC_SMCCC_UID.a[2]);
+        set_user_reg(regs, 3, SSC_SMCCC_UID.a[3]);
+        return true;
+    case ARM_SMCCC_FUNC_CALL_REVISION:
+        set_user_reg(regs, 0, SSC_SMCCC_MAJOR_REVISION);
+        set_user_reg(regs, 1, SSC_SMCCC_MINOR_REVISION);
         return true;
     }
     return false;
@@ -104,6 +234,12 @@ int vsmc_handle_call(struct cpu_user_regs *regs)
     {
     case ARM_SMCCC_OWNER_HYPERVISOR:
         handled = handle_hypervisor(regs);
+        break;
+    case ARM_SMCCC_OWNER_ARCH:
+        handled = handle_arch(regs);
+        break;
+    case ARM_SMCCC_OWNER_STANDARD:
+        handled = handle_ssc(regs);
         break;
     }
 
