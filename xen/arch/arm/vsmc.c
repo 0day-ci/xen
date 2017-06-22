@@ -98,12 +98,6 @@ static bool handle_arch(struct cpu_user_regs *regs)
     return false;
 }
 
-/* helper function for checking arm mode 32/64 bit */
-static inline int psci_mode_check(struct domain *d, register_t fid)
-{
-        return !( is_64bit_domain(d)^( (fid & PSCI_0_2_64BIT) >> 30 ) );
-}
-
 /* PSCI 2.0 interface */
 static bool handle_ssc(struct cpu_user_regs *regs)
 {
@@ -125,8 +119,7 @@ static bool handle_ssc(struct cpu_user_regs *regs)
         return true;
     case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_MIGRATE_INFO_UP_CPU):
         perfc_incr(vpsci_migrate_info_up_cpu);
-        if ( psci_mode_check(current->domain, fid) )
-            set_user_reg(regs, 0, do_psci_0_2_migrate_info_up_cpu());
+        set_user_reg(regs, 0, do_psci_0_2_migrate_info_up_cpu());
         return true;
     case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_SYSTEM_OFF):
         perfc_incr(vpsci_system_off);
@@ -140,7 +133,6 @@ static bool handle_ssc(struct cpu_user_regs *regs)
         return true;
     case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_CPU_ON):
         perfc_incr(vpsci_cpu_on);
-        if ( psci_mode_check(current->domain, fid) )
         {
             register_t vcpuid = get_user_reg(regs, 1);
             register_t epoint = get_user_reg(regs, 2);
@@ -151,7 +143,6 @@ static bool handle_ssc(struct cpu_user_regs *regs)
         return true;
     case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_CPU_SUSPEND):
         perfc_incr(vpsci_cpu_suspend);
-        if ( psci_mode_check(current->domain, fid) )
         {
             uint32_t pstate = get_user_reg(regs, 1);
             register_t epoint = get_user_reg(regs, 2);
@@ -162,7 +153,6 @@ static bool handle_ssc(struct cpu_user_regs *regs)
         return true;
     case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_AFFINITY_INFO):
         perfc_incr(vpsci_cpu_affinity_info);
-        if ( psci_mode_check(current->domain, fid) )
         {
             register_t taff = get_user_reg(regs, 1);
             uint32_t laff = get_user_reg(regs,2);
@@ -172,7 +162,6 @@ static bool handle_ssc(struct cpu_user_regs *regs)
         return true;
     case ARM_SMCCC_FUNC_NUM(PSCI_0_2_FN_MIGRATE):
         perfc_incr(vpsci_cpu_migrate);
-        if ( psci_mode_check(current->domain, fid) )
         {
             uint32_t tcpu = get_user_reg(regs, 1);
             set_user_reg(regs, 0, do_psci_0_2_migrate(tcpu));
