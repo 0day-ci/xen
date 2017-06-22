@@ -44,6 +44,7 @@
 #include <asm/cpufeature.h>
 #include <asm/flushtlb.h>
 #include <asm/monitor.h>
+#include <asm/vsmc.h>
 
 #include "decode.h"
 #include "vtimer.h"
@@ -2771,10 +2772,23 @@ static void do_trap_smc(struct cpu_user_regs *regs, const union hsr hsr)
 {
     int rc = 0;
 
+    if ( !check_conditional_instr(regs, hsr) )
+    {
+        advance_pc(regs, hsr);
+        return;
+    }
+
+    /* If monitor is enabled, let it handle the call */
     if ( current->domain->arch.monitor.privileged_call_enabled )
         rc = monitor_smc();
 
-    if ( rc != 1 )
+    if ( rc == 1 )
+        return;
+
+    /* Use standard routines to handle the call */
+    if ( vsmc_handle_call(regs) )
+        advance_pc(regs, hsr);
+    else
         inject_undef_exception(regs, hsr);
 }
 
