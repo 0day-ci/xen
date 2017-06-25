@@ -1883,6 +1883,25 @@ skip_usbdev:
     xlu_cfg_replace_string(config, "device_model_user",
                            &b_info->device_model_user, 0);
 
+    if (!xlu_cfg_get_string (config, "device_model_pv_version", &buf, 0)) {
+        if (!libxl_defbool_val(b_info->device_model_stubdomain)) {
+            fprintf(stderr, "WARNING: device_model_pv_version specified but no stub domain\n");
+        }
+        if (!strcmp(buf, "qemu-xen-traditional")) {
+            b_info->device_model_pv_version
+                = LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN_TRADITIONAL;
+        } else if (!strcmp(buf, "qemu-xen")) {
+            b_info->device_model_pv_version
+                = LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN;
+        } else {
+            fprintf(stderr,
+                    "Unknown device_model_pv_version \"%s\" specified\n", buf);
+            exit(1);
+        }
+    } else 
+        b_info->device_model_pv_version
+            = LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN_TRADITIONAL;
+
 #define parse_extra_args(type)                                            \
     e = xlu_cfg_get_list_as_string_list(config, "device_model_args"#type, \
                                     &b_info->extra##type, 0);            \
