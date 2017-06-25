@@ -1847,8 +1847,8 @@ void libxl__spawn_stub_dm(libxl__egc *egc, libxl__stub_dm_spawn_state *sdss)
 
     dm_config->b_info.u.pv.features = "";
 
-    dm_config->b_info.device_model_version =
-        guest_config->b_info.device_model_version;
+    dm_config->b_info.device_model_version = 
+        guest_config->b_info.device_model_pv_version;
     dm_config->b_info.device_model =
         guest_config->b_info.device_model;
     dm_config->b_info.extra = guest_config->b_info.extra;
@@ -2014,6 +2014,8 @@ static void spawn_stub_launch_dm(libxl__egc *egc,
                 if (d_state->saved_state)
                     console[i].output =
                         GCSPRINTF("pipe:%s", d_state->saved_state);
+                else
+                    console[i].output = "null";
                 break;
             default:
                 console[i].output = "pty";
