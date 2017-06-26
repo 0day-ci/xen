@@ -80,6 +80,8 @@ void vm_event_set_registers(struct vcpu *v, vm_event_response_t *rsp);
 
 void vm_event_monitor_next_interrupt(struct vcpu *v);
 
+int init_domain_vm_event(struct domain *d);
+
 #endif /* __VM_EVENT_H__ */
 
 /*

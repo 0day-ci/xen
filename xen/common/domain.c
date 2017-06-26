@@ -362,11 +362,10 @@ struct domain *domain_create(domid_t domid, unsigned int domcr_flags,
 
         poolid = 0;
 
-        err = -ENOMEM;
-        d->vm_event = xzalloc(struct vm_event_per_domain);
-        if ( !d->vm_event )
+        if ( (err = init_domain_vm_event(d)) != 0 )
             goto fail;
 
+        err = -ENOMEM;
         d->pbuf = xzalloc_array(char, DOMAIN_PBUF_SIZE);
         if ( !d->pbuf )
             goto fail;

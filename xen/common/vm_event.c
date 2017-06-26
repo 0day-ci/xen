@@ -39,6 +39,26 @@
 #define vm_event_ring_lock(_ved)       spin_lock(&(_ved)->ring_lock)
 #define vm_event_ring_unlock(_ved)     spin_unlock(&(_ved)->ring_lock)
 
+int init_domain_vm_event(struct domain *d)
+{
+    d->vm_event = xzalloc(struct vm_event_per_domain);
+
+    if ( !d->vm_event )
+        return -ENOMEM;
+
+#ifdef CONFIG_HAS_MEM_PAGING
+    init_waitqueue_head(&d->vm_event->paging.wq);
+#endif
+
+    init_waitqueue_head(&d->vm_event->monitor.wq);
+
+#ifdef CONFIG_HAS_MEM_SHARING
+    init_waitqueue_head(&d->vm_event->share.wq);
+#endif
+
+    return 0;
+}
+
 static int vm_event_enable(
     struct domain *d,
     xen_domctl_vm_event_op_t *vec,
@@ -92,9 +112,6 @@ static int vm_event_enable(
 
     /* Save the pause flag for this particular ring. */
     ved->pause_flag = pause_flag;
-
-    /* Initialize the last-chance wait queue. */
-    init_waitqueue_head(&ved->wq);
 
     vm_event_ring_unlock(ved);
     return 0;
