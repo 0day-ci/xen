@@ -226,7 +226,7 @@ config CRYPTO
 	bool
 
 config LIVEPATCH
-	bool "Live patching support (TECH PREVIEW)"
+	bool "Live patching support"
 	default n
 	depends on HAS_BUILD_ID = "y"
 	---help---
