@@ -121,9 +121,12 @@ int main_vncviewer(int argc, char **argv);
 int main_pcilist(int argc, char **argv);
 int main_pcidetach(int argc, char **argv);
 int main_pciattach(int argc, char **argv);
+int main_pciassignable_hide(int argc, char **argv);
+int main_pciassignable_unhide(int argc, char **argv);
 int main_pciassignable_add(int argc, char **argv);
 int main_pciassignable_remove(int argc, char **argv);
 int main_pciassignable_list(int argc, char **argv);
+int main_pciassignable_list_hidden(int argc, char **argv);
 #ifndef LIBXL_HAVE_NO_SUSPEND_RESUME
 int main_restore(int argc, char **argv);
 int main_migrate_receive(int argc, char **argv);

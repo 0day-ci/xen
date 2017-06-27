@@ -966,6 +966,15 @@ start:
     LOG("Waiting for domain %s (domid %u) to die [pid %ld]",
         d_config.c_info.name, domid, (long)getpid());
 
+    ret = libxl_reg_aer_events_handler(ctx, domid);
+    if (ret) {
+        /*
+         * This error may not be severe enough to fail the creation of the VM.
+         * Log the error, and continue with the creation.
+         */
+        LOG("libxl_reg_aer_events_handler() failed, ret = 0x%08x", ret);
+    }
+
     ret = libxl_evenable_domain_death(ctx, domid, 0, &deathw);
     if (ret) goto out;
 
@@ -993,6 +1002,7 @@ start:
             LOG("Domain %u has shut down, reason code %d 0x%x", domid,
                 event->u.domain_shutdown.shutdown_reason,
                 event->u.domain_shutdown.shutdown_reason);
+            libxl_unreg_aer_events_handler(ctx, domid);
             switch (handle_domain_death(&domid, event, &d_config)) {
             case DOMAIN_RESTART_SOFT_RESET:
                 domid_soft_reset = domid;
@@ -1059,6 +1069,7 @@ start:
 
         case LIBXL_EVENT_TYPE_DOMAIN_DEATH:
             LOG("Domain %u has been destroyed.", domid);
+            libxl_unreg_aer_events_handler(ctx, domid);
             libxl_event_free(ctx, event);
             ret = 0;
             goto out;

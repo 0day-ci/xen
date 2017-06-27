@@ -163,8 +163,9 @@ static void pciassignable_list(void)
     if ( pcidevs == NULL )
         return;
     for (i = 0; i < num; i++) {
-        printf("%04x:%02x:%02x.%01x\n",
-               pcidevs[i].domain, pcidevs[i].bus, pcidevs[i].dev, pcidevs[i].func);
+        if (!libxl_device_pci_assignable_is_hidden(ctx, &pcidevs[i]))
+            printf("%04x:%02x:%02x.%01x\n",
+                   pcidevs[i].domain, pcidevs[i].bus, pcidevs[i].dev, pcidevs[i].func);
         libxl_device_pci_dispose(&pcidevs[i]);
     }
     free(pcidevs);
@@ -180,6 +181,126 @@ int main_pciassignable_list(int argc, char **argv)
 
     pciassignable_list();
     return 0;
+}
+
+static void pciassignable_list_hidden(void)
+{
+    libxl_device_pci *pcidevs;
+    int num, i;
+
+    pcidevs = libxl_device_pci_assignable_list(ctx, &num);
+
+    if ( pcidevs == NULL )
+        return;
+    for (i = 0; i < num; i++) {
+        if (libxl_device_pci_assignable_is_hidden(ctx, &pcidevs[i]))
+            printf("%04x:%02x:%02x.%01x\n",
+                   pcidevs[i].domain, pcidevs[i].bus, pcidevs[i].dev, pcidevs[i].func);
+        libxl_device_pci_dispose(&pcidevs[i]);
+    }
+    free(pcidevs);
+}
+
+int main_pciassignable_list_hidden(int argc, char **argv)
+{
+    int opt;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "pci-assignable-list-hidden", 0) {
+        /* No options */
+    }
+
+    pciassignable_list_hidden();
+    return 0;
+}
+
+static int pciassignable_hide(const char *bdf)
+{
+    libxl_device_pci pcidev;
+    XLU_Config *config;
+    int r = EXIT_SUCCESS;
+
+    libxl_device_pci_init(&pcidev);
+
+    config = xlu_cfg_init(stderr, "command line");
+    if (!config) {
+        perror("xlu_cfg_init");
+        exit(-1);
+    }
+
+    if (xlu_pci_parse_bdf(config, &pcidev, bdf)) {
+        fprintf(stderr, "pci-assignable-hide: malformed BDF specification \"%s\"\n", bdf);
+        exit(2);
+    }
+
+    if (libxl_device_pci_assignable_hide(ctx, &pcidev))
+        r = EXIT_FAILURE;
+
+    libxl_device_pci_dispose(&pcidev);
+    xlu_cfg_destroy(config);
+
+    return r;
+}
+
+int main_pciassignable_hide(int argc, char **argv)
+{
+    int opt;
+    const char *bdf = NULL;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "main_pciassignable_hide", 1) {
+        /* No options */
+    }
+
+    bdf = argv[optind];
+
+    if (pciassignable_hide(bdf))
+        return EXIT_FAILURE;
+
+    return EXIT_SUCCESS;
+}
+
+static int pciassignable_unhide(const char *bdf)
+{
+    libxl_device_pci pcidev;
+    XLU_Config *config;
+    int r = EXIT_SUCCESS;
+
+    libxl_device_pci_init(&pcidev);
+
+    config = xlu_cfg_init(stderr, "command line");
+    if (!config) {
+        perror("xlu_cfg_init");
+        exit(-1);
+    }
+
+    if (xlu_pci_parse_bdf(config, &pcidev, bdf)) {
+        fprintf(stderr, "pci-assignable-unhide: malformed BDF specification \"%s\"\n", bdf);
+        exit(2);
+    }
+
+    if (libxl_device_pci_assignable_unhide(ctx, &pcidev))
+        r = EXIT_FAILURE;
+
+    libxl_device_pci_dispose(&pcidev);
+    xlu_cfg_destroy(config);
+
+    return r;
+}
+
+int main_pciassignable_unhide(int argc, char **argv)
+{
+    int opt;
+    const char *bdf = NULL;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "main_pciassignable_unhide", 1) {
+        /* No options */
+    }
+
+    bdf = argv[optind];
+
+    if (pciassignable_unhide(bdf))
+        return EXIT_FAILURE;
+
+    return EXIT_SUCCESS;
 }
 
 static int pciassignable_add(const char *bdf, int rebind)
