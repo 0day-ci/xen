@@ -14,6 +14,21 @@
 
 #include "libxl_internal.h"
 
+static int libxl__device_vdispl_setdefault(libxl__gc *gc, uint32_t domid,
+                                           libxl_device_vdispl *vdispl)
+{
+    int rc;
+
+    rc = libxl__resolve_domid(gc, vdispl->backend_domname,
+                              &vdispl->backend_domid);
+
+    if (vdispl->devid == -1) {
+        vdispl->devid = libxl__device_nextid(gc, domid, "vdispl");
+    }
+
+    return rc;
+}
+
 static int libxl__device_from_vdispl(libxl__gc *gc, uint32_t domid,
                                      libxl_device_vdispl *vdispl,
                                      libxl__device *device)
@@ -47,7 +62,7 @@ static void libxl__device_vdispl_add(libxl__egc *egc, uint32_t domid,
                                      libxl_device_vdispl *vdispl,
                                      libxl__ao_device *aodev)
 {
-
+    libxl__device_add(egc, domid, &libxl__vdispl_devtype, vdispl, aodev);
 }
 
 libxl_device_vdispl *libxl_device_vdispl_list(libxl_ctx *ctx, uint32_t domid,

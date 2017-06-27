@@ -1793,6 +1793,109 @@ out:
     return AO_CREATE_FAIL(rc);
 }
 
+static int device_add_domain_config(libxl__gc *gc, uint32_t domid,
+                                    const struct libxl_device_type *dt,
+                                    void *type)
+{
+    int rc;
+    libxl_domain_config d_config;
+    libxl__domain_userdata_lock *lock = NULL;
+    int *num_dev;
+    int i;
+    void *item = NULL;
+
+    libxl_domain_config_init(&d_config);
+
+    lock = libxl__lock_domain_userdata(gc, domid);
+    if (!lock) {
+        rc = ERROR_LOCK_FAIL; goto out;
+    }
+
+    rc = libxl__get_domain_configuration(gc, domid, &d_config);
+    if (rc) goto out;
+
+    num_dev = libxl__device_type_get_num(dt, &d_config);
+
+    /* Check for existing device */
+    for (i = 0; i < *num_dev; i++) {
+        if (dt->compare(libxl__device_type_get_elem(dt, &d_config, i), type)) {
+            item = libxl__device_type_get_elem(dt, &d_config, i);
+        }
+    }
+
+    if (!item) {
+        void **devs= libxl__device_type_get_ptr(dt, &d_config);
+        *devs = libxl__realloc(NOGC, *devs,
+                               dt->dev_elem_size * (*num_dev + 1));
+        item = libxl__device_type_get_elem(dt, &d_config, *num_dev);
+        (*num_dev)++;
+    } else {
+        dt->dispose(item);
+    }
+
+    dt->init(item);
+    dt->copy(CTX, item, type);
+
+    rc = libxl__dm_check_start(gc, &d_config, domid);
+    if (rc) goto out;
+
+    rc = libxl__set_domain_configuration(gc, domid, &d_config);
+    if (rc) goto out;
+
+    rc = 0;
+
+out:
+    if (lock) libxl__unlock_domain_userdata(lock);
+    libxl_domain_config_dispose(&d_config);
+    return rc;
+}
+
+void libxl__device_add(libxl__egc *egc, uint32_t domid,
+                       const struct libxl_device_type *dt, void *type,
+                       libxl__ao_device *aodev)
+{
+    STATE_AO_GC(aodev->ao);
+    libxl__device *device;
+    int rc;
+
+    rc = dt->set_default(gc, domid, type);
+    if (rc) goto out;
+
+    GCNEW(device);
+    rc = dt->to_device(gc, domid, type, device);
+    if ( rc != 0 ) goto out;
+
+    rc = libxl__device_exists(gc, XBT_NULL, device);
+    if (rc < 0) goto out;
+    if (rc == 1) {              /* already exists in xenstore */
+        LOGD(ERROR, domid, "device already exists in xenstore");
+        aodev->action = LIBXL__DEVICE_ACTION_ADD; /* for error message */
+        rc = ERROR_DEVICE_EXISTS;
+        goto out;
+    }
+
+    if (aodev->update_json) {
+        rc = device_add_domain_config(gc, domid, dt, type);
+        if (rc) goto out;
+    }
+
+    if (dt->set_xenstore_config) {
+        rc = dt->set_xenstore_config(gc, domid, type);
+        if (rc) goto out;
+    }
+
+    aodev->dev = device;
+    aodev->action = LIBXL__DEVICE_ACTION_ADD;
+    libxl__wait_device_connection(egc, aodev);
+
+    rc = 0;
+
+out:
+    aodev->rc = rc;
+    if(rc) aodev->callback(egc, aodev);
+    return;
+}
+
 void* libxl__device_list(const struct libxl_device_type *dt,
                          libxl_ctx *ctx, uint32_t domid, int *num)
 {
