@@ -609,6 +609,76 @@ static PyObject *pyxc_deassign_device(XcObject *self,
     return Py_BuildValue("i", sbdf);
 }
 
+static PyObject *pyxc_hide_device(XcObject *self,
+                                  PyObject *args,
+                                  PyObject *kwds)
+{
+    uint32_t sbdf = 0;
+    char *pci_str;
+    int seg, bus, dev, func;
+    static char *kwd_list[] = { "pci", NULL };
+
+    if ( !PyArg_ParseTupleAndKeywords(args, kwds, "is", kwd_list, &pci_str) )
+    {
+        sbdf = -1;
+        goto end_hide;
+    }
+
+    while ( next_bdf(&pci_str, &seg, &bus, &dev, &func) )
+    {
+        sbdf = seg << 16;
+        sbdf |= (bus & 0xff) << 8;
+        sbdf |= (dev & 0x1f) << 3;
+        sbdf |= (func & 0x7);
+
+        if ( xc_hide_device(self->xc_handle, sbdf) != 0 )
+        {
+            if ( errno == ENOSYS )
+                sbdf = -1;
+            break;
+        }
+        sbdf = 0;
+    }
+
+end_hide:
+    return Py_BuildValue("i", sbdf);
+}
+
+static PyObject *pyxc_unhide_device(XcObject *self,
+                                    PyObject *args,
+                                    PyObject *kwds)
+{
+    uint32_t sbdf = 0;
+    char *pci_str;
+    int seg, bus, dev, func;
+    static char *kwd_list[] = { "pci", NULL };
+
+    if ( !PyArg_ParseTupleAndKeywords(args, kwds, "is", kwd_list, &pci_str) )
+    {
+        sbdf = -1;
+        goto end_unhide;
+    }
+
+    while ( next_bdf(&pci_str, &seg, &bus, &dev, &func) )
+    {
+        sbdf = seg << 16;
+        sbdf |= (bus & 0xff) << 8;
+        sbdf |= (dev & 0x1f) << 3;
+        sbdf |= (func & 0x7);
+
+        if ( xc_unhide_device(self->xc_handle, sbdf) != 0 )
+        {
+            if ( errno == ENOSYS )
+                sbdf = -1;
+            break;
+        }
+        sbdf = 0;
+    }
+
+end_unhide:
+    return Py_BuildValue("i", sbdf);
+}
+
 static PyObject *pyxc_get_device_group(XcObject *self,
                                          PyObject *args)
 {
@@ -2233,7 +2303,21 @@ static PyMethodDef pyxc_methods[] = {
        " dom     [int]:      Domain to deassign device from.\n"
        " pci_str [str]:      PCI devices.\n"
        "Returns: [int] 0 on success, or device bdf that can't be deassigned.\n" },
+
+     { "hide_device",
+       (PyCFunction)pyxc_hide_device,
+       METH_VARARGS | METH_KEYWORDS, "\n"
+       "Hide device after AER fatal error trigger.\n"
+       " pci_str [str]:      PCI devices.\n"
+       "Returns: [int] device bdf on success or -1 if it cant be hidden.\n" },
   
+     { "unhide_device",
+       (PyCFunction)pyxc_unhide_device,
+       METH_VARARGS | METH_KEYWORDS, "\n"
+       "Unhide hidden device after AER fatal error trigger.\n"
+       " pci_str [str]:      PCI devices.\n"
+       "Returns: [int] device bdf on success or -1 if it cant be unhidden.\n" },
+
     { "sched_id_get",
       (PyCFunction)pyxc_sched_id_get,
       METH_NOARGS, "\n"
