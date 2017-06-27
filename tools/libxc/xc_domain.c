@@ -1501,6 +1501,44 @@ int xc_assign_device(
     return do_domctl(xch, &domctl);
 }
 
+int xc_hide_device(
+    xc_interface *xch,
+    uint32_t machine_sbdf)
+{
+    DECLARE_DOMCTL;
+
+    domctl.cmd = XEN_DOMCTL_hide_device;
+    domctl.domain = DOMID_XEN;
+    domctl.u.assign_device.u.pci.machine_sbdf = machine_sbdf;
+
+    return do_domctl(xch, &domctl);
+}
+
+int xc_unhide_device(
+    xc_interface *xch,
+    uint32_t machine_sbdf)
+{
+    DECLARE_DOMCTL;
+
+    domctl.cmd = XEN_DOMCTL_unhide_device;
+    domctl.domain = DOMID_XEN;
+    domctl.u.assign_device.u.pci.machine_sbdf = machine_sbdf;
+
+    return do_domctl(xch, &domctl);
+}
+
+int xc_test_hidden_device(
+    xc_interface *xch,
+    uint32_t machine_sbdf)
+{
+    DECLARE_DOMCTL;
+
+    domctl.cmd = XEN_DOMCTL_test_hidden_device;
+    domctl.u.assign_device.u.pci.machine_sbdf = machine_sbdf;
+
+    return do_domctl(xch, &domctl);
+}
+
 int xc_get_device_group(
     xc_interface *xch,
     uint32_t domid,

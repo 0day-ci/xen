@@ -1670,6 +1670,10 @@ int xc_assign_device(xc_interface *xch,
                      uint32_t machine_sbdf,
                      uint32_t flag);
 
+int xc_hide_device(xc_interface *xch, uint32_t machine_bdf);
+int xc_unhide_device(xc_interface *xch, uint32_t machine_bdf);
+int xc_test_hidden_device(xc_interface *xch, uint32_t machine_bdf);
+
 int xc_get_device_group(xc_interface *xch,
                      uint32_t domid,
                      uint32_t machine_sbdf,
