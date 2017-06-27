@@ -317,6 +317,37 @@ out:
      return rc;
 }
 
+int libxl_devid_to_device_vdispl(libxl_ctx *ctx, uint32_t domid,
+                                 int devid, libxl_device_vdispl *vdispl)
+{
+    libxl_device_vdispl *vdispls = NULL;
+    int n, i;
+    int rc;
+
+    libxl_device_vdispl_init(vdispl);
+
+    vdispls = libxl_device_vdispl_list(ctx, domid, &n);
+
+    if (!vdispls) { rc = ERROR_NOTFOUND; goto out; }
+
+    for (i = 0; i < n; ++i) {
+        if (devid == vdispls[i].devid) {
+            libxl_device_vdispl_copy(ctx, vdispl, &vdispls[i]);
+            rc = 0;
+            goto out;
+        }
+    }
+
+    rc = ERROR_NOTFOUND;
+
+out:
+
+    if (vdispls) {
+        libxl_device_vdispl_list_free(vdispls, n);
+    }
+    return rc;
+}
+
 LIBXL_DEFINE_DEVICE_ADD(vdispl)
 static LIBXL_DEFINE_DEVICES_ADD(vdispl)
 LIBXL_DEFINE_DEVICE_REMOVE(vdispl)
