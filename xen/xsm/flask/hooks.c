@@ -1311,6 +1311,22 @@ static int flask_deassign_device(struct domain *d, uint32_t machine_bdf)
 
     return avc_current_has_perm(rsid, SECCLASS_RESOURCE, RESOURCE__REMOVE_DEVICE, NULL);
 }
+
+static int flask_unhide_device(struct domain *d, uint32_t machine_bdf)
+{
+    return flask_deassign_device(d, machine_bdf);
+}
+
+static int flask_hide_device(struct domain *d, uint32_t machine_bdf)
+{
+    return flask_assign_device(d, machine_bdf);
+}
+
+static int flask_test_hidden_device(struct domain *d, uint32_t machine_bdf)
+{
+    return flask_test_assign_device(d, machine_bdf);
+}
+
 #endif /* HAS_PASSTHROUGH && HAS_PCI */
 
 #if defined(CONFIG_HAS_PASSTHROUGH) && defined(CONFIG_HAS_DEVICE_TREE)
@@ -1783,6 +1799,9 @@ static struct xsm_operations flask_ops = {
     .test_assign_device = flask_test_assign_device,
     .assign_device = flask_assign_device,
     .deassign_device = flask_deassign_device,
+    .hide_device = flask_hide_device,
+    .unhide_device = flask_unhide_device,
+    .test_hidden_device = flask_test_hidden_device,
 #endif
 
 #if defined(CONFIG_HAS_PASSTHROUGH) && defined(CONFIG_HAS_DEVICE_TREE)

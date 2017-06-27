@@ -1222,6 +1222,9 @@ struct xen_domctl {
 #define XEN_DOMCTL_gdbsx_pausevcpu             1001
 #define XEN_DOMCTL_gdbsx_unpausevcpu           1002
 #define XEN_DOMCTL_gdbsx_domstatus             1003
+#define XEN_DOMCTL_hide_device                 2001
+#define XEN_DOMCTL_unhide_device               2002
+#define XEN_DOMCTL_test_hidden_device          2003
     uint32_t interface_version; /* XEN_DOMCTL_INTERFACE_VERSION */
     domid_t  domain;
     union {

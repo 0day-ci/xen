@@ -393,8 +393,14 @@ long do_domctl(XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
     {
     case XEN_DOMCTL_createdomain:
     case XEN_DOMCTL_test_assign_device:
+    case XEN_DOMCTL_test_hidden_device:
     case XEN_DOMCTL_gdbsx_guestmemio:
         d = NULL;
+        break;
+    case XEN_DOMCTL_hide_device:
+    case XEN_DOMCTL_unhide_device:
+        rcu_lock_domain(dom_xen);
+        d = dom_xen;
         break;
     default:
         d = rcu_lock_domain_by_id(op->domain);

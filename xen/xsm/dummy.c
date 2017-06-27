@@ -94,6 +94,9 @@ void __init xsm_fixup_ops (struct xsm_operations *ops)
     set_to_dummy_if_null(ops, test_assign_device);
     set_to_dummy_if_null(ops, assign_device);
     set_to_dummy_if_null(ops, deassign_device);
+    set_to_dummy_if_null(ops, hide_device);
+    set_to_dummy_if_null(ops, unhide_device);
+    set_to_dummy_if_null(ops, test_hidden_device);
 #endif
 
 #if defined(CONFIG_HAS_PASSTHROUGH) && defined(CONFIG_HAS_DEVICE_TREE)

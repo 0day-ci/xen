@@ -355,6 +355,24 @@ static XSM_INLINE int xsm_deassign_device(XSM_DEFAULT_ARG struct domain *d, uint
     return xsm_default_action(action, current->domain, d);
 }
 
+static XSM_INLINE int xsm_hide_device(XSM_DEFAULT_ARG struct domain *d, uint32_t machine_bdf)
+{
+    XSM_ASSERT_ACTION(XSM_HOOK);
+    return xsm_default_action(action, current->domain, d);
+}
+
+static XSM_INLINE int xsm_unhide_device(XSM_DEFAULT_ARG struct domain *d, uint32_t machine_bdf)
+{
+    XSM_ASSERT_ACTION(XSM_HOOK);
+    return xsm_default_action(action, current->domain, d);
+}
+
+static XSM_INLINE int xsm_test_hidden_device(XSM_DEFAULT_ARG uint32_t machine_bdf)
+{
+    XSM_ASSERT_ACTION(XSM_HOOK);
+    return xsm_default_action(action, current->domain, NULL);
+}
+
 #endif /* HAS_PASSTHROUGH && HAS_PCI */
 
 #if defined(CONFIG_HAS_PASSTHROUGH) && defined(CONFIG_HAS_DEVICE_TREE)

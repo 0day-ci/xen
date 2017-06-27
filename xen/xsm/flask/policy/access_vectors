@@ -437,13 +437,13 @@ class resource
 # XEN_DOMCTL_iomem_permission, XEN_DOMCTL_memory_mapping
     add_iomem
     remove_iomem
-# XEN_DOMCTL_get_device_group, XEN_DOMCTL_test_assign_device:
+# XEN_DOMCTL_get_device_group, XEN_DOMCTL_test_assign_device, XEN_DOMCTL_test_hidden_device:
 #  source = domain making the hypercall
 #  target = device being queried
     stat_device
-# XEN_DOMCTL_assign_device
+# XEN_DOMCTL_assign_device, XEN_DOMCTL_hide_device
     add_device
-# XEN_DOMCTL_deassign_device
+# XEN_DOMCTL_deassign_device, XEN_DOMCTL_unhide_device
     remove_device
 # checked for PCI hot and cold-plug hypercalls, with target as the PCI device
 # checked for CPU and memory hotplug with xen_t as the target

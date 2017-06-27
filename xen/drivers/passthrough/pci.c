@@ -31,6 +31,7 @@
 #include <xen/softirq.h>
 #include <xen/tasklet.h>
 #include <xsm/xsm.h>
+#include <xen/mm.h>
 #include <asm/msi.h>
 #include "ats.h"
 
@@ -1333,19 +1334,31 @@ int iommu_remove_device(struct pci_dev *pdev)
     return hd->platform_ops->remove_device(pdev->devfn, pci_to_dev(pdev));
 }
 
+static bool device_assigned_to_domain(struct domain *d, u16 seg, u8 bus, u8 devfn)
+{
+    bool rc = false;
+
+    pcidevs_lock();
+
+    if ( pci_get_pdev_by_domain(d, seg, bus, devfn) )
+        rc = true;
+
+    pcidevs_unlock();
+    return rc;
+}
+
 /*
  * If the device isn't owned by the hardware domain, it means it already
  * has been assigned to other domain, or it doesn't exist.
  */
 static int device_assigned(u16 seg, u8 bus, u8 devfn)
 {
-    struct pci_dev *pdev;
+    return device_assigned_to_domain(hardware_domain, seg, bus, devfn) ? 0 : -EBUSY;
+}
 
-    pcidevs_lock();
-    pdev = pci_get_pdev_by_domain(hardware_domain, seg, bus, devfn);
-    pcidevs_unlock();
-
-    return pdev ? 0 : -EBUSY;
+static int device_hidden(u16 seg, u8 bus, u8 devfn)
+{
+    return device_assigned_to_domain(dom_xen, seg, bus, devfn) ? -EBUSY : 0;
 }
 
 static int assign_device(struct domain *d, u16 seg, u8 bus, u8 devfn, u32 flag)
@@ -1353,6 +1366,22 @@ static int assign_device(struct domain *d, u16 seg, u8 bus, u8 devfn, u32 flag)
     const struct domain_iommu *hd = dom_iommu(d);
     struct pci_dev *pdev;
     int rc = 0;
+
+    if ( device_hidden(seg, bus, devfn) )
+        return -EINVAL;
+
+    if ( d == dom_xen )
+    {
+        pdev = pci_get_pdev(seg, bus, devfn);
+        if ( pdev )
+        {
+            list_move(&pdev->domain_list, &dom_xen->arch.pdev_list);
+            pdev->domain = dom_xen;
+            return rc;
+        }
+        else
+            return -ENODEV;
+    }
 
     if ( !iommu_enabled || !hd->platform_ops )
         return 0;
@@ -1417,10 +1446,23 @@ int deassign_device(struct domain *d, u16 seg, u8 bus, u8 devfn)
     struct pci_dev *pdev = NULL;
     int ret = 0;
 
+    ASSERT(pcidevs_locked());
+
+    if ( d == dom_xen )
+    {
+        pdev = pci_get_pdev(seg, bus, devfn);
+        if ( pdev )
+        {
+            list_move(&pdev->domain_list, &hardware_domain->arch.pdev_list);
+            pdev->domain = hardware_domain;
+            return ret;
+        }
+        else return -ENODEV;
+    }
+
     if ( !iommu_enabled || !hd->platform_ops )
         return -EINVAL;
 
-    ASSERT(pcidevs_locked());
     pdev = pci_get_pdev_by_domain(d, seg, bus, devfn);
     if ( !pdev )
         return -ENODEV;
@@ -1600,6 +1642,15 @@ int iommu_do_pci_domctl(
                    seg, bus, PCI_SLOT(devfn), PCI_FUNC(devfn));
             ret = -EINVAL;
         }
+
+        if ( device_hidden(seg, bus, devfn) )
+        {
+            printk(XENLOG_G_INFO
+                   "%04x:%02x:%02x.%u device is hidden\n",
+                   seg, bus, PCI_SLOT(devfn), PCI_FUNC(devfn));
+            ret = -EINVAL;
+        }
+
         break;
 
     case XEN_DOMCTL_assign_device:
@@ -1636,8 +1687,15 @@ int iommu_do_pci_domctl(
             break;
         }
 
-        ret = device_assigned(seg, bus, devfn) ?:
-              assign_device(d, seg, bus, devfn, flag);
+        if ( device_hidden(seg, bus, devfn) )
+        {
+            ret = -EINVAL;
+            break;
+        }
+
+        if ( !device_assigned(seg, bus, devfn) )
+            ret = assign_device(d, seg, bus, devfn, flag);
+
         if ( ret == -ERESTART )
             ret = hypercall_create_continuation(__HYPERVISOR_domctl,
                                                 "h", u_domctl);
@@ -1671,6 +1729,12 @@ int iommu_do_pci_domctl(
         bus = PCI_BUS(machine_sbdf);
         devfn = PCI_DEVFN2(machine_sbdf);
 
+        if ( device_hidden(seg, bus, devfn) )
+        {
+            ret = -EINVAL;
+            break;
+        }
+
         pcidevs_lock();
         ret = deassign_device(d, seg, bus, devfn);
         pcidevs_unlock();
@@ -1679,7 +1743,86 @@ int iommu_do_pci_domctl(
                    "deassign %04x:%02x:%02x.%u from dom%d failed (%d)\n",
                    seg, bus, PCI_SLOT(devfn), PCI_FUNC(devfn),
                    d->domain_id, ret);
+        break;
 
+    case XEN_DOMCTL_hide_device:
+        machine_sbdf = domctl->u.assign_device.u.pci.machine_sbdf;
+        ret = xsm_hide_device(XSM_HOOK, d, machine_sbdf);
+        if ( ret )
+            break;
+
+        if ( unlikely(d->is_dying) )
+        {
+            ret = -EAGAIN;
+            break;
+        }
+
+        seg = machine_sbdf >> 16;
+        bus = PCI_BUS(machine_sbdf);
+        devfn = PCI_DEVFN2(machine_sbdf);
+        flag = domctl->u.assign_device.flag;
+
+        if ( device_hidden(seg, bus, devfn) )
+        {
+            ret = -EINVAL;
+            break;
+        }
+
+        pcidevs_lock();
+        ret = assign_device(dom_xen, seg, bus, devfn, flag);
+        pcidevs_unlock();
+        if ( ret == -ERESTART )
+            ret = hypercall_create_continuation(__HYPERVISOR_domctl,
+                                                "h", u_domctl);
+        else if ( ret )
+            printk(XENLOG_G_ERR "XEN_DOMCTL_hide_device: "
+                   "hide %04x:%02x:%02x.%u failed (%d)\n",
+                   seg, bus, PCI_SLOT(devfn), PCI_FUNC(devfn), ret);
+        break;
+
+    case XEN_DOMCTL_unhide_device:
+        machine_sbdf = domctl->u.assign_device.u.pci.machine_sbdf;
+        ret = xsm_unhide_device(XSM_HOOK, d, machine_sbdf);
+        if ( ret )
+            break;
+
+        if ( unlikely(d->is_dying) )
+        {
+            ret = -EINVAL;
+            break;
+        }
+
+        seg = machine_sbdf >> 16;
+        bus = PCI_BUS(machine_sbdf);
+        devfn = PCI_DEVFN2(machine_sbdf);
+
+        if ( !device_hidden(seg, bus, devfn) )
+        {
+            ret = -EINVAL;
+            break;
+        }
+
+        pcidevs_lock();
+        ret = deassign_device(dom_xen, seg, bus, devfn);
+        pcidevs_unlock();
+
+        if ( ret == -ERESTART )
+            ret = hypercall_create_continuation(__HYPERVISOR_domctl,
+                                                "h", u_domctl);
+        else if ( ret )
+            printk(XENLOG_G_ERR "XEN_DOMCTL_unhide_device: "
+                   "assign %04x:%02x:%02x.%u to dom%d failed (%d)\n",
+                   seg, bus, PCI_SLOT(devfn), PCI_FUNC(devfn),
+                   d->domain_id, ret);
+        break;
+
+    case XEN_DOMCTL_test_hidden_device:
+        machine_sbdf = domctl->u.assign_device.u.pci.machine_sbdf;
+        seg = machine_sbdf >> 16;
+        bus = PCI_BUS(machine_sbdf);
+        devfn = PCI_DEVFN2(machine_sbdf);
+
+        ret = device_hidden(seg, bus, devfn);
         break;
 
     default:
