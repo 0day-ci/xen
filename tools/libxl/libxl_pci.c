@@ -874,6 +874,42 @@ int libxl_device_pci_assignable_add(libxl_ctx *ctx, libxl_device_pci *pcidev,
     return rc;
 }
 
+int libxl_device_pci_assignable_hide(libxl_ctx *ctx, libxl_device_pci *pcidev)
+{
+    GC_INIT(ctx);
+    int rc;
+
+    rc = xc_hide_device(ctx->xch, pcidev_encode_bdf(pcidev));
+    if (rc < 0)
+        LOGD(ERROR, 0, "xc_hide_device failed");
+
+    GC_FREE;
+    return rc;
+}
+
+int libxl_device_pci_assignable_unhide(libxl_ctx *ctx, libxl_device_pci *pcidev)
+{
+    GC_INIT(ctx);
+    int rc;
+
+    rc = xc_unhide_device(ctx->xch, pcidev_encode_bdf(pcidev));
+    if (rc < 0)
+        LOGD(ERROR, 0, "xc_unhide_device failed");
+
+    GC_FREE;
+    return rc;
+}
+
+int libxl_device_pci_assignable_is_hidden(libxl_ctx *ctx, libxl_device_pci *pcidev)
+{
+    GC_INIT(ctx);
+    int rc;
+
+    rc = xc_test_hidden_device(ctx->xch, pcidev_encode_bdf(pcidev));
+
+    GC_FREE;
+    return rc;
+}
 
 int libxl_device_pci_assignable_remove(libxl_ctx *ctx, libxl_device_pci *pcidev,
                                        int rebind)
@@ -1290,6 +1326,120 @@ int libxl__device_pci_add(libxl__gc *gc, uint32_t domid, libxl_device_pci *pcide
 
 out:
     return rc;
+}
+
+static void domain_destroy_callback(libxl__egc *egc,
+                                    libxl__domain_destroy_state *dds,
+                                    int rc)
+{
+    STATE_AO_GC(dds->ao);
+
+    if (rc)
+        LOGD(ERROR, dds->domid, "Destruction of domain failed, rc = %d", rc);
+
+    libxl__nested_ao_free(ao);
+}
+
+
+typedef struct {
+    uint32_t domid;
+    libxl__ao *ao;
+    libxl__ev_xswatch watch;
+} libxl_aer_watch;
+static libxl_aer_watch aer_watch;
+
+static void aer_backend_watch_callback(libxl__egc *egc,
+                                       libxl__ev_xswatch *watch,
+                                       const char *watch_path,
+                                       const char *event_path)
+{
+    libxl_aer_watch *l_aer_watch = CONTAINER_OF(watch, *l_aer_watch, watch);
+    libxl__ao *nested_ao = libxl__nested_ao_create(l_aer_watch->ao);
+    STATE_AO_GC(nested_ao);
+    libxl_ctx *ctx = libxl__gc_owner(gc);
+    uint32_t domid = l_aer_watch->domid;
+    uint32_t seg, bus, dev, fn;
+    int rc;
+    char *p, *path, *dst_path;
+    const char *aerFailedSBDF;
+    struct xs_permissions rwperm[1];
+    libxl__domain_destroy_state *dds;
+    GCNEW(dds);
+
+    /* Extract the backend directory. */
+    path = libxl__strdup(gc, event_path);
+    p = strrchr(path, '/');
+    if (p == NULL)
+        goto skip;
+    if (strcmp(p, "/aerFailedSBDF") != 0)
+        goto skip;
+    /* Truncate the string so it points to the backend directory. */
+    *p = '\0';
+
+    /* Fetch the value of the failed PCI device. */
+    rc = libxl__xs_read_checked(gc, XBT_NULL,
+            GCSPRINTF("%s/aerFailedSBDF", path), &aerFailedSBDF);
+    if (rc || !aerFailedSBDF)
+        goto skip;
+    sscanf(aerFailedSBDF, "%x:%x:%x.%x", &seg, &bus, &dev, &fn);
+
+    libxl_unreg_aer_events_handler(ctx, domid);
+
+    dds->ao = nested_ao;
+    dds->domid = domid;
+    dds->callback = domain_destroy_callback;
+    libxl__domain_destroy(egc, dds);
+
+    rc = xc_hide_device(ctx->xch, seg << 16 | bus << 8 | dev << 3 | fn);
+    if (rc)
+        LOGD(ERROR, domid, " xc_hide_device() failed, rc = %d", rc);
+
+    rwperm[0].id = 0;
+    rwperm[0].perms = XS_PERM_READ | XS_PERM_WRITE;
+    dst_path = GCSPRINTF("/local/domain/0/backend/pci/0/0/%s", "aerFailedPCIs");
+    rc = libxl__xs_mknod(gc, XBT_NULL, dst_path, rwperm, 1);
+    if (rc) {
+        LOGD(ERROR, domid, " libxl__xs_mknod() failed, rc = %d", rc);
+        goto skip;
+    }
+
+    rc = libxl__xs_write_checked(gc, XBT_NULL, dst_path, aerFailedSBDF);
+    if (rc)
+        LOGD(ERROR, domid, " libxl__xs_write_checked() failed, rc = %d", rc);
+
+skip:
+    return;
+}
+
+/* Handler of events for device driver domains */
+int libxl_reg_aer_events_handler(libxl_ctx *ctx, uint32_t domid)
+{
+    AO_CREATE(ctx, 0, 0);
+    int rc;
+    char *be_path;
+
+    /*
+     * We use absolute paths because we want xswatch to also return
+     * absolute paths that can be parsed by libxl__parse_backend_path.
+     */
+    aer_watch.ao = ao;
+    aer_watch.domid = domid;
+    be_path = GCSPRINTF("/local/domain/0/backend/pci/%u/0/aerFailedSBDF", domid);
+    rc = libxl__ev_xswatch_register(gc, &aer_watch.watch,
+                                    aer_backend_watch_callback, be_path);
+    if (rc)
+        return AO_CREATE_FAIL(rc);
+
+    return AO_INPROGRESS;
+}
+
+/* Handler of events for device driver domains */
+void libxl_unreg_aer_events_handler(libxl_ctx *ctx, uint32_t domid)
+{
+    GC_INIT(ctx);
+
+    libxl__ev_xswatch_deregister(gc, &aer_watch.watch);
+    return;
 }
 
 static void libxl__add_pcidevs(libxl__egc *egc, libxl__ao *ao, uint32_t domid,

@@ -1944,6 +1944,9 @@ int libxl_device_events_handler(libxl_ctx *ctx,
 int libxl_device_pci_assignable_add(libxl_ctx *ctx, libxl_device_pci *pcidev, int rebind);
 int libxl_device_pci_assignable_remove(libxl_ctx *ctx, libxl_device_pci *pcidev, int rebind);
 libxl_device_pci *libxl_device_pci_assignable_list(libxl_ctx *ctx, int *num);
+int libxl_device_pci_assignable_hide(libxl_ctx *ctx, libxl_device_pci *pcidev);
+int libxl_device_pci_assignable_unhide(libxl_ctx *ctx, libxl_device_pci *pcidev);
+int libxl_device_pci_assignable_is_hidden(libxl_ctx *ctx, libxl_device_pci *pcidev);
 
 /* CPUID handling */
 int libxl_cpuid_parse_config(libxl_cpuid_policy_list *cpuid, const char* str);
