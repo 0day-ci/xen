@@ -65,6 +65,119 @@ static void libxl__device_vdispl_add(libxl__egc *egc, uint32_t domid,
     libxl__device_add(egc, domid, &libxl__vdispl_devtype, vdispl, aodev);
 }
 
+static int libxl__set_xenstore_connectors(libxl__gc *gc, xs_transaction_t t,
+                                          libxl__device *device,
+                                          libxl_device_vdispl *vdispl)
+{
+    struct xs_permissions perms[2];
+    char *frontend_path = NULL;
+    flexarray_t *connector;
+    libxl_ctx *ctx = libxl__gc_owner(gc);
+    int i;
+    int rc;
+
+    frontend_path = libxl__device_frontend_path(gc, device);
+
+    perms[0].id = device->domid;
+    perms[0].perms = XS_PERM_NONE;
+    perms[1].id = device->backend_domid;
+    perms[1].perms = XS_PERM_READ;
+
+    connector = flexarray_make(gc, 2, 1);
+    flexarray_append(connector, "resolution");
+    flexarray_append(connector, "");
+    flexarray_append(connector, "id");
+    flexarray_append(connector, "");
+
+    for (i = 0; i < vdispl->num_connectors; i++) {
+        char *connector_path = GCSPRINTF("%s/%d", frontend_path, i);
+
+        if (!xs_mkdir(ctx->xsh, t, connector_path)) {
+            rc = ERROR_FAIL; goto out;
+        }
+
+        if (!xs_set_permissions(ctx->xsh, t, connector_path, perms,
+                                ARRAY_SIZE(perms))) {
+            rc = ERROR_FAIL; goto out;
+        }
+
+        flexarray_set(connector, 1,
+                      GCSPRINTF("%dx%d", vdispl->connectors[i].width,
+                                 vdispl->connectors[i].height));
+        flexarray_set(connector, 3, vdispl->connectors[i].id);
+
+        rc = libxl__xs_writev(gc, t, connector_path,
+                              libxl__xs_kvs_of_flexarray(gc, connector));
+        if (rc) goto out;
+    }
+
+    rc = 0;
+
+out:
+    return rc;
+}
+
+static int libxl__set_xenstore_vdispl(libxl__gc *gc, uint32_t domid,
+                                      libxl_device_vdispl *vdispl)
+{
+    flexarray_t *front;
+    flexarray_t *back;
+
+    front = flexarray_make(gc, 16, 1);
+    back = flexarray_make(gc, 16, 1);
+
+    flexarray_append(back, "frontend-id");
+    flexarray_append(back, GCSPRINTF("%d", domid));
+    flexarray_append(back, "online");
+    flexarray_append(back, "1");
+    flexarray_append(back, "state");
+    flexarray_append(back, GCSPRINTF("%d", XenbusStateInitialising));
+    flexarray_append(back, "handle");
+    flexarray_append(back, GCSPRINTF("%d", vdispl->devid));
+
+    flexarray_append(front, "backend-id");
+    flexarray_append(front, GCSPRINTF("%d", vdispl->backend_domid));
+    flexarray_append(front, "state");
+    flexarray_append(front, GCSPRINTF("%d", XenbusStateInitialising));
+    flexarray_append(front, "handle");
+    flexarray_append(front, GCSPRINTF("%d", vdispl->devid));
+    flexarray_append(front, "be_alloc");
+    flexarray_append(front, GCSPRINTF("%d", vdispl->be_alloc));
+
+    libxl__device *device;
+    xs_transaction_t t = XBT_NULL;
+    int rc;
+
+    GCNEW(device);
+
+    rc = libxl__device_from_vdispl(gc, domid, vdispl, device);
+    if (rc) goto out;
+
+    for (;;) {
+        rc = libxl__xs_transaction_start(gc, &t);
+        if (rc) goto out;
+
+        rc = libxl__device_generic_add(gc, t, device,
+                                       libxl__xs_kvs_of_flexarray(gc, back),
+                                       libxl__xs_kvs_of_flexarray(gc, front),
+                                       NULL);
+        if (rc) goto out;
+
+        rc = libxl__set_xenstore_connectors(gc, t, device, vdispl);
+        if (rc) goto out;
+
+        rc = libxl__xs_transaction_commit(gc, &t);
+        if (!rc) break;
+        if (rc < 0) goto out;
+    }
+
+    rc = 0;
+
+out:
+    libxl__xs_transaction_abort(gc, &t);
+    return rc;
+}
+
 libxl_device_vdispl *libxl_device_vdispl_list(libxl_ctx *ctx, uint32_t domid,
                                               int *num)
 {
@@ -91,7 +204,9 @@ DEFINE_DEVICE_TYPE_STRUCT(vdispl,
     .update_config = (void (*)(libxl__gc *, void *, void *))
                      libxl__update_config_vdispl,
     .from_xenstore = (int (*)(libxl__gc *, const char *, uint32_t, void *))
-                     libxl__from_xenstore_vdispl
+                     libxl__from_xenstore_vdispl,
+    .set_xenstore_config = (int (*)(libxl__gc *, uint32_t, void *))
+                           libxl__set_xenstore_vdispl
 );
 
 /*
