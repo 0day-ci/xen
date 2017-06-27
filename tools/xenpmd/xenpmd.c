@@ -87,12 +87,12 @@ static struct xs_handle *xs;
 
 #ifdef RUN_IN_SIMULATE_MODE
     #define BATTERY_DIR_PATH "/tmp/battery"
-    #define BATTERY_INFO_FILE_PATH "/tmp/battery/%s/info" 
-    #define BATTERY_STATE_FILE_PATH "/tmp/battery/%s/state"
+    #define BATTERY_INFO_FILE_PATH "/tmp/battery/%.4s/info"
+    #define BATTERY_STATE_FILE_PATH "/tmp/battery/%.4s/state"
 #else
     #define BATTERY_DIR_PATH "/proc/acpi/battery"
-    #define BATTERY_INFO_FILE_PATH "/proc/acpi/battery/%s/info"
-    #define BATTERY_STATE_FILE_PATH "/proc/acpi/battery/%s/state"
+    #define BATTERY_INFO_FILE_PATH "/proc/acpi/battery/%.4s/info"
+    #define BATTERY_STATE_FILE_PATH "/proc/acpi/battery/%.4s/state"
 #endif
 
 FILE *get_next_battery_file(DIR *battery_dir, 
