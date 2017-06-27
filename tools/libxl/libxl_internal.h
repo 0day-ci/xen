@@ -3484,11 +3484,13 @@ struct libxl_device_type {
     void (*add)(libxl__egc *, libxl__ao *, uint32_t, libxl_domain_config *,
                 libxl__multidev *);
     void *(*list)(libxl_ctx *, uint32_t, int *);
+    void (*init)(void *);
     void (*dispose)(void *);
     int (*compare)(void *, void *);
     void (*merge)(libxl_ctx *, void *, void *);
     int (*dm_needed)(void *, unsigned);
     void (*update_config)(libxl__gc *, void *, void *);
+    int (*from_xenstore)(libxl__gc *, const char *, uint32_t, void *);
 };
 
 #define DEFINE_DEVICE_TYPE_STRUCT_X(name, sname, ...)                          \
@@ -3500,6 +3502,7 @@ struct libxl_device_type {
         .add           = libxl__add_ ## name ## s,                             \
         .list          = (void *(*)(libxl_ctx *, uint32_t, int *))             \
                          libxl_device_ ## sname ## _list,                      \
+        .init          = (void (*)(void *))libxl_device_ ## sname ## _init,    \
         .dispose       = (void (*)(void *))libxl_device_ ## sname ## _dispose, \
         .compare       = (int (*)(void *, void *))                             \
                          libxl_device_ ## sname ## _compare,                   \
@@ -3534,6 +3537,7 @@ extern const struct libxl_device_type libxl__vtpm_devtype;
 extern const struct libxl_device_type libxl__usbctrl_devtype;
 extern const struct libxl_device_type libxl__usbdev_devtype;
 extern const struct libxl_device_type libxl__pcidev_devtype;
+extern const struct libxl_device_type libxl__vdispl_devtype;
 
 extern const struct libxl_device_type *device_type_tbl[];
 
@@ -4350,6 +4354,10 @@ static inline bool libxl__acpi_defbool_val(const libxl_domain_build_info *b_info
     return libxl_defbool_val(b_info->acpi) &&
            libxl_defbool_val(b_info->u.hvm.acpi);
 }
+void* libxl__device_list(const struct libxl_device_type *dt,
+                         libxl_ctx *ctx, uint32_t domid, int *num);
+void libxl__device_list_free(const struct libxl_device_type *dt,
+                             void *list, int num);
 #endif
 
 /*
