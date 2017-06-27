@@ -33,6 +33,13 @@ static int libxl__device_from_vdispl(libxl__gc *gc, uint32_t domid,
                                      libxl_device_vdispl *vdispl,
                                      libxl__device *device)
 {
+   device->backend_devid   = vdispl->devid;
+   device->backend_domid   = vdispl->backend_domid;
+   device->backend_kind    = LIBXL__DEVICE_KIND_VDISPL;
+   device->devid           = vdispl->devid;
+   device->domid           = domid;
+   device->kind            = LIBXL__DEVICE_KIND_VDISPL;
+
    return 0;
 }
 
@@ -49,7 +56,8 @@ static void libxl__update_config_vdispl(libxl__gc *gc,
                                         libxl_device_vdispl *dst,
                                         libxl_device_vdispl *src)
 {
-
+    dst->devid = src->devid;
+    dst->be_alloc = src->be_alloc;
 }
 
 static int libxl_device_vdispl_compare(libxl_device_vdispl *d1,
