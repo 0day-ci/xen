@@ -1082,6 +1082,18 @@ static int handle_device(struct domain *d, struct dt_device_node *dev,
     dt_dprintk("%s passthrough = %d nirq = %d naddr = %u\n",
                dt_node_full_name(dev), need_mapping, nirq, naddr);
 
+    /*
+     * If this device is behind the SMMU, the add_device callback will
+     * prepare resource for it. Otherwise, add_device has no effect.
+     */
+    res = iommu_add_dt_device(d, dev);
+    if ( res )
+    {
+        printk(XENLOG_ERR "Failed to add device to IOMMU for %s\n",
+               dt_node_full_name(dev));
+        return res;
+    }
+
     if ( dt_device_is_protected(dev) && need_mapping )
     {
         dt_dprintk("%s setup iommu\n", dt_node_full_name(dev));
