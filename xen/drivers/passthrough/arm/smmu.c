@@ -2621,8 +2621,150 @@ static void arm_smmu_destroy_iommu_domain(struct iommu_domain *domain)
 	xfree(domain);
 }
 
+static int arm_smmu_add_generic_master_id(struct arm_smmu_device *smmu,
+				struct device *master_dev, u16 fwid)
+{
+	struct arm_smmu_master *master;
+	struct device_node *master_np = master_dev->of_node;
+
+	master = find_smmu_master(smmu, master_np);
+	if (!master) {
+		dev_notice(smmu->dev,
+			"This smmu master [%s] hasn't been registered, creating now!\n",
+			master_np->full_name);
+		master = devm_kzalloc(smmu->dev, sizeof(*master), GFP_KERNEL);
+		if (!master)
+			return -ENOMEM;
+
+		master->of_node = master_np;
+		master->cfg.num_streamids = 0;
+
+		/*
+		 * Xen: Let Xen know that the device is protected by a SMMU.
+		 * Only do while registering the master.
+		 */
+		dt_device_set_protected(master_np);
+	}
+
+	/*
+	 * If the smmu is using the stream index mode, check whether
+	 * the streamid exceeds the max allowed id,
+	 */
+	if (!(smmu->features & ARM_SMMU_FEAT_STREAM_MATCH) &&
+		(fwid >= smmu->num_mapping_groups)) {
+		dev_err(smmu->dev,
+			"Stream ID for master device %s greater than maximum allowed (%d)\n",
+			master_np->name, smmu->num_mapping_groups);
+		return -ERANGE;
+	}
+
+	if (master->cfg.num_streamids >= MAX_MASTER_STREAMIDS) {
+		dev_err(smmu->dev,
+			"Reached maximum number (%d) of stream IDs for master device %s\n",
+			MAX_MASTER_STREAMIDS, master_np->name);
+		return -ENOSPC;
+	}
+
+	/*
+	 * If this is the first time we add id to this master,
+	 * we have to register this master to rb tree.
+	 */
+	if (!master->cfg.num_streamids) {
+		int ret;
+		ret = insert_smmu_master(smmu, master);
+		if ( ret && ret != -EEXIST ) {
+			dev_err(smmu->dev,
+				"Insert %s to smmu's master rb tree failed\n", master_np->name);
+			return ret;
+		}
+	}
+
+	master->cfg.streamids[master->cfg.num_streamids] = fwid;
+	master->cfg.num_streamids++;
+	dev_dbg(smmu->dev,
+		"Add new streamid [%d] to smmu [%s] for master [%s]!\n",
+		fwid, smmu->dev->of_node->name, master_np->name);
+
+	return 0;
+}
+
+static struct arm_smmu_device *find_smmu(const struct device *dev);
+
+static int arm_smmu_of_xlate(struct device *dev, struct of_phandle_args *args)
+{
+	struct arm_smmu_device *smmu;
+	u32 mask = 0, fwid = 0;
+
+	smmu = find_smmu(dt_to_dev(args->np));
+	if (!smmu) {
+		dev_err(dev, "Could not find smmu device!\n");
+		return -ENODEV;
+	}
+
+	if (args->args_count > 0)
+		fwid |= (u16)args->args[0];
+
+	if (args->args_count > 1)
+		fwid |= (u16)args->args[1] << SMR_MASK_SHIFT;
+	else if (!of_property_read_u32(args->np, "stream-match-mask", &mask))
+		fwid |= (u16)mask << SMR_MASK_SHIFT;
+
+	dev_dbg(dev, "%s fwid:%08x mask:%08x args_count:%d\n",
+			   args->np->full_name, fwid,
+			   mask, args->args_count);
+
+	return arm_smmu_add_generic_master_id(smmu, dev, (u16)fwid);
+}
+
+/*
+ * Parse "iommus" information from generic bindings of platfomr master
+ * device, and then xlate to master IDs and register to SMMU device.
+ */
+static int arm_smmu_platform_iommu_init(struct device *dev)
+{
+	struct of_phandle_args iommu_spec;
+	int idx = 0, ret;
+
+	/*
+	 * We don't currently walk up the tree looking for a parent IOMMU.
+	 * See the `Notes:' section of
+	 * Documentation/devicetree/bindings/iommu/iommu.txt
+	 */
+	while (!of_parse_phandle_with_args(dev->of_node, "iommus",
+				"#iommu-cells",
+				idx, &iommu_spec)) {
+		ret = arm_smmu_of_xlate(dev, &iommu_spec);
+		if (ret) {
+			dev_err(dev,
+				"Do of_xlate for platform device failed, err=%d\n", ret);
+			return ret;
+		}
+
+		idx++;
+	}
+
+	/*
+	 * Return 0 if the device is not protected to follow the behavior
+	 * of PCI add device.
+	 */
+	return 0;
+}
+
 static int arm_smmu_xen_add_device(u8 devfn, struct device*dev)
 {
+	int ret;
+
+	/*
+	 * iommu_add_dt_device() is only called for the hardware domain.
+	 * If the SMMU is using generic bindings, we should parse and
+	 * register Master IDs while this function had been invoked.
+	 */
+	if (using_generic_binding) {
+		ret = arm_smmu_platform_iommu_init(dev);
+		if (ret)
+			return ret;
+	}
+
 	if (dt_device_is_protected(dev->of_node)) {
 		if (!dev->archdata.iommu) {
 			dev->archdata.iommu = xzalloc(struct arm_smmu_xen_device);
@@ -2834,7 +2976,7 @@ static const struct iommu_ops arm_smmu_iommu_ops = {
     .unmap_page = arm_smmu_unmap_page,
 };
 
-static __init const struct arm_smmu_device *find_smmu(const struct device *dev)
+static struct arm_smmu_device *find_smmu(const struct device *dev)
 {
 	struct arm_smmu_device *smmu;
 	bool found = false;
