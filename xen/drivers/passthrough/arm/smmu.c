@@ -2375,21 +2375,28 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev)
 	if (err)
 		return err;
 
-	i = 0;
 	smmu->masters = RB_ROOT;
-	while (!of_parse_phandle_with_args(dev->of_node, "mmu-masters",
-					   "#stream-id-cells", i,
-					   &masterspec)) {
-		err = register_smmu_master(smmu, dev, &masterspec);
-		if (err) {
-			dev_err(dev, "failed to add master %s\n",
-				masterspec.np->name);
-			goto out_put_masters;
-		}
+	/*
+	 * The SMMU MasterIDs are listed in SMMU device tree node while using
+	 * the legacy IOMMU bindins. So in the SMMU probing progress, we will
+	 * register the SMMU master only for legacy bindings.
+	 */
+	if (using_legacy_binding) {
+		i = 0;
+		while (!of_parse_phandle_with_args(dev->of_node, "mmu-masters",
+							"#stream-id-cells", i,
+							&masterspec)) {
+			err = register_smmu_master(smmu, dev, &masterspec);
+			if (err) {
+				dev_err(dev, "failed to add master %s\n",
+					masterspec.np->name);
+				goto out_put_masters;
+			}
 
-		i++;
+			i++;
+		}
+		dev_notice(dev, "registered %d legacy master devices\n", i);
 	}
-	dev_notice(dev, "registered %d master devices\n", i);
 
 	parse_driver_options(smmu);
 
