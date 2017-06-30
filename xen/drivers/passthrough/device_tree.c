@@ -209,8 +209,8 @@ int iommu_do_dt_domctl(struct xen_domctl *domctl, struct domain *d,
         ret = iommu_deassign_dt_device(d, dev);
 
         if ( ret )
-            printk(XENLOG_G_ERR "XEN_DOMCTL_assign_dt_device: assign \"%s\""
-                   " to dom%u failed (%d)\n",
+            printk(XENLOG_G_ERR "XEN_DOMCTL_deassign_device: deassign \"%s\""
+                   " from dom%u failed (%d)\n",
                    dt_node_full_name(dev), d->domain_id, ret);
         break;
 
