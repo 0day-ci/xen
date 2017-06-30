@@ -24,6 +24,26 @@
 
 static spinlock_t dtdevs_lock = SPIN_LOCK_UNLOCKED;
 
+int iommu_add_dt_device(struct domain *d, struct dt_device_node *dev)
+{
+    int rc;
+
+    struct domain_iommu *hd = dom_iommu(d);
+
+    if ( !iommu_enabled || !hd->platform_ops ||
+         !hd->platform_ops->add_device )
+        return 0;
+
+    spin_lock(&dtdevs_lock);
+
+    /* The devfn field doesn't matter to DT device. */
+    rc = hd->platform_ops->add_device(0, dt_to_dev(dev));
+
+    spin_unlock(&dtdevs_lock);
+
+    return rc;
+}
+
 int iommu_assign_dt_device(struct domain *d, struct dt_device_node *dev)
 {
     int rc = -EBUSY;

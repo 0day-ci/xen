@@ -132,6 +132,7 @@ void iommu_read_msi_from_ire(struct msi_desc *msi_desc, struct msi_msg *msg);
 #ifdef CONFIG_HAS_DEVICE_TREE
 #include <xen/device_tree.h>
 
+int iommu_add_dt_device(struct domain *d, struct dt_device_node *dev);
 int iommu_assign_dt_device(struct domain *d, struct dt_device_node *dev);
 int iommu_deassign_dt_device(struct domain *d, struct dt_device_node *dev);
 int iommu_dt_domain_init(struct domain *d);
