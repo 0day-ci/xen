@@ -143,6 +143,8 @@ typedef enum irqreturn irqreturn_t;
 
 #define dev_name(dev) dt_node_full_name(dev_to_dt(dev))
 
+#define pr_notice(fmt, ...) printk(XENLOG_INFO fmt, ## __VA_ARGS__)
+
 /* Alias to Xen allocation helpers */
 #define kfree xfree
 #define kmalloc(size, flags)		_xmalloc(size, sizeof(void *))
@@ -680,6 +682,8 @@ struct arm_smmu_option_prop {
 	u32 opt;
 	const char *prop;
 };
+
+static bool using_legacy_binding, using_generic_binding;
 
 static struct arm_smmu_option_prop arm_smmu_options[] = {
 	{ ARM_SMMU_OPT_SECURE_CFG_ACCESS, "calxeda,smmu-secure-config-access" },
@@ -2289,6 +2293,25 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev)
 	struct rb_node *node;
 	struct of_phandle_args masterspec;
 	int num_irqs, i, err;
+	bool legacy_binding;
+
+	/*
+	 * Xen: Do the same check as Linux. Checking the SMMU device tree bindings
+	 * are either using generic or legacy one.
+	 *
+	 * The "mmu-masters" property is only existed in legacy bindings.
+	 */
+	legacy_binding = dt_find_property(dev->of_node, "mmu-masters", NULL);
+	if (legacy_binding && !using_generic_binding) {
+		if (!using_legacy_binding)
+			pr_notice("deprecated \"mmu-masters\" DT property in use\n");
+		using_legacy_binding = true;
+	} else if (!legacy_binding && !using_legacy_binding) {
+		using_generic_binding = true;
+	} else {
+		dev_err(dev, "not probing due to mismatched DT properties\n");
+		return -ENODEV;
+	}
 
 	smmu = devm_kzalloc(dev, sizeof(*smmu), GFP_KERNEL);
 	if (!smmu) {
