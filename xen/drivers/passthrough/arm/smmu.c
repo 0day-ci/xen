@@ -2591,6 +2591,26 @@ static void arm_smmu_destroy_iommu_domain(struct iommu_domain *domain)
 	xfree(domain);
 }
 
+static int arm_smmu_xen_add_device(u8 devfn, struct device*dev)
+{
+	if (dt_device_is_protected(dev->of_node)) {
+		if (!dev->archdata.iommu) {
+			dev->archdata.iommu = xzalloc(struct arm_smmu_xen_device);
+			if (!dev->archdata.iommu)
+				return -ENOMEM;
+		}
+
+		if (!dev_iommu_group(dev))
+			return arm_smmu_add_device(dev);
+	}
+
+	/*
+	 * Return 0 if the device is not protected to follow the behavior
+	 * of PCI add device.
+	 */
+	return 0;
+}
+
 static int arm_smmu_assign_dev(struct domain *d, u8 devfn,
 			       struct device *dev, u32 flag)
 {
@@ -2600,17 +2620,8 @@ static int arm_smmu_assign_dev(struct domain *d, u8 devfn,
 
 	xen_domain = dom_iommu(d)->arch.priv;
 
-	if (!dev->archdata.iommu) {
-		dev->archdata.iommu = xzalloc(struct arm_smmu_xen_device);
-		if (!dev->archdata.iommu)
-			return -ENOMEM;
-	}
-
-	if (!dev_iommu_group(dev)) {
-		ret = arm_smmu_add_device(dev);
-		if (ret)
-			return ret;
-	}
+	if (!dev_iommu_group(dev))
+	    return -ENODEV;
 
 	spin_lock(&xen_domain->lock);
 
@@ -2786,6 +2797,7 @@ static const struct iommu_ops arm_smmu_iommu_ops = {
     .teardown = arm_smmu_iommu_domain_teardown,
     .iotlb_flush = arm_smmu_iotlb_flush,
     .iotlb_flush_all = arm_smmu_iotlb_flush_all,
+    .add_device = arm_smmu_xen_add_device,
     .assign_device = arm_smmu_assign_dev,
     .reassign_device = arm_smmu_reassign_dev,
     .map_page = arm_smmu_map_page,
