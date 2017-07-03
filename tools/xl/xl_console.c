@@ -25,10 +25,10 @@
 int main_console(int argc, char **argv)
 {
     uint32_t domid;
-    int opt = 0, num = 0;
+    int opt = 0, num = 0, interactive = 0;
     libxl_console_type type = 0;
 
-    SWITCH_FOREACH_OPT(opt, "n:t:", NULL, "console", 1) {
+    SWITCH_FOREACH_OPT(opt, "n:t:i", NULL, "console", 1) {
     case 't':
         if (!strcmp(optarg, "pv"))
             type = LIBXL_CONSOLE_TYPE_PV;
@@ -42,13 +42,16 @@ int main_console(int argc, char **argv)
     case 'n':
         num = atoi(optarg);
         break;
+    case 'i':
+        interactive = 1;
+        break;
     }
 
     domid = find_domain(argv[optind]);
     if (!type)
-        libxl_primary_console_exec(ctx, domid, -1);
+        libxl_primary_console_exec(ctx, domid, -1, interactive);
     else
-        libxl_console_exec(ctx, domid, num, type, -1);
+        libxl_console_exec(ctx, domid, num, type, -1, interactive);
     fprintf(stderr, "Unable to attach console\n");
     return EXIT_FAILURE;
 }

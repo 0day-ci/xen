@@ -1499,7 +1499,8 @@ int libxl_vncviewer_exec(libxl_ctx *ctx, uint32_t domid, int autopass);
  * the caller that it has connected to the guest console.
  */
 int libxl_console_exec(libxl_ctx *ctx, uint32_t domid, int cons_num,
-                       libxl_console_type type, int notify_fd);
+                       libxl_console_type type, int notify_fd,
+                       int interactive);
 /* libxl_primary_console_exec finds the domid and console number
  * corresponding to the primary console of the given vm, then calls
  * libxl_console_exec with the right arguments (domid might be different
@@ -1511,7 +1512,7 @@ int libxl_console_exec(libxl_ctx *ctx, uint32_t domid, int cons_num,
  * the caller that it has connected to the guest console.
  */
 int libxl_primary_console_exec(libxl_ctx *ctx, uint32_t domid_vm,
-                               int notify_fd);
+                               int notify_fd, int interactive);
 
 #if defined(LIBXL_API_VERSION) && LIBXL_API_VERSION < 0x040800
 

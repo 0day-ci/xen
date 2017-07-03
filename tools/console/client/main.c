@@ -334,6 +334,7 @@ int main(int argc, char **argv)
 		{ "num",     1, 0, 'n' },
 		{ "help",    0, 0, 'h' },
 		{ "start-notify-fd", 1, 0, 's' },
+		{ "pipe", 0, 0, 'p' },
 		{ 0 },
 
 	};
@@ -370,6 +371,9 @@ int main(int argc, char **argv)
 		case 's':
 			start_notify_fd = atoi(optarg);
 			break;
+        case 'p':
+            interactive = 1;
+            break;
 		default:
 			fprintf(stderr, "Invalid argument\n");
 			fprintf(stderr, "Try `%s --help' for more information.\n", 
