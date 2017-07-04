@@ -88,6 +88,21 @@ Braces should be omitted for blocks with a single statement. e.g.,
 if ( condition )
     single_statement();
 
+Nested blocks
+-------------
+
+Nested blocks should be avoided e.g:
+
+int a;
+{
+    int b;
+    /* Do stuff */
+}
+/* Do stuff */
+
+More importantly, if a patch requires to remove an if/while/for statements, the
+code should be reworked rather than introducing a nested block.
+
 Comments
 --------
 
