@@ -82,6 +82,7 @@ static int vmx_vmfunc_intercept(struct cpu_user_regs *regs);
 struct vmx_pi_blocking_vcpu {
     struct list_head     list;
     spinlock_t           lock;
+    unsigned int         counter;
 };
 
 /*
@@ -119,6 +120,7 @@ static void vmx_vcpu_block(struct vcpu *v)
      */
     ASSERT(old_lock == NULL);
 
+    per_cpu(vmx_pi_blocking, v->processor).counter++;
     list_add_tail(&v->arch.hvm_vmx.pi_blocking.list,
                   &per_cpu(vmx_pi_blocking, v->processor).list);
     spin_unlock_irqrestore(pi_blocking_list_lock, flags);
@@ -186,6 +188,8 @@ static void vmx_pi_unblock_vcpu(struct vcpu *v)
     {
         ASSERT(v->arch.hvm_vmx.pi_blocking.lock == pi_blocking_list_lock);
         list_del(&v->arch.hvm_vmx.pi_blocking.list);
+        container_of(pi_blocking_list_lock,
+                     struct vmx_pi_blocking_vcpu, lock)->counter--;
         v->arch.hvm_vmx.pi_blocking.lock = NULL;
     }
 
@@ -234,6 +238,7 @@ void vmx_pi_desc_fixup(unsigned int cpu)
         if ( pi_test_on(&vmx->pi_desc) )
         {
             list_del(&vmx->pi_blocking.list);
+            per_cpu(vmx_pi_blocking, cpu).counter--;
             vmx->pi_blocking.lock = NULL;
             vcpu_unblock(container_of(vmx, struct vcpu, arch.hvm_vmx));
         }
@@ -258,6 +263,8 @@ void vmx_pi_desc_fixup(unsigned int cpu)
 
             list_move(&vmx->pi_blocking.list,
                       &per_cpu(vmx_pi_blocking, new_cpu).list);
+            per_cpu(vmx_pi_blocking, cpu).counter--;
+            per_cpu(vmx_pi_blocking, new_cpu).counter++;
             vmx->pi_blocking.lock = new_lock;
 
             spin_unlock(new_lock);
@@ -2357,9 +2364,9 @@ static struct hvm_function_table __initdata vmx_function_table = {
 static void pi_wakeup_interrupt(struct cpu_user_regs *regs)
 {
     struct arch_vmx_struct *vmx, *tmp;
-    spinlock_t *lock = &per_cpu(vmx_pi_blocking, smp_processor_id()).lock;
-    struct list_head *blocked_vcpus =
-		&per_cpu(vmx_pi_blocking, smp_processor_id()).list;
+    unsigned int cpu = smp_processor_id();
+    spinlock_t *lock = &per_cpu(vmx_pi_blocking, cpu).lock;
+    struct list_head *blocked_vcpus = &per_cpu(vmx_pi_blocking, cpu).list;
 
     ack_APIC_irq();
     this_cpu(irq_count)++;
@@ -2376,6 +2383,7 @@ static void pi_wakeup_interrupt(struct cpu_user_regs *regs)
         if ( pi_test_on(&vmx->pi_desc) )
         {
             list_del(&vmx->pi_blocking.list);
+            per_cpu(vmx_pi_blocking, cpu).counter--;
             ASSERT(vmx->pi_blocking.lock == lock);
             vmx->pi_blocking.lock = NULL;
             vcpu_unblock(container_of(vmx, struct vcpu, arch.hvm_vmx));
