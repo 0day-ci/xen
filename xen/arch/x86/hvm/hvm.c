@@ -109,6 +109,9 @@ static const char __initconst warning_hvm_fep[] =
 static bool_t __initdata opt_altp2m_enabled = 0;
 boolean_param("altp2m", opt_altp2m_enabled);
 
+/* Total number of HVM vCPUs on this system */
+atomic_t num_hvm_vcpus;
+
 static int cpu_callback(
     struct notifier_block *nfb, unsigned long action, void *hcpu)
 {
@@ -1512,6 +1515,7 @@ int hvm_vcpu_initialise(struct vcpu *v)
 
     hvm_update_guest_vendor(v);
 
+    atomic_inc(&num_hvm_vcpus);
     return 0;
 
  fail6:
@@ -1530,6 +1534,8 @@ int hvm_vcpu_initialise(struct vcpu *v)
 
 void hvm_vcpu_destroy(struct vcpu *v)
 {
+    atomic_dec(&num_hvm_vcpus);
+
     viridian_vcpu_deinit(v);
 
     hvm_all_ioreq_servers_remove_vcpu(v->domain, v);

@@ -25,6 +25,7 @@
 #include <asm/hvm/asid.h>
 #include <public/domctl.h>
 #include <public/hvm/save.h>
+#include <xen/atomic.h>
 #include <xen/mm.h>
 
 #ifdef CONFIG_HVM_FEP
@@ -232,6 +233,8 @@ extern struct hvm_function_table hvm_funcs;
 extern bool_t hvm_enabled;
 extern bool_t cpu_has_lmsl;
 extern s8 hvm_port80_allowed;
+
+extern atomic_t num_hvm_vcpus;
 
 extern const struct hvm_function_table *start_svm(void);
 extern const struct hvm_function_table *start_vmx(void);
