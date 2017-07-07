@@ -94,22 +94,91 @@ static DEFINE_PER_CPU(struct vmx_pi_blocking_vcpu, vmx_pi_blocking);
 uint8_t __read_mostly posted_intr_vector;
 static uint8_t __read_mostly pi_wakeup_vector;
 
+/*
+ * Protect critical sections to avoid adding a blocked vcpu to a destroyed
+ * blocking list.
+ */
+static DEFINE_SPINLOCK(remote_pbl_operation);
+
+#define remote_pbl_operation_begin(flags)                   \
+({                                                          \
+    spin_lock_irqsave(&remote_pbl_operation, flags);        \
+})
+
+#define remote_pbl_operation_done(flags)                    \
+({                                                          \
+    spin_unlock_irqrestore(&remote_pbl_operation, flags);   \
+})
+
 void vmx_pi_per_cpu_init(unsigned int cpu)
 {
     INIT_LIST_HEAD(&per_cpu(vmx_pi_blocking, cpu).list);
     spin_lock_init(&per_cpu(vmx_pi_blocking, cpu).lock);
 }
 
+/*
+ * By default, the local pcpu (means the one the vcpu is currently running on)
+ * is chosen as the destination of wakeup interrupt. But if the vcpu number of
+ * the pcpu exceeds a limit, another pcpu is chosen until we find a suitable
+ * one.
+ *
+ * Currently, choose (v_tot/p_tot) + K as the limit of vcpu count, where
+ * v_tot is the total number of hvm vcpus on the system, p_tot is the total
+ * number of pcpus in the system, and K is a fixed number. An experment on a
+ * skylake server which has 112 cpus and 64G memory shows the maximum time to
+ * wakeup a vcpu from a 128-entry blocking list takes about 22us, which is
+ * tolerable. So choose 128 as the fixed number K.
+ *
+ * This policy makes sure:
+ * 1) for common cases, the limit won't be reached and the local pcpu is used
+ * which is beneficial to performance (at least, avoid an IPI when unblocking
+ * vcpu).
+ * 2) for the worst case, the blocking list length scales with the vcpu count
+ * divided by the pcpu count.
+ */
+#define PI_LIST_FIXED_NUM 128
+#define PI_LIST_LIMIT     (atomic_read(&num_hvm_vcpus) / num_online_cpus() + \
+                           PI_LIST_FIXED_NUM)
+static inline bool pi_over_limit(int cpu)
+{
+    return per_cpu(vmx_pi_blocking, cpu).counter > PI_LIST_LIMIT;
+}
+
 static void vmx_vcpu_block(struct vcpu *v)
 {
-    unsigned long flags;
-    unsigned int dest;
+    unsigned long flags[2];
+    unsigned int dest, pi_cpu;
     spinlock_t *old_lock;
-    spinlock_t *pi_blocking_list_lock =
-		&per_cpu(vmx_pi_blocking, v->processor).lock;
     struct pi_desc *pi_desc = &v->arch.hvm_vmx.pi_desc;
+    spinlock_t *pi_blocking_list_lock;
+    bool in_remote_operation = false;
 
-    spin_lock_irqsave(pi_blocking_list_lock, flags);
+    pi_cpu = v->processor;
+
+    if ( unlikely(pi_over_limit(pi_cpu)) )
+    {
+        remote_pbl_operation_begin(flags[0]);
+        in_remote_operation = true;
+        while (true)
+        {
+            /*
+             * Online pCPU's blocking list is always usable for it is
+             * destroyed after clearing the bit of cpu_online_map.
+             */
+            pi_cpu = cpumask_cycle(pi_cpu, &cpu_online_map);
+            pi_blocking_list_lock = &per_cpu(vmx_pi_blocking, pi_cpu).lock;
+            spin_lock_irqsave(pi_blocking_list_lock, flags[1]);
+            if ( !pi_over_limit(pi_cpu) )
+                break;
+            spin_unlock_irqrestore(pi_blocking_list_lock, flags[1]);
+        }
+    }
+    else
+    {
+        pi_blocking_list_lock = &per_cpu(vmx_pi_blocking, pi_cpu).lock;
+        spin_lock_irqsave(pi_blocking_list_lock, flags[1]);
+    }
+
     old_lock = cmpxchg(&v->arch.hvm_vmx.pi_blocking.lock, NULL,
                        pi_blocking_list_lock);
 
@@ -122,8 +191,10 @@ static void vmx_vcpu_block(struct vcpu *v)
 
     per_cpu(vmx_pi_blocking, v->processor).counter++;
     list_add_tail(&v->arch.hvm_vmx.pi_blocking.list,
-                  &per_cpu(vmx_pi_blocking, v->processor).list);
-    spin_unlock_irqrestore(pi_blocking_list_lock, flags);
+                  &per_cpu(vmx_pi_blocking, pi_cpu).list);
+    spin_unlock_irqrestore(pi_blocking_list_lock, flags[1]);
+    if ( unlikely(in_remote_operation) )
+        remote_pbl_operation_done(flags[0]);
 
     ASSERT(!pi_test_sn(pi_desc));
 
@@ -131,6 +202,19 @@ static void vmx_vcpu_block(struct vcpu *v)
 
     ASSERT(pi_desc->ndst ==
            (x2apic_enabled ? dest : MASK_INSR(dest, PI_xAPIC_NDST_MASK)));
+    if ( unlikely(pi_cpu != v->processor) )
+    {
+        /*
+         * The vcpu is put to another pCPU's blocking list. Change 'NDST'
+         * field to that pCPU to make sure it can wake up the vcpu when an
+         * interrupt arrives. The 'NDST' field will be set to the pCPU which
+         * the vcpu is running on during VM-Entry, seeing
+         * vmx_pi_unblock_vcpu().
+         */
+        dest = cpu_physical_id(pi_cpu);
+        write_atomic(&pi_desc->ndst,
+                  x2apic_enabled ? dest : MASK_INSR(dest, PI_xAPIC_NDST_MASK));
+    }
 
     write_atomic(&pi_desc->nv, pi_wakeup_vector);
 }
@@ -161,13 +245,17 @@ static void vmx_pi_unblock_vcpu(struct vcpu *v)
     unsigned long flags;
     spinlock_t *pi_blocking_list_lock;
     struct pi_desc *pi_desc = &v->arch.hvm_vmx.pi_desc;
+    unsigned int dest = cpu_physical_id(v->processor);
 
     /*
-     * Set 'NV' field back to posted_intr_vector, so the
-     * Posted-Interrupts can be delivered to the vCPU when
-     * it is running in non-root mode.
+     * Set 'NV' field back to posted_intr_vector and 'NDST' field to the pCPU
+     * where the vcpu is running (for this field may now point to another
+     * pCPU), so the Posted-Interrupts can be delivered to the vCPU when it
+     * is running in non-root mode.
      */
     write_atomic(&pi_desc->nv, posted_intr_vector);
+    write_atomic(&pi_desc->ndst,
+                 x2apic_enabled ? dest : MASK_INSR(dest, PI_xAPIC_NDST_MASK));
 
     pi_blocking_list_lock = v->arch.hvm_vmx.pi_blocking.lock;
 
@@ -214,13 +302,8 @@ void vmx_pi_desc_fixup(unsigned int cpu)
     if ( !iommu_intpost )
         return;
 
-    /*
-     * We are in the context of CPU_DEAD or CPU_UP_CANCELED notification,
-     * and it is impossible for a second CPU go down in parallel. So we
-     * can safely acquire the old cpu's lock and then acquire the new_cpu's
-     * lock after that.
-     */
-    spin_lock_irqsave(old_lock, flags);
+    remote_pbl_operation_begin(flags);
+    spin_lock(old_lock);
 
     list_for_each_entry_safe(vmx, tmp, blocked_vcpus, pi_blocking.list)
     {
@@ -244,16 +327,24 @@ void vmx_pi_desc_fixup(unsigned int cpu)
         }
         else
         {
+            new_cpu = cpu;
             /*
              * We need to find an online cpu as the NDST of the PI descriptor, it
              * doesn't matter whether it is within the cpupool of the domain or
              * not. As long as it is online, the vCPU will be woken up once the
-             * notification event arrives.
+             * notification event arrives. Through a while-loop to find a
+             * target pCPU whose PI Blocking List's length isn't over the limit.
              */
-            new_cpu = cpumask_any(&cpu_online_map);
-            new_lock = &per_cpu(vmx_pi_blocking, new_cpu).lock;
+            while (true)
+            {
+                new_cpu = cpumask_cycle(new_cpu, &cpu_online_map);
+                new_lock = &per_cpu(vmx_pi_blocking, new_cpu).lock;
 
-            spin_lock(new_lock);
+                spin_lock(new_lock);
+                if ( !pi_over_limit(new_cpu) )
+                    break;
+                spin_unlock(new_lock);
+            }
 
             ASSERT(vmx->pi_blocking.lock == old_lock);
 
@@ -273,7 +364,8 @@ void vmx_pi_desc_fixup(unsigned int cpu)
         pi_clear_sn(&vmx->pi_desc);
     }
 
-    spin_unlock_irqrestore(old_lock, flags);
+    spin_unlock(old_lock);
+    remote_pbl_operation_done(flags);
 }
 
 /*
