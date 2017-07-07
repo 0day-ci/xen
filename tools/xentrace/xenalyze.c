@@ -296,6 +296,7 @@ struct symbol_struct {
 };
 
 void error(enum error_level l, struct record_info *ri);
+struct vcpu_data * vcpu_find(int did, int vid);
 
 void parse_symbol_file(char *fn) {
     unsigned long long last_addr = 0;
@@ -944,6 +945,7 @@ enum {
     HVM_EVENT_TRAP,
     HVM_EVENT_TRAP_DEBUG,
     HVM_EVENT_VLAPIC,
+    HVM_EVENT_PI_LIST_ADD,
     HVM_EVENT_HANDLER_MAX
 };
 char * hvm_event_handler_name[HVM_EVENT_HANDLER_MAX] = {
@@ -979,13 +981,15 @@ char * hvm_event_handler_name[HVM_EVENT_HANDLER_MAX] = {
     "realmode_emulate",
     "trap",
     "trap_debug",
-    "vlapic"
+    "vlapic",
+    "pi_list_add",
 };
 
 enum {
     HVM_VOL_VMENTRY,
     HVM_VOL_VMEXIT,
     HVM_VOL_HANDLER,
+    HVM_VOL_ASYNC,
     HVM_VOL_MAX
 };
 
@@ -1012,6 +1016,7 @@ char *hvm_vol_name[HVM_VOL_MAX] = {
     [HVM_VOL_VMENTRY]="vmentry",
     [HVM_VOL_VMEXIT] ="vmexit",
     [HVM_VOL_HANDLER]="handler",
+    [HVM_VOL_ASYNC]="async",
 };
 
 enum {
@@ -1337,6 +1342,9 @@ struct hvm_data {
         struct {
             struct io_address *mmio, *pio;
         } io;
+        struct {
+            int pi_list_add, pi_list_del;
+        } pi;
     } summary;
 
     /* In-flight accumulation information */
@@ -1391,6 +1399,9 @@ struct hvm_data {
 
     /* Historical info */
     tsc_t last_rdtsc;
+
+    /* Destination pcpu of posted interrupt's wakeup interrupt */
+    int pi_cpu;
 };
 
 enum {
@@ -1457,6 +1468,8 @@ void init_hvm_data(struct hvm_data *h, struct vcpu_data *v) {
     }
     for(i=0; i<GUEST_INTERRUPT_MAX+1; i++)
         h->summary.guest_interrupt[i].count=0;
+
+    h->pi_cpu = -1;
 }
 
 /* PV data */
@@ -1766,6 +1779,14 @@ char * toplevel_name[TOPLEVEL_MAX] = {
     [TOPLEVEL_HW]="hw",
 };
 
+enum {
+    SUBLEVEL_HVM_ENTRYEXIT=1,
+    SUBLEVEL_HVM_HANDLER,
+    SUBLEVEL_HVM_EMUL,
+    SUBLEVEL_HVM_ASYNC,
+    SUBLEVEL_HVM_MAX=SUBLEVEL_HVM_ASYNC+1,
+};
+
 struct trace_volume {
     unsigned long long toplevel[TOPLEVEL_MAX];
     unsigned long long sched_verbose;
@@ -1852,6 +1873,9 @@ struct pcpu_info {
         tsc_t tsc;
         struct cycle_summary idle, running, lost;
     } time;
+
+    /* Posted Interrupt List Length */
+    int pi_list_length;
 };
 
 void __fill_in_record_info(struct pcpu_info *p);
@@ -4726,6 +4750,71 @@ void hvm_generic_dump(struct record_info *ri, char * prefix)
     printf(" ]\n");
 }
 
+void hvm_pi_list_add_process(struct record_info *ri, struct hvm_data *h)
+{
+    struct {
+        int did;
+        int vid;
+        int pcpu;
+        int len;
+    } *data;
+    struct vcpu_data *v;
+
+    data = (typeof(data))ri->rec.u.tsc.data;
+    v = vcpu_find(data->did, data->vid);
+    if ( !v->hvm.init )
+        init_hvm_data(&v->hvm, v);
+
+    if ( opt.dump_all )
+        printf("d%uv%u is added to pi blocking list of pcpu%u. "
+               "The list length is now %d\n",
+               data->did, data->vid, data->pcpu, data->len);
+
+    v->hvm.pi_cpu = data->pcpu;
+    v->hvm.summary.pi.pi_list_add++;
+    if ( data->pcpu > P.max_active_pcpu || !P.pcpu[data->pcpu].active )
+        fprintf(stderr, "Strange! pcpu%u is inactive but a vcpu is added"
+                "to it", data->pcpu);
+    else if ( P.pcpu[data->pcpu].pi_list_length == -1 )
+        P.pcpu[data->pcpu].pi_list_length = data->len;
+    else if ( data->len != ++P.pcpu[data->pcpu].pi_list_length )
+        /*
+         * Correct pi list length. Removing one vcpu that is already on the
+         * list before tracing starts would not decrease the pi list length;
+         * the list length would be inaccuate.
+         */
+        P.pcpu[data->pcpu].pi_list_length = data->len;
+}
+
+void hvm_pi_list_del_process(struct record_info *ri)
+{
+    struct {
+        int did;
+        int vid;
+    } *data;
+    struct vcpu_data *v;
+
+    data = (typeof(data))ri->rec.u.tsc.data;
+    v = vcpu_find(data->did, data->vid);
+    if ( !v->hvm.init )
+        init_hvm_data(&v->hvm, v);
+
+    if ( opt.dump_all )
+    {
+        if ( v->hvm.pi_cpu != -1 )
+            printf("d%uv%u is removed from pi blocking list of pcpu%u\n",
+                   data->did, data->vid, v->hvm.pi_cpu);
+        else
+            printf("d%uv%u is removed from pi blocking list\n",
+                   data->did, data->vid);
+    }
+
+    if ( P.pcpu[v->hvm.pi_cpu].pi_list_length != -1 )
+        P.pcpu[v->hvm.pi_cpu].pi_list_length--;
+    v->hvm.pi_cpu = -1;
+    v->hvm.summary.pi.pi_list_del++;
+}
+
 void hvm_handler_process(struct record_info *ri, struct hvm_data *h) {
     /* Wait for first vmexit to initialize */
     if(!h->init)
@@ -4762,6 +4851,9 @@ void hvm_handler_process(struct record_info *ri, struct hvm_data *h) {
         break;
     case TRC_HVM_INTR_WINDOW:
         hvm_intr_window_process(ri, h);
+        break;
+    case TRC_HVM_PI_LIST_ADD:
+        hvm_pi_list_add_process(ri, h);
         break;
     case TRC_HVM_OP_DESTROY_PROC:
         if(h->v->cr3.data) {
@@ -4862,7 +4954,6 @@ needs_vmexit:
 void vcpu_next_update(struct pcpu_info *p, struct vcpu_data *next, tsc_t tsc);
 void vcpu_prev_update(struct pcpu_info *p, struct vcpu_data *prev,
                       tsc_t tsc, int new_runstate);
-struct vcpu_data * vcpu_find(int did, int vid);
 void lose_vcpu(struct vcpu_data *v, tsc_t tsc);
 
 int domain_runstate(struct domain_data *d) {
@@ -5267,6 +5358,21 @@ void hvm_process(struct pcpu_info *p)
     struct vcpu_data *v = p->current;
     struct hvm_data *h = &v->hvm;
 
+    if(ri->evt.sub == 8)
+    {
+        UPDATE_VOLUME(p, hvm[HVM_VOL_ASYNC], ri->size);
+
+        switch(ri->event) {
+        case TRC_HVM_ASYNC_PI_LIST_DEL:
+            hvm_pi_list_del_process(ri);
+            break;
+
+        default:
+            fprintf(warn, "Unknown hvm event: %x\n", ri->event);
+        }
+        return;
+    }
+
     assert(p->current);
 
     if(vcpu_set_data_type(p->current, VCPU_DATA_HVM))
@@ -5359,6 +5465,10 @@ void hvm_summary(struct hvm_data *h) {
                   i, h->summary.ipi_count[i]);
    hvm_io_address_summary(h->summary.io.pio, "IO address summary:");
    hvm_io_address_summary(h->summary.io.mmio, "MMIO address summary:");
+
+   printf("Posted Interrupt:\n");
+   printf(" List Add: %u\n", h->summary.pi.pi_list_add);
+   printf(" List Del: %u\n", h->summary.pi.pi_list_del);
 }
 
 /* ---- Shadow records ---- */
@@ -8962,6 +9072,7 @@ off_t scan_for_new_pcpu(off_t offset) {
 
         p->file_offset = offset;
         p->next_cpu_change_offset = offset;
+        p->pi_list_length = -1;
 
         record_order_insert(p);
 
@@ -9142,7 +9253,6 @@ int find_toplevel_event(struct record_info *ri)
     return toplevel;
 }
 
-
 void process_cpu_change(struct pcpu_info *p) {
     struct record_info *ri = &p->ri;
     struct cpu_change_data *r = (typeof(r))ri->d;
@@ -9190,6 +9300,7 @@ void process_cpu_change(struct pcpu_info *p) {
         p2->ri.d = p2->ri.rec.u.notsc.data;
         p2->file_offset = p->file_offset;
         p2->next_cpu_change_offset = p->file_offset;
+        p2->pi_list_length = -1;
 
         fprintf(warn, "%s: Activating pcpu %d at offset %lld\n",
                 __func__, r->cpu, (unsigned long long)p->file_offset);
@@ -9276,15 +9387,33 @@ void process_cpu_change(struct pcpu_info *p) {
     }
 }
 
-struct tl_assert_mask {
+struct assert_mask {
     unsigned p_current:1,
-        not_idle_domain:1;
+        not_idle_domain:1,
+        check_sublevel:1;
     int vcpu_data_mode;
+    int sub_max;
+    struct assert_mask *sub;
 };
-static struct tl_assert_mask tl_assert_checks[TOPLEVEL_MAX] = {
-    [TRC_HVM_MAIN]={ .p_current=1, .not_idle_domain=1, .vcpu_data_mode=VCPU_DATA_HVM },
+
+static struct assert_mask sl_hvm_assert_mask[SUBLEVEL_HVM_MAX] = {
+    [SUBLEVEL_HVM_ENTRYEXIT] = { .p_current=1, .not_idle_domain=1, .vcpu_data_mode=VCPU_DATA_HVM },
+    [SUBLEVEL_HVM_HANDLER] = { .p_current=1, .not_idle_domain=1, .vcpu_data_mode=VCPU_DATA_HVM },
+    [SUBLEVEL_HVM_EMUL] = { .p_current=1, .not_idle_domain=1, .vcpu_data_mode=VCPU_DATA_HVM },
+};
+
+static struct assert_mask tl_assert_checks[TOPLEVEL_MAX] = {
+    [TRC_HVM_MAIN]={ .check_sublevel=1, .sub=sl_hvm_assert_mask, .sub_max=SUBLEVEL_HVM_MAX },
     [TRC_SHADOW_MAIN]={ .p_current=1, .not_idle_domain=1, .vcpu_data_mode=VCPU_DATA_HVM },
     [TRC_PV_MAIN]={ .p_current=1, .not_idle_domain=1, .vcpu_data_mode=VCPU_DATA_PV },
+};
+
+/* Other sub types are reserved */
+static int sublevel_to_index[16] = {
+    [1] = 1,
+    [2] = 2,
+    [4] = 3,
+    [8] = 4,
 };
 
 /* There are a lot of common assumptions for the various processing
@@ -9292,9 +9421,17 @@ static struct tl_assert_mask tl_assert_checks[TOPLEVEL_MAX] = {
  * they don't pass. */
 int toplevel_assert_check(int toplevel, struct pcpu_info *p)
 {
-    struct tl_assert_mask mask;
+    struct assert_mask mask;
 
     mask = tl_assert_checks[toplevel];
+
+    if (mask.check_sublevel)
+    {
+        int sub = sublevel_to_index[p->ri.evt.sub];
+
+        assert(mask.sub && (sub < mask.sub_max));
+        mask = mask.sub[sub];
+    }
 
     if (mask.p_current && p->current == NULL)
     {
@@ -9361,7 +9498,6 @@ void process_record(struct pcpu_info *p) {
 
     if(opt.dump_all)
         create_dump_header(ri, p);
-
 
     toplevel = find_toplevel_event(ri);
     if ( toplevel < 0 )

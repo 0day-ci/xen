@@ -189,7 +189,9 @@ static void vmx_vcpu_block(struct vcpu *v)
      */
     ASSERT(old_lock == NULL);
 
-    per_cpu(vmx_pi_blocking, v->processor).counter++;
+    per_cpu(vmx_pi_blocking, pi_cpu).counter++;
+    TRACE_4D(TRC_HVM_PI_LIST_ADD, v->domain->domain_id, v->vcpu_id, pi_cpu,
+             per_cpu(vmx_pi_blocking, pi_cpu).counter);
     list_add_tail(&v->arch.hvm_vmx.pi_blocking.list,
                   &per_cpu(vmx_pi_blocking, pi_cpu).list);
     spin_unlock_irqrestore(pi_blocking_list_lock, flags[1]);
@@ -278,6 +280,7 @@ static void vmx_pi_unblock_vcpu(struct vcpu *v)
         list_del(&v->arch.hvm_vmx.pi_blocking.list);
         container_of(pi_blocking_list_lock,
                      struct vmx_pi_blocking_vcpu, lock)->counter--;
+        TRACE_2D(TRC_HVM_ASYNC_PI_LIST_DEL, v->domain->domain_id, v->vcpu_id);
         v->arch.hvm_vmx.pi_blocking.lock = NULL;
     }
 
@@ -307,6 +310,8 @@ void vmx_pi_desc_fixup(unsigned int cpu)
 
     list_for_each_entry_safe(vmx, tmp, blocked_vcpus, pi_blocking.list)
     {
+        struct vcpu *v = container_of(vmx, struct vcpu, arch.hvm_vmx);
+
         /*
          * Suppress notification or we may miss an interrupt when the
          * target cpu is dying.
@@ -321,9 +326,11 @@ void vmx_pi_desc_fixup(unsigned int cpu)
         if ( pi_test_on(&vmx->pi_desc) )
         {
             list_del(&vmx->pi_blocking.list);
+            TRACE_2D(TRC_HVM_ASYNC_PI_LIST_DEL, v->domain->domain_id,
+                     v->vcpu_id);
             per_cpu(vmx_pi_blocking, cpu).counter--;
             vmx->pi_blocking.lock = NULL;
-            vcpu_unblock(container_of(vmx, struct vcpu, arch.hvm_vmx));
+            vcpu_unblock(v);
         }
         else
         {
@@ -356,6 +363,10 @@ void vmx_pi_desc_fixup(unsigned int cpu)
                       &per_cpu(vmx_pi_blocking, new_cpu).list);
             per_cpu(vmx_pi_blocking, cpu).counter--;
             per_cpu(vmx_pi_blocking, new_cpu).counter++;
+            TRACE_2D(TRC_HVM_ASYNC_PI_LIST_DEL, v->domain->domain_id,
+                     v->vcpu_id);
+            TRACE_4D(TRC_HVM_PI_LIST_ADD, v->domain->domain_id, v->vcpu_id,
+                     new_cpu, per_cpu(vmx_pi_blocking, new_cpu).counter);
             vmx->pi_blocking.lock = new_lock;
 
             spin_unlock(new_lock);
@@ -2474,11 +2485,15 @@ static void pi_wakeup_interrupt(struct cpu_user_regs *regs)
     {
         if ( pi_test_on(&vmx->pi_desc) )
         {
+            struct vcpu *v = container_of(vmx, struct vcpu, arch.hvm_vmx);
+
             list_del(&vmx->pi_blocking.list);
+            TRACE_2D(TRC_HVM_ASYNC_PI_LIST_DEL, v->domain->domain_id,
+                     v->vcpu_id);
             per_cpu(vmx_pi_blocking, cpu).counter--;
             ASSERT(vmx->pi_blocking.lock == lock);
             vmx->pi_blocking.lock = NULL;
-            vcpu_unblock(container_of(vmx, struct vcpu, arch.hvm_vmx));
+            vcpu_unblock(v);
         }
     }
 
