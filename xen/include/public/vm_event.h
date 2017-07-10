@@ -148,6 +148,8 @@
 #define VM_EVENT_REASON_INTERRUPT               12
 /* A descriptor table register was accessed. */
 #define VM_EVENT_REASON_DESCRIPTOR_ACCESS       13
+/* Current instruction couldn't be emulated */
+#define VM_EVENT_REASON_EMUL_UNHANDLEABLE       14
 
 /* Supported values for the vm_event_write_ctrlreg index. */
 #define VM_EVENT_X86_CR0    0

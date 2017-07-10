@@ -405,6 +405,7 @@ struct arch_domain
         unsigned int debug_exception_sync        : 1;
         unsigned int cpuid_enabled               : 1;
         unsigned int descriptor_access_enabled   : 1;
+        unsigned int emul_unhandleable           : 1;
         struct monitor_msr_bitmap *msr_bitmap;
         uint64_t write_ctrlreg_mask[4];
     } monitor;

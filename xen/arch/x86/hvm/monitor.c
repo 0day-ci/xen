@@ -57,6 +57,25 @@ bool_t hvm_monitor_cr(unsigned int index, unsigned long value, unsigned long old
     return 0;
 }
 
+
+bool hvm_monitor_emul_unhandleable(void)
+{
+    struct vcpu *curr = current;
+    struct domain *d = curr->domain;
+
+    /*
+     * Send a vm_event to the monitor to signal that the current
+     * instruction couldn't be emulated.
+     */
+    vm_event_request_t req = {
+        .reason = VM_EVENT_REASON_EMUL_UNHANDLEABLE,
+        .vcpu_id  = curr->vcpu_id,
+    };
+
+    return ( d->arch.monitor.emul_unhandleable &&
+             monitor_traps(curr, true, &req) );
+}
+
 void hvm_monitor_msr(unsigned int msr, uint64_t value)
 {
     struct vcpu *curr = current;
