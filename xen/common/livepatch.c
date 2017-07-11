@@ -517,8 +517,8 @@ static int prepare_payload(struct payload *payload,
     ASSERT(sec);
     if ( sec->sec->sh_size % sizeof(*payload->funcs) )
     {
-        dprintk(XENLOG_ERR, LIVEPATCH "%s: Wrong size of "ELF_LIVEPATCH_FUNC"!\n",
-                elf->name);
+        dprintk(XENLOG_ERR, LIVEPATCH "%s: Wrong size of "ELF_LIVEPATCH_FUNC"! (exp: %zu vs %"PRIuElfWord")\n",
+                elf->name, sizeof(*payload->funcs), sec->sec->sh_size);
         return -EINVAL;
     }
 
@@ -645,8 +645,9 @@ static int prepare_payload(struct payload *payload,
 
         if ( sec->sec->sh_size % sizeof(*region->frame[i].bugs) )
         {
-            dprintk(XENLOG_ERR, LIVEPATCH "%s: Wrong size of .bug_frames.%u!\n",
-                    elf->name, i);
+            dprintk(XENLOG_ERR, LIVEPATCH "%s: Wrong size of .bug_frames.%u! (exp: %zu vs %"PRIuElfWord")\n",
+                    elf->name, i, sizeof(*region->frame[i].bugs),
+                    sec->sec->sh_size);
             return -EINVAL;
         }
 
