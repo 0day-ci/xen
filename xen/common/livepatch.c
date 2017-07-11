@@ -403,6 +403,15 @@ static int move_payload(struct payload *payload, struct livepatch_elf *elf)
             ASSERT(offset[i] != UINT_MAX);
 
             elf->sec[i].load_addr = buf + offset[i];
+            if ( elf->sec[i].sec->sh_addralign > 1 &&
+                 ((Elf_Addr)elf->sec[i].load_addr % elf->sec[i].sec->sh_addralign) )
+             {
+                dprintk(XENLOG_ERR, LIVEPATCH "%s: %s @ %p is not aligned (%"PRIuElfWord")\n",
+                        elf->name, elf->sec[i].name, elf->sec[i].load_addr,
+                        elf->sec[i].sec->sh_addralign);
+                rc = -EINVAL;
+                goto out;
+            }
 
             /* Don't copy NOBITS - such as BSS. */
             if ( elf->sec[i].sec->sh_type != SHT_NOBITS )
