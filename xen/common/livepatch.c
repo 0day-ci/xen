@@ -492,7 +492,12 @@ static int check_special_sections(const struct livepatch_elf *elf)
                     elf->name, names[i]);
             return -EINVAL;
         }
-
+        if ( arch_livepatch_verify_alignment(sec) )
+        {
+            dprintk(XENLOG_ERR, LIVEPATCH "%s: %s is not aligned properly!\n",
+                    elf->name, names[i]);
+            return -EINVAL;
+        }
         if ( test_and_set_bit(i, found) )
         {
             dprintk(XENLOG_ERR, LIVEPATCH "%s: %s was seen more than once!\n",
@@ -565,6 +570,12 @@ static int prepare_payload(struct payload *payload,
         if ( sec->sec->sh_size % sizeof(*payload->load_funcs) )
             return -EINVAL;
 
+        if ( arch_livepatch_verify_alignment(sec) )
+        {
+            dprintk(XENLOG_ERR, LIVEPATCH "%s: %s is not aligned properly!\n",
+                    elf->name, sec->name);
+            return -EINVAL;
+        }
         payload->load_funcs = sec->load_addr;
         payload->n_load_funcs = sec->sec->sh_size / sizeof(*payload->load_funcs);
     }
@@ -575,6 +586,12 @@ static int prepare_payload(struct payload *payload,
         if ( sec->sec->sh_size % sizeof(*payload->unload_funcs) )
             return -EINVAL;
 
+        if ( arch_livepatch_verify_alignment(sec) )
+        {
+            dprintk(XENLOG_ERR, LIVEPATCH "%s: %s is not aligned properly!\n",
+                    elf->name, sec->name);
+            return -EINVAL;
+        }
         payload->unload_funcs = sec->load_addr;
         payload->n_unload_funcs = sec->sec->sh_size / sizeof(*payload->unload_funcs);
     }
@@ -650,6 +667,12 @@ static int prepare_payload(struct payload *payload,
                     sec->sec->sh_size);
             return -EINVAL;
         }
+        if ( arch_livepatch_verify_alignment(sec) )
+        {
+            dprintk(XENLOG_ERR, LIVEPATCH "%s: %s is not aligned properly!\n",
+                    elf->name, sec->name);
+            return -EINVAL;
+        }
 
         region->frame[i].bugs = sec->load_addr;
         region->frame[i].n_bugs = sec->sec->sh_size /
@@ -666,6 +689,12 @@ static int prepare_payload(struct payload *payload,
         {
             dprintk(XENLOG_ERR, LIVEPATCH "%s: Size of .alt_instr is not multiple of %zu!\n",
                     elf->name, sizeof(*a));
+            return -EINVAL;
+        }
+        if ( arch_livepatch_verify_alignment(sec) )
+        {
+            dprintk(XENLOG_ERR, LIVEPATCH "%s: %s is not aligned properly!\n",
+                    elf->name, sec->name);
             return -EINVAL;
         }
 
@@ -705,6 +734,12 @@ static int prepare_payload(struct payload *payload,
             dprintk(XENLOG_ERR, LIVEPATCH "%s: Wrong size of .ex_table (exp:%lu vs %lu)!\n",
                     elf->name, sizeof(*region->ex),
                     sec->sec->sh_size);
+            return -EINVAL;
+        }
+        if ( arch_livepatch_verify_alignment(sec) )
+        {
+            dprintk(XENLOG_ERR, LIVEPATCH "%s: %s is not aligned properly!\n",
+                    elf->name, sec->name);
             return -EINVAL;
         }
 

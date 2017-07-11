@@ -112,6 +112,12 @@ bool arch_livepatch_symbol_deny(const struct livepatch_elf *elf,
     return false;
 }
 
+bool arch_livepatch_verify_alignment(const struct livepatch_elf_sec *sec)
+{
+    /* Unaligned access on ARM 32 will crash with Data Abort. */
+    return (uint32_t)sec->load_addr % sizeof(uint32_t);
+};
+
 static s32 get_addend(unsigned char type, void *dest)
 {
     s32 addend = 0;
@@ -233,7 +239,7 @@ int arch_livepatch_perform(struct livepatch_elf *elf,
         uint32_t val;
         void *dest;
         unsigned char type;
-        s32 addend;
+        s32 addend = 0;
 
         if ( use_rela )
         {
@@ -251,7 +257,6 @@ int arch_livepatch_perform(struct livepatch_elf *elf,
             symndx = ELF32_R_SYM(r->r_info);
             type = ELF32_R_TYPE(r->r_info);
             dest = base->load_addr + r->r_offset; /* P */
-            addend = get_addend(type, dest);
         }
 
         if ( symndx == STN_UNDEF )
@@ -272,6 +277,15 @@ int arch_livepatch_perform(struct livepatch_elf *elf,
                     elf->name, symndx);
             return -EINVAL;
         }
+        else if ( (uint32_t)dest % sizeof(uint32_t) )
+        {
+            dprintk(XENLOG_ERR, LIVEPATCH "%s: dest=%p (%s) is not aligned properly!\n",
+                    elf->name, dest, base->name);
+            return -EINVAL;
+        }
+
+        if ( !use_rela )
+            addend = get_addend(type, dest);
 
         val = elf->sym[symndx].sym->st_value; /* S */
 
