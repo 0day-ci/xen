@@ -1098,6 +1098,10 @@ long do_event_channel_op(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
         break;
     }
 
+    case EVTCHNOP_send_imm:
+        rc = evtchn_send(current->domain, (unsigned long)arg.p);
+        break;
+
     case EVTCHNOP_status: {
         struct evtchn_status status;
         if ( copy_from_guest(&status, arg, 1) != 0 )

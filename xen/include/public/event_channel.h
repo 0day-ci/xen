@@ -57,6 +57,9 @@
  * `
  * @cmd  == EVTCHNOP_* (event-channel operation).
  * @args == struct evtchn_* Operation-specific extra arguments (NULL if none).
+ *
+ * For @cmd with an _imm suffix, data are passed as an integer, rather than a
+ * pointer to a structure.
  */
 
 /* ` enum event_channel_op { // EVTCHNOP_* => struct evtchn_* */
@@ -64,7 +67,7 @@
 #define EVTCHNOP_bind_virq        1
 #define EVTCHNOP_bind_pirq        2
 #define EVTCHNOP_close            3
-#define EVTCHNOP_send             4
+#define EVTCHNOP_send             4 /* Deprecated.  Use EVTCHNOP_send_imm in preference. */
 #define EVTCHNOP_status           5
 #define EVTCHNOP_alloc_unbound    6
 #define EVTCHNOP_bind_ipi         7
@@ -74,6 +77,7 @@
 #define EVTCHNOP_init_control    11
 #define EVTCHNOP_expand_array    12
 #define EVTCHNOP_set_priority    13
+#define EVTCHNOP_send_imm        14
 /* ` } */
 
 typedef uint32_t evtchn_port_t;
@@ -186,8 +190,11 @@ struct evtchn_close {
 typedef struct evtchn_close evtchn_close_t;
 
 /*
- * EVTCHNOP_send: Send an event to the remote end of the channel whose local
- * endpoint is <port>.
+ * EVTCHNOP_send{,_imm}: Send an event to the remote end of the channel whose
+ * local endpoint is <port>.
+ *
+ * For EVTCHNOP_send, arg is a pointer to an evtchn_send_t.  For
+ * EVTCHNOP_send_imm, arg is the port directly.
  */
 struct evtchn_send {
     /* IN parameters. */
