@@ -334,6 +334,7 @@ int main(int argc, char **argv)
 		{ "num",     1, 0, 'n' },
 		{ "help",    0, 0, 'h' },
 		{ "start-notify-fd", 1, 0, 's' },
+		{ "pipe", 0, 0, 'p' },
 		{ 0 },
 
 	};
@@ -343,6 +344,7 @@ int main(int argc, char **argv)
 	char *end;
 	console_type type = CONSOLE_INVAL;
 	bool interactive = 0;
+	bool pipe = 0;
 
 	if (isatty(STDIN_FILENO) && isatty(STDOUT_FILENO))
 		interactive = 1;
@@ -370,6 +372,9 @@ int main(int argc, char **argv)
 		case 's':
 			start_notify_fd = atoi(optarg);
 			break;
+        case 'p':
+            pipe = 1;
+            break;
 		default:
 			fprintf(stderr, "Invalid argument\n");
 			fprintf(stderr, "Try `%s --help' for more information.\n", 
@@ -484,7 +489,7 @@ int main(int argc, char **argv)
 		close(start_notify_fd);
 	}
 
-	console_loop(spty, xs, path, interactive);
+	console_loop(spty, xs, path, interactive || pipe);
 
 	free(path);
 	free(dom_path);
