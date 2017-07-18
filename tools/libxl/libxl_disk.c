@@ -1244,6 +1244,8 @@ static int libxl_device_disk_dm_needed(void *e, unsigned domid)
            elem->backend_domid == domid;
 }
 
+#define libxl__device_disk_update_devid NULL
+
 DEFINE_DEVICE_TYPE_STRUCT(disk,
     .merge       = libxl_device_disk_merge,
     .dm_needed   = libxl_device_disk_dm_needed,

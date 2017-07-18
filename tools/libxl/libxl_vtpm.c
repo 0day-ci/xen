@@ -364,6 +364,8 @@ LIBXL_DEFINE_DEVICE_ADD(vtpm)
 static LIBXL_DEFINE_DEVICES_ADD(vtpm)
 LIBXL_DEFINE_DEVICE_REMOVE(vtpm)
 
+#define libxl__device_vtpm_update_devid NULL
+
 DEFINE_DEVICE_TYPE_STRUCT(vtpm,
     .update_config = libxl_device_vtpm_update_config
 );

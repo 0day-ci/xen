@@ -669,6 +669,8 @@ LIBXL_DEFINE_DEVICE_ADD(nic)
 LIBXL_DEFINE_DEVICES_ADD(nic)
 LIBXL_DEFINE_DEVICE_REMOVE(nic)
 
+#define libxl__device_nic_update_devid NULL
+
 DEFINE_DEVICE_TYPE_STRUCT(nic,
     .update_config = libxl_device_nic_update_config
 );

@@ -3467,6 +3467,18 @@ _hidden void libxl__bootloader_run(libxl__egc*, libxl__bootloader_state *st);
         return AO_INPROGRESS;                                           \
     }
 
+#define LIBXL_DEFINE_UPDATE_DEVID(type, name)                           \
+    int libxl__device_##type##_update_devid(libxl__gc *gc,              \
+                                            uint32_t domid,             \
+                                            libxl_device_##type *type)  \
+    {                                                                   \
+        if (type->devid == -1)                                          \
+            type->devid = libxl__device_nextid(gc, domid, name);        \
+        if (type->devid < 0)                                            \
+            return ERROR_FAIL;                                          \
+        return 0;                                                       \
+    }
+
 #define LIBXL_DEFINE_DEVICE_REMOVE(type)                                \
     LIBXL_DEFINE_DEVICE_REMOVE_EXT(type, generic, remove, 0)            \
     LIBXL_DEFINE_DEVICE_REMOVE_EXT(type, generic, destroy, 1)
@@ -3484,11 +3496,18 @@ struct libxl_device_type {
     void (*add)(libxl__egc *, libxl__ao *, uint32_t, libxl_domain_config *,
                 libxl__multidev *);
     void *(*list)(libxl_ctx *, uint32_t, int *);
+    int (*set_default)(libxl__gc *, uint32_t, void *, bool);
+    int (*to_device)(libxl__gc *, uint32_t, void *, libxl__device *);
+    void (*init)(void *);
+    void (*copy)(libxl_ctx *, void *, void *);
     void (*dispose)(void *);
     int (*compare)(void *, void *);
     void (*merge)(libxl_ctx *, void *, void *);
     int (*dm_needed)(void *, unsigned);
     void (*update_config)(libxl__gc *, void *, void *);
+    int (*update_devid)(libxl__gc *, uint32_t, void *);
+    int (*set_xenstore_config)(libxl__gc *, uint32_t, void *, flexarray_t *,
+                               flexarray_t *, flexarray_t *);
 };
 
 #define DEFINE_DEVICE_TYPE_STRUCT_X(name, sname, ...)                          \
@@ -3500,9 +3519,19 @@ struct libxl_device_type {
         .add           = libxl__add_ ## name ## s,                             \
         .list          = (void *(*)(libxl_ctx *, uint32_t, int *))             \
                          libxl_device_ ## sname ## _list,                      \
+        .set_default   = (int (*)(libxl__gc *, uint32_t, void *, bool hotplug))\
+                         libxl__device_ ## sname ## _setdefault,               \
+        .to_device     = (int (*)(libxl__gc *, uint32_t,                       \
+                                  void *, libxl__device *))                    \
+                         libxl__device_from_ ## name,                          \
+        .init          = (void (*)(void *))libxl_device_ ## sname ## _init,    \
+        .copy          = (void (*)(libxl_ctx *, void *, void *))               \
+                         libxl_device_ ## sname ## _copy,                      \
         .dispose       = (void (*)(void *))libxl_device_ ## sname ## _dispose, \
         .compare       = (int (*)(void *, void *))                             \
                          libxl_device_ ## sname ## _compare,                   \
+        .update_devid  = (int (*)(libxl__gc *, uint32_t, void *))              \
+                         libxl__device_ ## sname ## _update_devid,             \
         __VA_ARGS__                                                            \
     }
 
@@ -4350,6 +4379,13 @@ static inline bool libxl__acpi_defbool_val(const libxl_domain_build_info *b_info
     return libxl_defbool_val(b_info->acpi) &&
            libxl_defbool_val(b_info->u.hvm.acpi);
 }
+
+void libxl__device_add_async(libxl__egc *egc, uint32_t domid,
+                             const struct libxl_device_type *dt, void *type,
+                             libxl__ao_device *aodev);
+int libxl__device_add(libxl__gc *gc, uint32_t domid,
+                      const struct libxl_device_type *dt, void *type);
+
 #endif
 
 /*
