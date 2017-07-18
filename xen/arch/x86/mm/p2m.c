@@ -1708,15 +1708,14 @@ p2m_getlru_nestedp2m(struct domain *d, struct p2m_domain *p2m)
     return p2m;
 }
 
-/* Reset this p2m table to be empty */
 static void
-p2m_flush_table(struct p2m_domain *p2m)
+p2m_flush_table_locked(struct p2m_domain *p2m)
 {
     struct page_info *top, *pg;
     struct domain *d = p2m->domain;
     mfn_t mfn;
 
-    p2m_lock(p2m);
+    ASSERT(p2m_locked_by_me(p2m));
 
     /*
      * "Host" p2m tables can have shared entries &c that need a bit more care
@@ -1756,6 +1755,14 @@ p2m_flush_table(struct p2m_domain *p2m)
     p2m_unlock(p2m);
 }
 
+/* Reset this p2m table to be empty */
+static void
+p2m_flush_table(struct p2m_domain *p2m)
+{
+    p2m_lock(p2m);
+    p2m_flush_table_locked(p2m);
+}
+
 void
 p2m_flush(struct vcpu *v, struct p2m_domain *p2m)
 {
@@ -1771,6 +1778,27 @@ p2m_flush_nestedp2m(struct domain *d)
     int i;
     for ( i = 0; i < MAX_NESTEDP2M; i++ )
         p2m_flush_table(d->arch.nested_p2m[i]);
+}
+
+void np2m_flush_eptp(struct vcpu *v, unsigned long eptp)
+{
+    struct domain *d = v->domain;
+    struct p2m_domain *p2m;
+    unsigned int i;
+
+    eptp &= ~(0xfffull);
+
+    nestedp2m_lock(d);
+    for ( i = 0; i < MAX_NESTEDP2M; i++ )
+    {
+        p2m = d->arch.nested_p2m[i];
+        p2m_lock(p2m);
+        if ( p2m->np2m_base == eptp )
+            p2m_flush_table_locked(p2m);
+        else
+            p2m_unlock(p2m);
+    }
+    nestedp2m_unlock(d);
 }
 
 static void assign_np2m(struct vcpu *v, struct p2m_domain *p2m)
