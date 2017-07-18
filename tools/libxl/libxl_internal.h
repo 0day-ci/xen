@@ -3564,6 +3564,7 @@ extern const struct libxl_device_type libxl__vtpm_devtype;
 extern const struct libxl_device_type libxl__usbctrl_devtype;
 extern const struct libxl_device_type libxl__usbdev_devtype;
 extern const struct libxl_device_type libxl__pcidev_devtype;
+extern const struct libxl_device_type libxl__vdispl_devtype;
 
 extern const struct libxl_device_type *device_type_tbl[];
 
