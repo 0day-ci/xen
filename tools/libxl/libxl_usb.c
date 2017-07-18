@@ -39,7 +39,8 @@ static int usbback_is_loaded(libxl__gc *gc)
 }
 
 static int libxl__device_usbctrl_setdefault(libxl__gc *gc, uint32_t domid,
-                                            libxl_device_usbctrl *usbctrl)
+                                            libxl_device_usbctrl *usbctrl,
+                                            bool update_json)
 {
     int rc;
     libxl_domain_type domtype = libxl__domain_type(gc, domid);
@@ -449,7 +450,7 @@ static void libxl__device_usbctrl_add(libxl__egc *egc, uint32_t domid,
     libxl__device *device;
     int rc;
 
-    rc = libxl__device_usbctrl_setdefault(gc, domid, usbctrl);
+    rc = libxl__device_usbctrl_setdefault(gc, domid, usbctrl, false);
     if (rc < 0) goto out;
 
     if (usbctrl->devid == -1) {
@@ -1079,7 +1080,7 @@ static int libxl__device_usbdev_setdefault(libxl__gc *gc,
 
             GCNEW(usbctrl);
             libxl_device_usbctrl_init(usbctrl);
-            rc = libxl__device_usbctrl_setdefault(gc, domid, usbctrl);
+            rc = libxl__device_usbctrl_setdefault(gc, domid, usbctrl, update_json);
             if (rc < 0) goto out;
 
             if (usbctrl->devid == -1) {
