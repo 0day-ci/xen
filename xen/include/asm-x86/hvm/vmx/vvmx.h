@@ -51,6 +51,8 @@ struct nestedvmx {
     } ept;
     uint32_t guest_vpid;
     struct list_head launched_list;
+
+    bool stale_eptp; /* True, when EPTP in the shadow VMCS is no longer valid */
 };
 
 #define vcpu_2_nvmx(v)	(vcpu_nestedhvm(v).u.nvmx)

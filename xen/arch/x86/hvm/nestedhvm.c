@@ -108,6 +108,7 @@ nestedhvm_flushtlb_ipi(void *info)
      */
     hvm_asid_flush_core();
     vcpu_nestedhvm(v).nv_p2m = NULL;
+    vcpu_2_nvmx(v).stale_eptp = true;
 }
 
 void

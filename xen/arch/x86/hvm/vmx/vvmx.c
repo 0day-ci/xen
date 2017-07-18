@@ -120,6 +120,7 @@ int nvmx_vcpu_initialise(struct vcpu *v)
     nvmx->iobitmap[1] = NULL;
     nvmx->msrbitmap = NULL;
     INIT_LIST_HEAD(&nvmx->launched_list);
+    nvmx->stale_eptp = false;
     return 0;
 }
  
@@ -1390,11 +1391,25 @@ static void virtual_vmexit(struct cpu_user_regs *regs)
     vmsucceed(regs);
 }
 
+static void nvmx_eptp_update(void)
+{
+    if ( !nestedhvm_vcpu_in_guestmode(current) ||
+          vcpu_nestedhvm(current).nv_vmexit_pending ||
+         !vcpu_2_nvmx(current).stale_eptp ||
+         !nestedhvm_paging_mode_hap(current) )
+        return;
+
+    __vmwrite(EPT_POINTER, get_shadow_eptp(current));
+    vcpu_2_nvmx(current).stale_eptp = false;
+}
+
 void nvmx_switch_guest(void)
 {
     struct vcpu *v = current;
     struct nestedvcpu *nvcpu = &vcpu_nestedhvm(v);
     struct cpu_user_regs *regs = guest_cpu_user_regs();
+
+    nvmx_eptp_update();
 
     /*
      * A pending IO emulation may still be not finished. In this case, no
