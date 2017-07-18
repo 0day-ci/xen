@@ -784,7 +784,7 @@ int p2m_pt_handle_deferred_changes(uint64_t gpa);
 void p2m_flush(struct vcpu *v, struct p2m_domain *p2m);
 /* Flushes all nested p2m tables */
 void p2m_flush_nestedp2m(struct domain *d);
-/* Flushes all np2m objects with the specified eptp */
+/* Flushes the np2m specified by eptp (if it exists) */
 void np2m_flush_eptp(struct vcpu *v, unsigned long eptp);
 
 void nestedp2m_write_p2m_entry(struct p2m_domain *p2m, unsigned long gfn,

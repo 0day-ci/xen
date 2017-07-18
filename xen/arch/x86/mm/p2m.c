@@ -1796,7 +1796,10 @@ void np2m_flush_eptp(struct vcpu *v, unsigned long eptp)
         p2m = d->arch.nested_p2m[i];
         p2m_lock(p2m);
         if ( p2m->np2m_base == eptp )
+        {
             p2m_flush_table_locked(p2m);
+            break;
+        }
         else
             p2m_unlock(p2m);
     }
