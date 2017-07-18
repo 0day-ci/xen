@@ -520,7 +520,8 @@ static uint32_t vlapic_get_tmcct(struct vlapic *vlapic)
     counter_passed = ((hvm_get_guest_time(v) - vlapic->timer_last_update)
                       / (APIC_BUS_CYCLE_NS * vlapic->hw.timer_divisor));
 
-    if ( tmict != 0 )
+    /* If timer_last_update is 0, then TMCCT should return 0 as well.  */
+    if ( tmict && vlapic->timer_last_update )
     {
         if ( vlapic_lvtt_period(vlapic) )
             counter_passed %= tmict;
@@ -678,18 +679,29 @@ static void vlapic_tdt_pt_cb(struct vcpu *v, void *data)
 static void vlapic_update_timer(struct vlapic *vlapic, uint32_t lvtt);
 {
     uint64_t period;
-    uint64_t delta;
-    bool is_periodic;
+    uint64_t delta = 0;
+    bool is_oneshot, is_periodic;
 
     is_periodic = (lvtt & APIC_TIMER_MODE_MASK) == APIC_TIMER_MODE_PERIODIC;
+    is_oneshot = (lvtt & APIC_TIMER_MODE_MASK) == APIC_TIMER_MODE_ONESHOT;
 
     period = (uint64_t)vlapic_get_reg(vlapic, APIC_TMICT)
         * APIC_BUS_CYCLE_NS * vlapic->hw.timer_divisor;
 
     /* Calculate the next time the timer should trigger an interrupt. */
-    delta = period;
+    if ( period && vlapic->timer_last_update )
+    {
+        uint64_t time_passed = hvm_get_guest_time(current)
+            - vlapic->timer_last_update;
 
-    if ( delta )
+        /* This depends of the previous mode, if a new mode is set */
+        if ( vlapic_lvtt_period(vlapic) )
+            time_passed %= period;
+        if ( time_passed < period )
+            delta = period - time_passed;
+    }
+
+    if ( delta && (is_oneshot || is_periodic) )
     {
         TRACE_2_LONG_3D(TRC_HVM_EMUL_LAPIC_START_TIMER, TRC_PAR_LONG(delta),
                         TRC_PAR_LONG(is_periodic ? period : 0LL),
@@ -702,7 +714,11 @@ static void vlapic_update_timer(struct vlapic *vlapic, uint32_t lvtt);
                              is_periodic ? vlapic_pt_cb : NULL,
                              &vlapic->timer_last_update);
 
-        vlapic->timer_last_update = vlapic->pt.last_plt_gtime;
+        /* For the case where the timer was periodic and it is now
+         * one-shot, timer_last_update should be the value of the last time
+         * the interrupt was triggered.
+         */
+        vlapic->timer_last_update = vlapic->pt.last_plt_gtime + delta - period;
 
         HVM_DBG_LOG(DBG_LEVEL_VLAPIC,
                     "bus cycle is %uns, "
@@ -715,6 +731,12 @@ static void vlapic_update_timer(struct vlapic *vlapic, uint32_t lvtt);
     {
         TRACE_0D(TRC_HVM_EMUL_LAPIC_STOP_TIMER);
         destroy_periodic_time(&vlapic->pt);
+        /*
+         * From now, TMCCT should return 0 until TMICT is set again.
+         * This is because the timer mode was one-shot when the counter reach 0
+         * or just because the timer is disable.
+         */
+        vlapic->timer_last_update = 0;
     }
 }
 
@@ -783,16 +805,16 @@ static void vlapic_reg_write(struct vcpu *v,
         break;
 
     case APIC_LVTT:         /* LVT Timer Reg */
-        if ( (vlapic_get_reg(vlapic, offset) & APIC_TIMER_MODE_MASK) !=
-             (val & APIC_TIMER_MODE_MASK) )
+        if ( vlapic_lvtt_tdt(vlapic) !=
+             ((val & APIC_TIMER_MODE_MASK) == APIC_TIMER_MODE_TSC_DEADLINE))
         {
-            TRACE_0D(TRC_HVM_EMUL_LAPIC_STOP_TIMER);
-            destroy_periodic_time(&vlapic->pt);
             vlapic_set_reg(vlapic, APIC_TMICT, 0);
-            vlapic_set_reg(vlapic, APIC_TMCCT, 0);
             vlapic->hw.tdt_msr = 0;
         }
         vlapic->pt.irq = val & APIC_VECTOR_MASK;
+
+        vlapic_update_timer(vlapic, val);
+
         /* fallthrough */
     case APIC_LVTTHMR:      /* LVT Thermal Monitor */
     case APIC_LVTPC:        /* LVT Performance Counter */
@@ -818,6 +840,7 @@ static void vlapic_reg_write(struct vcpu *v,
         if ( !vlapic_lvtt_oneshot(vlapic) && !vlapic_lvtt_period(vlapic) )
             break;
 
+        vlapic->timer_last_update = hvm_get_guest_time(current);
         vlapic_set_reg(vlapic, APIC_TMICT, val);
 
         vlapic_update_timer(vlapic, vlapic_get_reg(vlapic, APIC_LVTT));
