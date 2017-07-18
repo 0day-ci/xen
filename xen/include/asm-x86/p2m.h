@@ -370,6 +370,9 @@ struct p2m_domain *p2m_get_nestedp2m(struct vcpu *v);
  */
 struct p2m_domain *p2m_get_p2m(struct vcpu *v);
 
+void np2m_schedule_out(void);
+void np2m_schedule_in(void);
+
 static inline bool_t p2m_is_hostp2m(const struct p2m_domain *p2m)
 {
     return p2m->p2m_class == p2m_host;
