@@ -73,6 +73,7 @@ static int p2m_initialise(struct domain *d, struct p2m_domain *p2m)
     p2m->p2m_class = p2m_host;
 
     p2m->np2m_base = P2M_BASE_EADDR;
+    p2m->np2m_generation = 0;
 
     for ( i = 0; i < ARRAY_SIZE(p2m->pod.mrp.list); ++i )
         p2m->pod.mrp.list[i] = gfn_x(INVALID_GFN);
@@ -1735,6 +1736,7 @@ p2m_flush_table_locked(struct p2m_domain *p2m)
 
     /* This is no longer a valid nested p2m for any address space */
     p2m->np2m_base = P2M_BASE_EADDR;
+    p2m->np2m_generation++;
 
     /* Make sure nobody else is using this p2m table */
     nestedhvm_vmcx_flushtlb(p2m);
@@ -1811,6 +1813,7 @@ static void assign_np2m(struct vcpu *v, struct p2m_domain *p2m)
 
     nv->nv_flushp2m = 0;
     nv->nv_p2m = p2m;
+    nv->np2m_generation = p2m->np2m_generation;
     cpumask_set_cpu(v->processor, p2m->dirty_cpumask);
 }
 

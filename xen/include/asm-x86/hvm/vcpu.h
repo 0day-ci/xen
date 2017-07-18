@@ -115,6 +115,7 @@ struct nestedvcpu {
 
     bool_t nv_flushp2m; /* True, when p2m table must be flushed */
     struct p2m_domain *nv_p2m; /* used p2m table for this vcpu */
+    uint64_t np2m_generation;
 
     struct hvm_vcpu_asid nv_n2asid;
 

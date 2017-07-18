@@ -209,6 +209,7 @@ struct p2m_domain {
      * to set it to any other value. */
 #define P2M_BASE_EADDR     (~0ULL)
     uint64_t           np2m_base;
+    uint64_t           np2m_generation;
 
     /* Nested p2ms: linked list of n2pms allocated to this domain. 
      * The host p2m hasolds the head of the list and the np2ms are 
