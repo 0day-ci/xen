@@ -1187,6 +1187,7 @@ static void virtual_vmentry(struct cpu_user_regs *regs)
 
     /* Setup virtual ETP for L2 guest*/
     if ( nestedhvm_paging_mode_hap(v) )
+        /* This will setup the initial np2m for the nested vCPU */
         __vmwrite(EPT_POINTER, get_shadow_eptp(v));
     else
         __vmwrite(EPT_POINTER, get_host_eptp(v));
@@ -1352,6 +1353,9 @@ static void virtual_vmexit(struct cpu_user_regs *regs)
     if ( nvmx_ept_enabled(v) && hvm_pae_enabled(v) &&
          !(v->arch.hvm_vcpu.guest_efer & EFER_LMA) )
         shadow_to_vvmcs_bulk(v, ARRAY_SIZE(gpdpte_fields), gpdpte_fields);
+
+    /* This will clear current pCPU bit in p2m->dirty_cpumask */
+    np2m_schedule_out();
 
     vmx_vmcs_switch(v->arch.hvm_vmx.vmcs_pa, nvcpu->nv_n1vmcx_pa);
 
