@@ -3282,12 +3282,6 @@ static void ept_handle_violation(ept_qual_t q, paddr_t gpa)
     case 0:         // Unhandled L1 EPT violation
         break;
     case 1:         // This violation is handled completly
-        /*Current nested EPT maybe flushed by other vcpus, so need
-         * to re-set its shadow EPTP pointer.
-         */
-        if ( nestedhvm_vcpu_in_guestmode(current) &&
-                        nestedhvm_paging_mode_hap(current ) )
-            __vmwrite(EPT_POINTER, get_shadow_eptp(current));
         return;
     case -1:        // This vioaltion should be injected to L1 VMM
         vcpu_nestedhvm(current).nv_vmexit_pending = 1;
