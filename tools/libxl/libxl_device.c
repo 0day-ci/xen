@@ -1991,6 +1991,72 @@ out:
     return rc;
 }
 
+void *libxl__device_list(libxl__gc *gc, const struct libxl_device_type *dt,
+                         uint32_t domid, const char* name, int *num)
+{
+    void *r = NULL;
+    void *list = NULL;
+    void *item = NULL;
+    char *libxl_path;
+    char **dir = NULL;
+    unsigned int ndirs = 0;
+    int rc;
+
+    *num = 0;
+
+    libxl_path = GCSPRINTF("%s/device/%s",
+                           libxl__xs_libxl_path(gc, domid), name);
+
+    dir = libxl__xs_directory(gc, XBT_NULL, libxl_path, &ndirs);
+
+    if (dir && ndirs) {
+        list = libxl__malloc(NOGC, dt->dev_elem_size * ndirs);
+        void *end = (uint8_t *)list + ndirs * dt->dev_elem_size;
+        item = list;
+
+        while (item < end) {
+            dt->init(item);
+
+            if (dt->from_xenstore) {
+                char* device_libxl_path = GCSPRINTF("%s/%s", libxl_path, *dir);
+                rc = dt->from_xenstore(gc, device_libxl_path, atoi(*dir), item);
+                if (rc) goto out;
+            }
+
+            item = (uint8_t*)item + dt->dev_elem_size;
+            ++dir;
+        }
+    }
+
+    *num = ndirs;
+    r = list;
+    list = NULL;
+
+out:
+
+    if (list) {
+        *num = 0;
+        while(item >= list) {
+            dt->dispose(item);
+            item = (uint8_t*)item - dt->dev_elem_size;
+        }
+        free(list);
+    }
+
+    return r;
+}
+
+void libxl__device_list_free(const struct libxl_device_type *dt,
+                             void *list, int num)
+{
+    int i;
+
+    for (i = 0; i < num; i++)
+        dt->dispose((uint8_t*)list + i * dt->dev_elem_size);
+
+    free(list);
+}
+
 /*
  * Local variables:
  * mode: C
