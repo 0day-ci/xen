@@ -181,6 +181,8 @@ static void rombios_acpi_build_tables(void)
         .dsdt_15cpu_len = dsdt_15cpu_len,
     };
 
+    hvm_param_set(HVM_PARAM_ACPI_IOPORTS_LOCATION, 0);
+
     hvmloader_acpi_build_tables(&config, ACPI_PHYSICAL_ADDRESS);
 }
 

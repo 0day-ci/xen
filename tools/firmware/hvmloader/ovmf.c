@@ -127,6 +127,8 @@ static void ovmf_acpi_build_tables(void)
         .dsdt_15cpu_len = 0
     };
 
+    hvm_param_set(HVM_PARAM_ACPI_IOPORTS_LOCATION, 1);
+
     hvmloader_acpi_build_tables(&config, ACPI_PHYSICAL_ADDRESS);
 }
 

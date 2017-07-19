@@ -31,6 +31,9 @@
 #include <xen/hvm/hvm_xs_strings.h>
 #include <xen/hvm/params.h>
 
+extern unsigned char dsdt_anycpu_qemu_xen[], dsdt_anycpu[], dsdt_15cpu[];
+extern int dsdt_anycpu_qemu_xen_len, dsdt_anycpu_len, dsdt_15cpu_len;
+
 /*
  * Check whether there exists overlap in the specified memory range.
  * Returns true if exists, else returns false.
@@ -896,6 +899,27 @@ void hvmloader_acpi_build_tables(struct acpi_config *config,
 
     /* Allocate and initialise the acpi info area. */
     mem_hole_populate_ram(ACPI_INFO_PHYSICAL_ADDRESS >> PAGE_SHIFT, 1);
+
+    /* If the device model is specified switch to the corresponding tables */
+    s = xenstore_read("platform/device-model", "");
+    if ( !strncmp(s, "qemu_xen_traditional", 21) )
+    {
+        config->dsdt_anycpu = dsdt_anycpu;
+        config->dsdt_anycpu_len = dsdt_anycpu_len;
+        config->dsdt_15cpu = dsdt_15cpu;
+        config->dsdt_15cpu_len = dsdt_15cpu_len;
+
+        hvm_param_set(HVM_PARAM_ACPI_IOPORTS_LOCATION, 0);
+    }
+    else if ( !strncmp(s, "qemu_xen", 10) )
+    {
+        config->dsdt_anycpu = dsdt_anycpu_qemu_xen;
+        config->dsdt_anycpu_len = dsdt_anycpu_qemu_xen_len;
+        config->dsdt_15cpu = NULL;
+        config->dsdt_15cpu_len = 0;
+
+        hvm_param_set(HVM_PARAM_ACPI_IOPORTS_LOCATION, 1);
+    }
 
     config->lapic_base_address = LAPIC_BASE_ADDRESS;
     config->lapic_id = acpi_lapic_id;

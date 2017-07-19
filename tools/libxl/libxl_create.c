@@ -472,6 +472,8 @@ int libxl__domain_build(libxl__gc *gc,
                                    info->u.hvm.mmio_hole_memkb << 10);
             }
         }
+        localents[i++] = "platform/device-model";
+        localents[i++] = (char *) libxl_device_model_version_to_string(info->device_model_version);
 
         break;
     case LIBXL_DOMAIN_TYPE_PV:
