@@ -136,7 +136,7 @@ mode during S3 resume.
 ### allowsuperpage
 > `= <boolean>`
 
-> Default: `true`
+> Default: `false`
 
 Permit Xen to use superpages when performing memory management.
 
