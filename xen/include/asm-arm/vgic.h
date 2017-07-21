@@ -109,9 +109,6 @@ struct vgic_irq_rank {
     spinlock_t lock; /* Covers access to all other members of this struct */
 
     uint8_t index;
-
-    uint32_t ienable;
-
 };
 
 struct sgi_target {
@@ -187,6 +184,11 @@ void vgic_store_irq_priority(struct vcpu *v, unsigned int nrirqs,
 uint32_t vgic_fetch_irq_config(struct vcpu *v, unsigned int first_irq);
 void vgic_store_irq_config(struct vcpu *v, unsigned int first_irq,
                            uint32_t reg);
+uint32_t vgic_fetch_irq_enabled(struct vcpu *v, unsigned int first_irq);
+void vgic_store_irq_enable(struct vcpu *v, unsigned int first_irq,
+                           uint32_t value);
+void vgic_store_irq_disable(struct vcpu *v, unsigned int first_irq,
+                            uint32_t value);
 
 enum gic_sgi_mode;
 
@@ -218,8 +220,6 @@ extern struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq);
 extern struct vgic_irq_rank *vgic_rank_offset(struct vcpu *v, int b, int n, int s);
 extern struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq);
 extern bool vgic_emulate(struct cpu_user_regs *regs, union hsr hsr);
-extern void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n);
-extern void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n);
 extern void register_vgic_ops(struct domain *d, const struct vgic_ops *ops);
 int vgic_v2_init(struct domain *d, int *mmio_count);
 int vgic_v3_init(struct domain *d, int *mmio_count);

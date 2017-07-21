@@ -261,6 +261,60 @@ struct vcpu *vgic_get_target_vcpu(struct domain *d, struct pending_irq *p)
     return d->vcpu[p->vcpu_id];
 }
 
+/* Takes a locked pending_irq and enables the interrupt, also unlocking it. */
+static void vgic_enable_irq_unlock(struct domain *d, struct pending_irq *p)
+{
+    struct vcpu *v_target;
+    unsigned long flags;
+    struct irq_desc *desc;
+
+    v_target = vgic_lock_vcpu_irq(d, p, &flags);
+
+    clear_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+    gic_remove_from_lr_pending(v_target, p);
+    desc = p->desc;
+    spin_unlock(&p->lock);
+    spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
+
+    if ( desc != NULL )
+    {
+        spin_lock_irqsave(&desc->lock, flags);
+        desc->handler->disable(desc);
+        spin_unlock_irqrestore(&desc->lock, flags);
+    }
+}
+
+/* Takes a locked pending_irq and disables the interrupt, also unlocking it. */
+static void vgic_disable_irq_unlock(struct domain *d, struct pending_irq *p)
+{
+    struct vcpu *v_target;
+    unsigned long flags;
+    struct irq_desc *desc;
+    int int_type;
+
+    v_target = vgic_lock_vcpu_irq(d, p, &flags);
+
+    set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+    int_type = test_bit(GIC_IRQ_GUEST_LEVEL, &p->status) ? IRQ_TYPE_LEVEL_HIGH :
+                                                           IRQ_TYPE_EDGE_RISING;
+    if ( !list_empty(&p->inflight) &&
+         !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
+        gic_raise_guest_irq(v_target, p->irq, p->cur_priority);
+    desc = p->desc;
+    spin_unlock(&p->lock);
+    spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
+
+    if ( desc != NULL )
+    {
+        spin_lock_irqsave(&desc->lock, flags);
+        irq_set_affinity(desc, cpumask_of(v_target->processor));
+        if ( irq_type_set_by_domain(d) )
+            gic_set_irq_type(desc, int_type);
+        desc->handler->enable(desc);
+        spin_unlock_irqrestore(&desc->lock, flags);
+    }
+}
+
 #define MAX_IRQS_PER_IPRIORITYR 4
 uint32_t vgic_fetch_irq_priority(struct vcpu *v, unsigned int nrirqs,
                                  unsigned int first_irq)
@@ -345,6 +399,75 @@ void vgic_store_irq_config(struct vcpu *v, unsigned int first_irq,
 
     vgic_unlock_irqs(pirqs, IRQS_PER_CFGR);
     local_irq_restore(flags);
+}
+
+#define IRQS_PER_ENABLER        32
+/**
+ * vgic_fetch_irq_enabled: assemble the enabled bits for a group of 32 IRQs
+ * @v: the VCPU for private IRQs, any VCPU of a domain for SPIs
+ * @first_irq: the first IRQ to be queried, must be aligned to 32
+ */
+uint32_t vgic_fetch_irq_enabled(struct vcpu *v, unsigned int first_irq)
+{
+    struct pending_irq *pirqs[IRQS_PER_ENABLER];
+    unsigned long flags;
+    uint32_t reg = 0;
+    unsigned int i;
+
+    local_irq_save(flags);
+    vgic_lock_irqs(v, IRQS_PER_ENABLER, first_irq, pirqs);
+
+    for ( i = 0; i < 32; i++ )
+        if ( test_bit(GIC_IRQ_GUEST_ENABLED, &pirqs[i]->status) )
+            reg |= BIT(i);
+
+    vgic_unlock_irqs(pirqs, IRQS_PER_ENABLER);
+    local_irq_restore(flags);
+
+    return reg;
+}
+
+void vgic_store_irq_enable(struct vcpu *v, unsigned int first_irq,
+                           uint32_t value)
+{
+    struct pending_irq *pirqs[IRQS_PER_ENABLER];
+    unsigned long flags;
+    int i;
+
+    local_irq_save(flags);
+    vgic_lock_irqs(v, IRQS_PER_ENABLER, first_irq, pirqs);
+
+    /* This goes backwards, as it unlocks the IRQs during the process */
+    for ( i = IRQS_PER_ENABLER - 1; i >= 0; i-- )
+    {
+        if ( !test_bit(GIC_IRQ_GUEST_ENABLED, &pirqs[i]->status) &&
+             (value & BIT(i)) )
+            vgic_enable_irq_unlock(v->domain, pirqs[i]);
+        else
+            spin_unlock(&pirqs[i]->lock);
+    }
+    local_irq_restore(flags);
+}
+
+void vgic_store_irq_disable(struct vcpu *v, unsigned int first_irq,
+                            uint32_t value)
+{
+    struct pending_irq *pirqs[IRQS_PER_ENABLER];
+    unsigned long flags;
+    int i;
+
+    local_irq_save(flags);
+    vgic_lock_irqs(v, IRQS_PER_ENABLER, first_irq, pirqs);
+
+    /* This goes backwards, as it unlocks the IRQs during the process */
+    for ( i = 31; i >= 0; i-- )
+    {
+        if ( test_bit(GIC_IRQ_GUEST_ENABLED, &pirqs[i]->status) &&
+             (value & BIT(i)) )
+            vgic_disable_irq_unlock(v->domain, pirqs[i]);
+        else
+            spin_unlock(&pirqs[i]->lock);
+    }
 }
 
 bool vgic_migrate_irq(struct pending_irq *p, unsigned long *flags,
@@ -437,40 +560,6 @@ void arch_move_irqs(struct vcpu *v)
     }
 }
 
-void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n)
-{
-    const unsigned long mask = r;
-    struct pending_irq *p;
-    struct irq_desc *desc;
-    unsigned int irq;
-    unsigned long flags;
-    int i = 0;
-    struct vcpu *v_target;
-
-    /* LPIs will never be disabled via this function. */
-    ASSERT(!is_lpi(32 * n + 31));
-
-    while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
-        irq = i + (32 * n);
-        p = irq_to_pending(v, irq);
-        v_target = vgic_get_target_vcpu(v->domain, p);
-
-        spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
-        clear_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
-        gic_remove_from_lr_pending(v_target, p);
-        desc = p->desc;
-        spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
-
-        if ( desc != NULL )
-        {
-            spin_lock_irqsave(&desc->lock, flags);
-            desc->handler->disable(desc);
-            spin_unlock_irqrestore(&desc->lock, flags);
-        }
-        i++;
-    }
-}
-
 void vgic_lock_irqs(struct vcpu *v, unsigned int nrirqs,
                     unsigned int first_irq, struct pending_irq **pirqs)
 {
@@ -489,50 +578,6 @@ void vgic_unlock_irqs(struct pending_irq **pirqs, unsigned int nrirqs)
 
     for ( i = nrirqs - 1; i >= 0; i-- )
         spin_unlock(&pirqs[i]->lock);
-}
-
-void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
-{
-    const unsigned long mask = r;
-    struct pending_irq *p;
-    unsigned int irq, int_type;
-    unsigned long flags, vcpu_flags;
-    int i = 0;
-    struct vcpu *v_target;
-    struct domain *d = v->domain;
-
-    /* LPIs will never be enabled via this function. */
-    ASSERT(!is_lpi(32 * n + 31));
-
-    while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
-        irq = i + (32 * n);
-        p = irq_to_pending(v, irq);
-        v_target = vgic_get_target_vcpu(v->domain, p);
-        spin_lock_irqsave(&v_target->arch.vgic.lock, vcpu_flags);
-        vgic_irq_lock(p, flags);
-        set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
-        int_type = test_bit(GIC_IRQ_GUEST_LEVEL, &p->status) ?
-                            IRQ_TYPE_LEVEL_HIGH : IRQ_TYPE_EDGE_RISING;
-        if ( !list_empty(&p->inflight) && !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
-            gic_raise_guest_irq(v_target, irq, p->cur_priority);
-        vgic_irq_unlock(p, flags);
-        spin_unlock_irqrestore(&v_target->arch.vgic.lock, vcpu_flags);
-        if ( p->desc != NULL )
-        {
-            spin_lock_irqsave(&p->desc->lock, flags);
-            irq_set_affinity(p->desc, cpumask_of(v_target->processor));
-            /*
-             * The irq cannot be a PPI, we only support delivery of SPIs
-             * to guests.
-             */
-            ASSERT(irq >= 32);
-            if ( irq_type_set_by_domain(d) )
-                gic_set_irq_type(p->desc, int_type);
-            p->desc->handler->enable(p->desc);
-            spin_unlock_irqrestore(&p->desc->lock, flags);
-        }
-        i++;
-    }
 }
 
 bool vgic_to_sgi(struct vcpu *v, register_t sgir, enum gic_sgi_mode irqmode,
