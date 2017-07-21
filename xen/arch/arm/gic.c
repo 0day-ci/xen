@@ -139,9 +139,7 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
     unsigned long flags;
     /* Use vcpu0 to retrieve the pending_irq struct. Given that we only
      * route SPIs to guests, it doesn't make any difference. */
-    struct vcpu *v_target = vgic_get_target_vcpu(d->vcpu[0], virq);
-    struct vgic_irq_rank *rank = vgic_rank_irq(v_target, virq);
-    struct pending_irq *p = irq_to_pending(v_target, virq);
+    struct pending_irq *p = irq_to_pending(d->vcpu[0], virq);
     int res = -EBUSY;
 
     ASSERT(spin_is_locked(&desc->lock));
@@ -150,7 +148,7 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
     ASSERT(virq < vgic_num_irqs(d));
     ASSERT(!is_lpi(virq));
 
-    vgic_lock_rank(v_target, rank, flags);
+    vgic_irq_lock(p, flags);
 
     if ( p->desc ||
          /* The VIRQ should not be already enabled by the guest */
@@ -168,7 +166,7 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
     res = 0;
 
 out:
-    vgic_unlock_rank(v_target, rank, flags);
+    vgic_irq_unlock(p, flags);
 
     return res;
 }
@@ -177,9 +175,7 @@ out:
 int gic_remove_irq_from_guest(struct domain *d, unsigned int virq,
                               struct irq_desc *desc)
 {
-    struct vcpu *v_target = vgic_get_target_vcpu(d->vcpu[0], virq);
-    struct vgic_irq_rank *rank = vgic_rank_irq(v_target, virq);
-    struct pending_irq *p = irq_to_pending(v_target, virq);
+    struct pending_irq *p = irq_to_pending(d->vcpu[0], virq);
     unsigned long flags;
 
     ASSERT(spin_is_locked(&desc->lock));
@@ -187,7 +183,7 @@ int gic_remove_irq_from_guest(struct domain *d, unsigned int virq,
     ASSERT(p->desc == desc);
     ASSERT(!is_lpi(virq));
 
-    vgic_lock_rank(v_target, rank, flags);
+    vgic_irq_lock(p, flags);
 
     if ( d->is_dying )
     {
@@ -207,7 +203,7 @@ int gic_remove_irq_from_guest(struct domain *d, unsigned int virq,
         if ( test_bit(_IRQ_INPROGRESS, &desc->status) ||
              !test_bit(_IRQ_DISABLED, &desc->status) )
         {
-            vgic_unlock_rank(v_target, rank, flags);
+            vgic_irq_unlock(p, flags);
             return -EBUSY;
         }
     }
@@ -217,7 +213,7 @@ int gic_remove_irq_from_guest(struct domain *d, unsigned int virq,
 
     p->desc = NULL;
 
-    vgic_unlock_rank(v_target, rank, flags);
+    vgic_irq_unlock(p, flags);
 
     return 0;
 }
