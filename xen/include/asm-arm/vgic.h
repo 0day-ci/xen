@@ -143,7 +143,6 @@ struct vgic_ops {
     bool (*emulate_reg)(struct cpu_user_regs *regs, union hsr hsr);
     /* lookup the struct pending_irq for a given LPI interrupt */
     struct pending_irq *(*lpi_to_pending)(struct domain *d, unsigned int vlpi);
-    int (*lpi_get_priority)(struct domain *d, uint32_t vlpi);
     /* Maximum number of vCPU supported */
     const unsigned int max_vcpus;
 };
