@@ -83,15 +83,12 @@ struct arch_domain
          * shared_irqs where each member contains its own locking.
          *
          * If both class of lock is required then this lock must be
-         * taken first. If multiple rank locks are required (including
-         * the per-vcpu private_irqs rank) then they must be taken in
-         * rank order.
+         * taken first.
          */
         spinlock_t lock;
         uint32_t ctlr;
         int nr_spis; /* Number of SPIs */
         unsigned long *allocated_irqs; /* bitmap of IRQs allocated */
-        struct vgic_irq_rank *shared_irqs;
         /*
          * SPIs are domain global, SGIs and PPIs are per-VCPU and stored in
          * struct arch_vcpu.
@@ -248,7 +245,6 @@ struct arch_vcpu
          * struct arch_domain.
          */
         struct pending_irq pending_irqs[32];
-        struct vgic_irq_rank *private_irqs;
 
         /* This list is ordered by IRQ priority and it is used to keep
          * track of the IRQs that the VGIC injected into the guest.

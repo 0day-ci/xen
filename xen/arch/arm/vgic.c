@@ -32,35 +32,6 @@
 #include <asm/gic.h>
 #include <asm/vgic.h>
 
-static inline struct vgic_irq_rank *vgic_get_rank(struct vcpu *v, int rank)
-{
-    if ( rank == 0 )
-        return v->arch.vgic.private_irqs;
-    else if ( rank <= DOMAIN_NR_RANKS(v->domain) )
-        return &v->domain->arch.vgic.shared_irqs[rank - 1];
-    else
-        return NULL;
-}
-
-/*
- * Returns rank corresponding to a GICD_<FOO><n> register for
- * GICD_<FOO> with <b>-bits-per-interrupt.
- */
-struct vgic_irq_rank *vgic_rank_offset(struct vcpu *v, int b, int n,
-                                              int s)
-{
-    int rank = REG_RANK_NR(b, (n >> s));
-
-    return vgic_get_rank(v, rank);
-}
-
-struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq)
-{
-    int rank = irq/32;
-
-    return vgic_get_rank(v, rank);
-}
-
 void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq,
                            unsigned int vcpu_id)
 {
@@ -73,14 +44,6 @@ void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq,
     spin_lock_init(&p->lock);
     p->irq = virq;
     p->vcpu_id = vcpu_id;
-}
-
-static void vgic_rank_init(struct vgic_irq_rank *rank, uint8_t index,
-                           unsigned int vcpu)
-{
-    spin_lock_init(&rank->lock);
-
-    rank->index = index;
 }
 
 int domain_vgic_register(struct domain *d, int *mmio_count)
@@ -121,11 +84,6 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
 
     spin_lock_init(&d->arch.vgic.lock);
 
-    d->arch.vgic.shared_irqs =
-        xzalloc_array(struct vgic_irq_rank, DOMAIN_NR_RANKS(d));
-    if ( d->arch.vgic.shared_irqs == NULL )
-        return -ENOMEM;
-
     d->arch.vgic.pending_irqs =
         xzalloc_array(struct pending_irq, d->arch.vgic.nr_spis);
     if ( d->arch.vgic.pending_irqs == NULL )
@@ -134,9 +92,6 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
     /* SPIs are routed to VCPU0 by default */
     for (i=0; i<d->arch.vgic.nr_spis; i++)
         vgic_init_pending_irq(&d->arch.vgic.pending_irqs[i], i + 32, 0);
-    /* SPIs are routed to VCPU0 by default */
-    for ( i = 0; i < DOMAIN_NR_RANKS(d); i++ )
-        vgic_rank_init(&d->arch.vgic.shared_irqs[i], i + 1, 0);
 
     ret = d->arch.vgic.handler->domain_init(d);
     if ( ret )
@@ -178,7 +133,6 @@ void domain_vgic_free(struct domain *d)
     }
 
     d->arch.vgic.handler->domain_free(d);
-    xfree(d->arch.vgic.shared_irqs);
     xfree(d->arch.vgic.pending_irqs);
     xfree(d->arch.vgic.allocated_irqs);
 }
@@ -186,13 +140,6 @@ void domain_vgic_free(struct domain *d)
 int vcpu_vgic_init(struct vcpu *v)
 {
     int i;
-
-    v->arch.vgic.private_irqs = xzalloc(struct vgic_irq_rank);
-    if ( v->arch.vgic.private_irqs == NULL )
-      return -ENOMEM;
-
-    /* SGIs/PPIs are always routed to this VCPU */
-    vgic_rank_init(v->arch.vgic.private_irqs, 0, v->vcpu_id);
 
     v->domain->arch.vgic.handler->vcpu_init(v);
 
@@ -210,7 +157,6 @@ int vcpu_vgic_init(struct vcpu *v)
 
 int vcpu_vgic_free(struct vcpu *v)
 {
-    xfree(v->arch.vgic.private_irqs);
     return 0;
 }
 
