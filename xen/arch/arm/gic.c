@@ -389,7 +389,7 @@ static inline void gic_add_to_lr_pending(struct vcpu *v, struct pending_irq *n)
 
     list_for_each_entry ( iter, &v->arch.vgic.lr_pending, lr_queue )
     {
-        if ( iter->priority > n->priority )
+        if ( iter->cur_priority > n->cur_priority )
         {
             list_add_tail(&n->lr_queue, &iter->lr_queue);
             return;
@@ -542,7 +542,7 @@ void gic_update_one_lr(struct vcpu *v, int i)
         if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
              test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) &&
              !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
-            gic_raise_guest_irq(v, irq, p->priority);
+            gic_raise_guest_irq(v, irq, p->cur_priority);
         else {
             list_del_init(&p->inflight);
             /*
@@ -610,7 +610,7 @@ static void gic_restore_pending_irqs(struct vcpu *v)
             /* No more free LRs: find a lower priority irq to evict */
             list_for_each_entry_reverse( p_r, inflight_r, inflight )
             {
-                if ( p_r->priority == p->priority )
+                if ( p_r->cur_priority == p->cur_priority )
                     goto out;
                 if ( test_bit(GIC_IRQ_GUEST_VISIBLE, &p_r->status) &&
                      !test_bit(GIC_IRQ_GUEST_ACTIVE, &p_r->status) )
@@ -676,9 +676,9 @@ int gic_events_need_delivery(void)
      * ordered by priority */
     list_for_each_entry( p, &v->arch.vgic.inflight_irqs, inflight )
     {
-        if ( GIC_PRI_TO_GUEST(p->priority) >= mask_priority )
+        if ( GIC_PRI_TO_GUEST(p->cur_priority) >= mask_priority )
             goto out;
-        if ( GIC_PRI_TO_GUEST(p->priority) >= active_priority )
+        if ( GIC_PRI_TO_GUEST(p->cur_priority) >= active_priority )
             goto out;
         if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) )
         {

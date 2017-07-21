@@ -961,7 +961,7 @@ static void gicv3_update_lr(int lr, const struct pending_irq *p,
     if ( current->domain->arch.vgic.version == GIC_V3 )
         val |= GICH_LR_GRP1;
 
-    val |= ((uint64_t)p->priority & 0xff) << GICH_LR_PRIORITY_SHIFT;
+    val |= ((uint64_t)p->cur_priority & 0xff) << GICH_LR_PRIORITY_SHIFT;
     val |= ((uint64_t)p->irq & GICH_LR_VIRTUAL_MASK) << GICH_LR_VIRTUAL_SHIFT;
 
    if ( p->desc != NULL )

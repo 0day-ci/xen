@@ -437,7 +437,7 @@ static void gicv2_update_lr(int lr, const struct pending_irq *p,
     BUG_ON(lr < 0);
 
     lr_reg = (((state & GICH_V2_LR_STATE_MASK) << GICH_V2_LR_STATE_SHIFT)  |
-              ((GIC_PRI_TO_GUEST(p->priority) & GICH_V2_LR_PRIORITY_MASK)
+              ((GIC_PRI_TO_GUEST(p->cur_priority) & GICH_V2_LR_PRIORITY_MASK)
                                              << GICH_V2_LR_PRIORITY_SHIFT) |
               ((p->irq & GICH_V2_LR_VIRTUAL_MASK) << GICH_V2_LR_VIRTUAL_SHIFT));
 
