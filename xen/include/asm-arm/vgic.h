@@ -73,6 +73,7 @@ struct pending_irq
 #define GIC_IRQ_GUEST_ENABLED  3
 #define GIC_IRQ_GUEST_MIGRATING   4
 #define GIC_IRQ_GUEST_PRISTINE_LPI  5
+#define GIC_IRQ_GUEST_LEVEL    6
     unsigned long status;
     struct irq_desc *desc; /* only set it the irq corresponds to a physical irq */
     unsigned int irq;
@@ -110,7 +111,6 @@ struct vgic_irq_rank {
     uint8_t index;
 
     uint32_t ienable;
-    uint32_t icfg[2];
 
     /*
      * It's more convenient to store a target VCPU per vIRQ
@@ -191,6 +191,9 @@ uint32_t vgic_fetch_irq_priority(struct vcpu *v, unsigned int nrirqs,
                                  unsigned int first_irq);
 void vgic_store_irq_priority(struct vcpu *v, unsigned int nrirqs,
                              unsigned int first_irq, uint32_t reg);
+uint32_t vgic_fetch_irq_config(struct vcpu *v, unsigned int first_irq);
+void vgic_store_irq_config(struct vcpu *v, unsigned int first_irq,
+                           uint32_t reg);
 
 enum gic_sgi_mode;
 
