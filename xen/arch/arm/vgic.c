@@ -231,18 +231,6 @@ struct vcpu *vgic_get_target_vcpu(struct vcpu *v, unsigned int virq)
     return v->domain->vcpu[target];
 }
 
-static int vgic_get_virq_priority(struct vcpu *v, unsigned int virq)
-{
-    struct vgic_irq_rank *rank;
-
-    /* LPIs don't have a rank, also store their priority separately. */
-    if ( is_lpi(virq) )
-        return v->domain->arch.vgic.handler->lpi_get_priority(v->domain, virq);
-
-    rank = vgic_rank_irq(v, virq);
-    return ACCESS_ONCE(rank->priority[virq & INTERRUPT_RANK_MASK]);
-}
-
 #define MAX_IRQS_PER_IPRIORITYR 4
 uint32_t vgic_fetch_irq_priority(struct vcpu *v, unsigned int nrirqs,
                                  unsigned int first_irq)
@@ -567,27 +555,28 @@ void vgic_clear_pending_irqs(struct vcpu *v)
 
 void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 {
-    uint8_t priority;
     struct pending_irq *iter, *n;
-    unsigned long flags;
+    unsigned long flags, vcpu_flags;
     bool running;
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    spin_lock_irqsave(&v->arch.vgic.lock, vcpu_flags);
 
     n = irq_to_pending(v, virq);
     /* If an LPI has been removed, there is nothing to inject here. */
     if ( unlikely(!n) )
     {
-        spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+        spin_unlock_irqrestore(&v->arch.vgic.lock, vcpu_flags);
         return;
     }
 
     /* vcpu offline */
     if ( test_bit(_VPF_down, &v->pause_flags) )
     {
-        spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+        spin_unlock_irqrestore(&v->arch.vgic.lock, vcpu_flags);
         return;
     }
+
+    vgic_irq_lock(n, flags);
 
     set_bit(GIC_IRQ_GUEST_QUEUED, &n->status);
 
@@ -595,9 +584,11 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     {
         bool update = test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) &&
                       list_empty(&n->lr_queue) && (v == current);
+        int lr = ACCESS_ONCE(n->lr);
 
+        vgic_irq_unlock(n, flags);
         if ( update )
-            gic_update_one_lr(v, n->lr);
+            gic_update_one_lr(v, lr);
 #ifdef GIC_DEBUG
         else
             gdprintk(XENLOG_DEBUG, "trying to inject irq=%u into d%dv%d, when it is still lr_pending\n",
@@ -606,24 +597,26 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
         goto out;
     }
 
-    priority = vgic_get_virq_priority(v, virq);
-    n->cur_priority = priority;
+    n->cur_priority = n->priority;
 
     /* the irq is enabled */
     if ( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
-        gic_raise_guest_irq(v, virq, priority);
+        gic_raise_guest_irq(v, virq, n->cur_priority);
 
     list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
     {
-        if ( iter->cur_priority > priority )
+        if ( iter->cur_priority > n->cur_priority )
         {
             list_add_tail(&n->inflight, &iter->inflight);
-            goto out;
+            goto out_unlock_irq;
         }
     }
     list_add_tail(&n->inflight, &v->arch.vgic.inflight_irqs);
+
+out_unlock_irq:
+    vgic_irq_unlock(n, flags);
 out:
-    spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    spin_unlock_irqrestore(&v->arch.vgic.lock, vcpu_flags);
     /* we have a new higher priority irq, inject it into the guest */
     running = v->is_running;
     vcpu_unblock(v);

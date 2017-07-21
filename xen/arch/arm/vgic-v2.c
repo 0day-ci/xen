@@ -171,6 +171,7 @@ static int vgic_v2_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
     struct vgic_irq_rank *rank;
     int gicd_reg = (int)(info->gpa - v->domain->arch.vgic.dbase);
     unsigned long flags;
+    unsigned int irq;
 
     perfc_incr(vgicd_reads);
 
@@ -250,22 +251,10 @@ static int vgic_v2_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
         goto read_as_zero;
 
     case VRANGE32(GICD_IPRIORITYR, GICD_IPRIORITYRN):
-    {
-        uint32_t ipriorityr;
-        uint8_t rank_index;
-
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 8, gicd_reg - GICD_IPRIORITYR, DABT_WORD);
-        if ( rank == NULL ) goto read_as_zero;
-        rank_index = REG_RANK_INDEX(8, gicd_reg - GICD_IPRIORITYR, DABT_WORD);
-
-        vgic_lock_rank(v, rank, flags);
-        ipriorityr = ACCESS_ONCE(rank->ipriorityr[rank_index]);
-        vgic_unlock_rank(v, rank, flags);
-        *r = vreg_reg32_extract(ipriorityr, info);
-
+        irq = gicd_reg - GICD_IPRIORITYR; /* 8 bit per IRQ, so IRQ = offset */
+        *r = vgic_fetch_irq_priority(v, irq, (dabt.size == DABT_BYTE) ? 1 : 4);
         return 1;
-    }
 
     case VREG32(0x7FC):
         goto read_reserved;
@@ -415,6 +404,7 @@ static int vgic_v2_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
     int gicd_reg = (int)(info->gpa - v->domain->arch.vgic.dbase);
     uint32_t tr;
     unsigned long flags;
+    unsigned int irq;
 
     perfc_incr(vgicd_writes);
 
@@ -498,23 +488,11 @@ static int vgic_v2_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
         goto write_ignore_32;
 
     case VRANGE32(GICD_IPRIORITYR, GICD_IPRIORITYRN):
-    {
-        uint32_t *ipriorityr, priority;
-
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
-        rank = vgic_rank_offset(v, 8, gicd_reg - GICD_IPRIORITYR, DABT_WORD);
-        if ( rank == NULL) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        ipriorityr = &rank->ipriorityr[REG_RANK_INDEX(8,
-                                                      gicd_reg - GICD_IPRIORITYR,
-                                                      DABT_WORD)];
-        priority = ACCESS_ONCE(*ipriorityr);
-        vreg_reg32_update(&priority, r, info);
-        ACCESS_ONCE(*ipriorityr) = priority;
 
-        vgic_unlock_rank(v, rank, flags);
+        irq = gicd_reg - GICD_IPRIORITYR; /* 8 bit per IRQ, so IRQ = offset */
+        vgic_store_irq_priority(v, (dabt.size == DABT_BYTE) ? 1 : 4, irq, r);
         return 1;
-    }
 
     case VREG32(0x7FC):
         goto write_reserved;

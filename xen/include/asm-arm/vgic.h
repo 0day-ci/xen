@@ -113,16 +113,6 @@ struct vgic_irq_rank {
     uint32_t icfg[2];
 
     /*
-     * Provide efficient access to the priority of an vIRQ while keeping
-     * the emulation simple.
-     * Note, this is working fine as long as Xen is using little endian.
-     */
-    union {
-        uint8_t priority[32];
-        uint32_t ipriorityr[8];
-    };
-
-    /*
      * It's more convenient to store a target VCPU per vIRQ
      * than the register ITARGETSR/IROUTER itself.
      * Use atomic operations to read/write the vcpu fields to avoid
