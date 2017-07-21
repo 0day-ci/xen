@@ -61,7 +61,8 @@ struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq)
     return vgic_get_rank(v, rank);
 }
 
-void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
+void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq,
+                           unsigned int vcpu_id)
 {
     /* The vcpu_id field must be big enough to hold a VCPU ID. */
     BUILD_BUG_ON(BIT(sizeof(p->vcpu_id) * 8) < MAX_VIRT_CPUS);
@@ -71,27 +72,15 @@ void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
     INIT_LIST_HEAD(&p->lr_queue);
     spin_lock_init(&p->lock);
     p->irq = virq;
-    p->vcpu_id = INVALID_VCPU_ID;
+    p->vcpu_id = vcpu_id;
 }
 
 static void vgic_rank_init(struct vgic_irq_rank *rank, uint8_t index,
                            unsigned int vcpu)
 {
-    unsigned int i;
-
-    /*
-     * Make sure that the type chosen to store the target is able to
-     * store an VCPU ID between 0 and the maximum of virtual CPUs
-     * supported.
-     */
-    BUILD_BUG_ON((1 << (sizeof(rank->vcpu[0]) * 8)) < MAX_VIRT_CPUS);
-
     spin_lock_init(&rank->lock);
 
     rank->index = index;
-
-    for ( i = 0; i < NR_INTERRUPT_PER_RANK; i++ )
-        write_atomic(&rank->vcpu[i], vcpu);
 }
 
 int domain_vgic_register(struct domain *d, int *mmio_count)
@@ -142,9 +131,9 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
     if ( d->arch.vgic.pending_irqs == NULL )
         return -ENOMEM;
 
+    /* SPIs are routed to VCPU0 by default */
     for (i=0; i<d->arch.vgic.nr_spis; i++)
-        vgic_init_pending_irq(&d->arch.vgic.pending_irqs[i], i + 32);
-
+        vgic_init_pending_irq(&d->arch.vgic.pending_irqs[i], i + 32, 0);
     /* SPIs are routed to VCPU0 by default */
     for ( i = 0; i < DOMAIN_NR_RANKS(d); i++ )
         vgic_rank_init(&d->arch.vgic.shared_irqs[i], i + 1, 0);
@@ -208,8 +197,9 @@ int vcpu_vgic_init(struct vcpu *v)
     v->domain->arch.vgic.handler->vcpu_init(v);
 
     memset(&v->arch.vgic.pending_irqs, 0, sizeof(v->arch.vgic.pending_irqs));
+    /* SGIs/PPIs are always routed to this VCPU */
     for (i = 0; i < 32; i++)
-        vgic_init_pending_irq(&v->arch.vgic.pending_irqs[i], i);
+        vgic_init_pending_irq(&v->arch.vgic.pending_irqs[i], i, v->vcpu_id);
 
     INIT_LIST_HEAD(&v->arch.vgic.inflight_irqs);
     INIT_LIST_HEAD(&v->arch.vgic.lr_pending);
@@ -268,10 +258,7 @@ struct vcpu *vgic_lock_vcpu_irq(struct vcpu *v, struct pending_irq *p,
 
 struct vcpu *vgic_get_target_vcpu(struct vcpu *v, struct pending_irq *p)
 {
-    struct vgic_irq_rank *rank = vgic_rank_irq(v, p->irq);
-    int target = read_atomic(&rank->vcpu[p->irq & INTERRUPT_RANK_MASK]);
-
-    return v->domain->vcpu[target];
+    return v->domain->vcpu[p->vcpu_id];
 }
 
 #define MAX_IRQS_PER_IPRIORITYR 4
@@ -360,57 +347,65 @@ void vgic_store_irq_config(struct vcpu *v, unsigned int first_irq,
     local_irq_restore(flags);
 }
 
-bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq)
+bool vgic_migrate_irq(struct pending_irq *p, unsigned long *flags,
+                      struct vcpu *new)
 {
-    unsigned long flags;
-    struct pending_irq *p;
+    unsigned long vcpu_flags;
+    struct vcpu *old;
+    bool ret = false;
 
     /* This will never be called for an LPI, as we don't migrate them. */
-    ASSERT(!is_lpi(irq));
+    ASSERT(!is_lpi(p->irq));
 
-    spin_lock_irqsave(&old->arch.vgic.lock, flags);
-
-    p = irq_to_pending(old, irq);
+    ASSERT(spin_is_locked(&p->lock));
 
     /* nothing to do for virtual interrupts */
     if ( p->desc == NULL )
     {
-        spin_unlock_irqrestore(&old->arch.vgic.lock, flags);
-        return true;
+        ret = true;
+        goto out_unlock;
     }
 
     /* migration already in progress, no need to do anything */
     if ( test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
     {
-        gprintk(XENLOG_WARNING, "irq %u migration failed: requested while in progress\n", irq);
-        spin_unlock_irqrestore(&old->arch.vgic.lock, flags);
-        return false;
+        gprintk(XENLOG_WARNING, "irq %u migration failed: requested while in progress\n", p->irq);
+        goto out_unlock;
     }
+
+    p->vcpu_id = new->vcpu_id;
 
     perfc_incr(vgic_irq_migrates);
 
     if ( list_empty(&p->inflight) )
     {
         irq_set_affinity(p->desc, cpumask_of(new->processor));
-        spin_unlock_irqrestore(&old->arch.vgic.lock, flags);
-        return true;
+        goto out_unlock;
     }
+
     /* If the IRQ is still lr_pending, re-inject it to the new vcpu */
     if ( !list_empty(&p->lr_queue) )
     {
+        old = vgic_lock_vcpu_irq(new, p, &vcpu_flags);
         gic_remove_irq_from_queues(old, p);
         irq_set_affinity(p->desc, cpumask_of(new->processor));
-        spin_unlock_irqrestore(&old->arch.vgic.lock, flags);
-        vgic_vcpu_inject_irq(new, irq);
+
+        vgic_irq_unlock(p, *flags);
+        spin_unlock_irqrestore(&old->arch.vgic.lock, vcpu_flags);
+
+        vgic_vcpu_inject_irq(new, p->irq);
         return true;
     }
+
     /* if the IRQ is in a GICH_LR register, set GIC_IRQ_GUEST_MIGRATING
      * and wait for the EOI */
     if ( !list_empty(&p->inflight) )
         set_bit(GIC_IRQ_GUEST_MIGRATING, &p->status);
 
-    spin_unlock_irqrestore(&old->arch.vgic.lock, flags);
-    return true;
+out_unlock:
+    vgic_irq_unlock(p, *flags);
+
+    return false;
 }
 
 void arch_move_irqs(struct vcpu *v)

@@ -628,7 +628,7 @@ static int its_discard_event(struct virt_its *its,
 
     /* Cleanup the pending_irq and disconnect it from the LPI. */
     gic_remove_irq_from_queues(vcpu, p);
-    vgic_init_pending_irq(p, INVALID_LPI);
+    vgic_init_pending_irq(p, INVALID_LPI, INVALID_VCPU_ID);
 
     spin_unlock_irqrestore(&vcpu->arch.vgic.lock, flags);
 
@@ -768,7 +768,7 @@ static int its_handle_mapti(struct virt_its *its, uint64_t *cmdptr)
     if ( !pirq )
         goto out_remove_mapping;
 
-    vgic_init_pending_irq(pirq, intid);
+    vgic_init_pending_irq(pirq, intid, vcpu->vcpu_id);
 
     /*
      * Now read the guest's property table to initialize our cached state.
@@ -781,7 +781,6 @@ static int its_handle_mapti(struct virt_its *its, uint64_t *cmdptr)
     if ( ret )
         goto out_remove_host_entry;
 
-    pirq->vcpu_id = vcpu->vcpu_id;
     /*
      * Mark this LPI as new, so any older (now unmapped) LPI in any LR
      * can be easily recognised as such.
@@ -852,9 +851,9 @@ static int its_handle_movi(struct virt_its *its, uint64_t *cmdptr)
      */
     spin_lock_irqsave(&ovcpu->arch.vgic.lock, flags);
 
+    vgic_irq_lock(p, flags);
     p->vcpu_id = nvcpu->vcpu_id;
-
-    spin_unlock_irqrestore(&ovcpu->arch.vgic.lock, flags);
+    vgic_irq_unlock(p, flags);
 
     /*
      * TODO: Investigate if and how to migrate an already pending LPI. This

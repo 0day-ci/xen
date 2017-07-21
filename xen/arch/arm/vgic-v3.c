@@ -100,18 +100,21 @@ static struct vcpu *vgic_v3_irouter_to_vcpu(struct domain *d, uint64_t irouter)
  *
  * Note the byte offset will be aligned to an IROUTER<n> boundary.
  */
-static uint64_t vgic_fetch_irouter(struct vgic_irq_rank *rank,
-                                   unsigned int offset)
+static uint64_t vgic_fetch_irouter(struct vcpu *v, unsigned int offset)
 {
-    ASSERT(spin_is_locked(&rank->lock));
+    struct pending_irq *p;
+    unsigned long flags;
+    uint64_t aff;
 
     /* There is exactly 1 vIRQ per IROUTER */
     offset /= NR_BYTES_PER_IROUTER;
 
-    /* Get the index in the rank */
-    offset &= INTERRUPT_RANK_MASK;
+    p = irq_to_pending(v, offset);
+    vgic_irq_lock(p, flags);
+    aff = vcpuid_to_vaffinity(p->vcpu_id);
+    vgic_irq_unlock(p, flags);
 
-    return vcpuid_to_vaffinity(read_atomic(&rank->vcpu[offset]));
+    return aff;
 }
 
 /*
@@ -120,10 +123,12 @@ static uint64_t vgic_fetch_irouter(struct vgic_irq_rank *rank,
  *
  * Note the offset will be aligned to the appropriate boundary.
  */
-static void vgic_store_irouter(struct domain *d, struct vgic_irq_rank *rank,
+static void vgic_store_irouter(struct domain *d,
                                unsigned int offset, uint64_t irouter)
 {
-    struct vcpu *new_vcpu, *old_vcpu;
+    struct vcpu *new_vcpu;
+    struct pending_irq *p;
+    unsigned long flags;
     unsigned int virq;
 
     /* There is 1 vIRQ per IROUTER */
@@ -135,11 +140,10 @@ static void vgic_store_irouter(struct domain *d, struct vgic_irq_rank *rank,
      */
     ASSERT(virq >= 32);
 
-    /* Get the index in the rank */
-    offset &= virq & INTERRUPT_RANK_MASK;
+    p = spi_to_pending(d, virq);
+    vgic_irq_lock(p, flags);
 
     new_vcpu = vgic_v3_irouter_to_vcpu(d, irouter);
-    old_vcpu = d->vcpu[read_atomic(&rank->vcpu[offset])];
 
     /*
      * From the spec (see 8.9.13 in IHI 0069A), any write with an
@@ -149,16 +153,13 @@ static void vgic_store_irouter(struct domain *d, struct vgic_irq_rank *rank,
      * invalid vCPU. So for now, just ignore the write.
      *
      * TODO: Respect the spec
+     *
+     * Only migrate the IRQ if the target vCPU has changed
      */
-    if ( !new_vcpu )
-        return;
-
-    /* Only migrate the IRQ if the target vCPU has changed */
-    if ( new_vcpu != old_vcpu )
-    {
-        if ( vgic_migrate_irq(old_vcpu, new_vcpu, virq) )
-            write_atomic(&rank->vcpu[offset], new_vcpu->vcpu_id);
-    }
+    if ( new_vcpu && new_vcpu->vcpu_id != p->vcpu_id )
+        vgic_migrate_irq(p, &flags, new_vcpu);
+    else
+        vgic_irq_unlock(p, flags);
 }
 
 static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
@@ -1061,8 +1062,6 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
                                    register_t *r, void *priv)
 {
     struct hsr_dabt dabt = info->dabt;
-    struct vgic_irq_rank *rank;
-    unsigned long flags;
     int gicd_reg = (int)(info->gpa - v->domain->arch.vgic.dbase);
 
     perfc_incr(vgicd_reads);
@@ -1190,15 +1189,12 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
     case VRANGE64(GICD_IROUTER32, GICD_IROUTER1019):
     {
         uint64_t irouter;
+        unsigned int irq;
 
         if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
-        rank = vgic_rank_offset(v, 64, gicd_reg - GICD_IROUTER,
-                                DABT_DOUBLE_WORD);
-        if ( rank == NULL ) goto read_as_zero;
-        vgic_lock_rank(v, rank, flags);
-        irouter = vgic_fetch_irouter(rank, gicd_reg - GICD_IROUTER);
-        vgic_unlock_rank(v, rank, flags);
-
+        irq = (gicd_reg - GICD_IROUTER) / 8;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto read_as_zero;
+        irouter = vgic_fetch_irouter(v, gicd_reg - GICD_IROUTER);
         *r = vreg_reg64_extract(irouter, info);
 
         return 1;
@@ -1264,8 +1260,6 @@ static int vgic_v3_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
                                     register_t r, void *priv)
 {
     struct hsr_dabt dabt = info->dabt;
-    struct vgic_irq_rank *rank;
-    unsigned long flags;
     int gicd_reg = (int)(info->gpa - v->domain->arch.vgic.dbase);
 
     perfc_incr(vgicd_writes);
@@ -1379,16 +1373,15 @@ static int vgic_v3_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
     case VRANGE64(GICD_IROUTER32, GICD_IROUTER1019):
     {
         uint64_t irouter;
+        unsigned int irq;
 
         if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
-        rank = vgic_rank_offset(v, 64, gicd_reg - GICD_IROUTER,
-                                DABT_DOUBLE_WORD);
-        if ( rank == NULL ) goto write_ignore;
-        vgic_lock_rank(v, rank, flags);
-        irouter = vgic_fetch_irouter(rank, gicd_reg - GICD_IROUTER);
+        irq = (gicd_reg - GICD_IROUTER) / 8;
+        if ( irq >= v->domain->arch.vgic.nr_spis + 32 ) goto write_ignore;
+
+        irouter = vgic_fetch_irouter(v, gicd_reg - GICD_IROUTER);
         vreg_reg64_update(&irouter, r, info);
-        vgic_store_irouter(v->domain, rank, gicd_reg - GICD_IROUTER, irouter);
-        vgic_unlock_rank(v, rank, flags);
+        vgic_store_irouter(v->domain, gicd_reg - GICD_IROUTER, irouter);
         return 1;
     }
 

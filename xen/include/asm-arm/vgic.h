@@ -112,13 +112,6 @@ struct vgic_irq_rank {
 
     uint32_t ienable;
 
-    /*
-     * It's more convenient to store a target VCPU per vIRQ
-     * than the register ITARGETSR/IROUTER itself.
-     * Use atomic operations to read/write the vcpu fields to avoid
-     * taking the rank lock.
-     */
-    uint8_t vcpu[32];
 };
 
 struct sgi_target {
@@ -217,7 +210,8 @@ extern struct vcpu *vgic_get_target_vcpu(struct vcpu *v, struct pending_irq *p);
 extern void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq);
 extern void vgic_vcpu_inject_spi(struct domain *d, unsigned int virq);
 extern void vgic_clear_pending_irqs(struct vcpu *v);
-extern void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq);
+extern void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq,
+                                  unsigned int vcpu_id);
 extern struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq);
 extern struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq);
 extern struct vgic_irq_rank *vgic_rank_offset(struct vcpu *v, int b, int n, int s);
@@ -237,7 +231,8 @@ extern int vcpu_vgic_free(struct vcpu *v);
 extern bool vgic_to_sgi(struct vcpu *v, register_t sgir,
                         enum gic_sgi_mode irqmode, int virq,
                         const struct sgi_target *target);
-extern bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq);
+extern bool vgic_migrate_irq(struct pending_irq *p,
+                             unsigned long *flags, struct vcpu *new);
 
 /* Reserve a specific guest vIRQ */
 extern bool vgic_reserve_virq(struct domain *d, unsigned int virq);
