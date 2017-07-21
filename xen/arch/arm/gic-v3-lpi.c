@@ -140,20 +140,22 @@ void vgic_vcpu_inject_lpi(struct domain *d, unsigned int virq)
 {
     /*
      * TODO: this assumes that the struct pending_irq stays valid all of
-     * the time. We cannot properly protect this with the current locking
-     * scheme, but the future per-IRQ lock will solve this problem.
+     * the time. We cannot properly protect this with the current code,
+     * but a future refcounting will solve this problem.
      */
     struct pending_irq *p = irq_to_pending(d->vcpu[0], virq);
+    unsigned long flags;
     unsigned int vcpu_id;
 
     if ( !p )
         return;
 
-    vcpu_id = ACCESS_ONCE(p->vcpu_id);
-    if ( vcpu_id >= d->max_vcpus )
-          return;
+    vgic_irq_lock(p, flags);
+    vcpu_id = p->vcpu_id;
+    vgic_irq_unlock(p, flags);
 
-    vgic_vcpu_inject_irq(d->vcpu[vcpu_id], virq);
+    if ( vcpu_id < d->max_vcpus )
+        vgic_vcpu_inject_irq(d->vcpu[vcpu_id], virq);
 }
 
 /*
