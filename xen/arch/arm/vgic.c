@@ -536,7 +536,16 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 
     if ( !list_empty(&n->inflight) )
     {
-        gic_raise_inflight_irq(v, virq);
+        bool update = test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) &&
+                      list_empty(&n->lr_queue) && (v == current);
+
+        if ( update )
+            gic_update_one_lr(v, n->lr);
+#ifdef GIC_DEBUG
+        else
+            gdprintk(XENLOG_DEBUG, "trying to inject irq=%u into d%dv%d, when it is still lr_pending\n",
+                     n->irq, v->domain->domain_id, v->vcpu_id);
+#endif
         goto out;
     }
 

@@ -44,8 +44,6 @@ static DEFINE_PER_CPU(uint64_t, lr_mask);
 
 #undef GIC_DEBUG
 
-static void gic_update_one_lr(struct vcpu *v, int i);
-
 static const struct gic_hw_operations *gic_hw_ops;
 
 void register_gic_ops(const struct gic_hw_operations *ops)
@@ -416,32 +414,6 @@ void gic_remove_irq_from_queues(struct vcpu *v, struct pending_irq *p)
     gic_remove_from_lr_pending(v, p);
 }
 
-void gic_raise_inflight_irq(struct vcpu *v, unsigned int virtual_irq)
-{
-    struct pending_irq *n = irq_to_pending(v, virtual_irq);
-
-    /* If an LPI has been removed meanwhile, there is nothing left to raise. */
-    if ( unlikely(!n) )
-        return;
-
-    ASSERT(spin_is_locked(&v->arch.vgic.lock));
-
-    /* Don't try to update the LR if the interrupt is disabled */
-    if ( !test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
-        return;
-
-    if ( list_empty(&n->lr_queue) )
-    {
-        if ( v == current )
-            gic_update_one_lr(v, n->lr);
-    }
-#ifdef GIC_DEBUG
-    else
-        gdprintk(XENLOG_DEBUG, "trying to inject irq=%u into d%dv%d, when it is still lr_pending\n",
-                 virtual_irq, v->domain->domain_id, v->vcpu_id);
-#endif
-}
-
 /*
  * Find an unused LR to insert an IRQ into, starting with the LR given
  * by @lr. If this new interrupt is a PRISTINE LPI, scan the other LRs to
@@ -503,7 +475,7 @@ void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
     gic_add_to_lr_pending(v, p);
 }
 
-static void gic_update_one_lr(struct vcpu *v, int i)
+void gic_update_one_lr(struct vcpu *v, int i)
 {
     struct pending_irq *p;
     int irq;
