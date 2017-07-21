@@ -224,10 +224,11 @@ int vcpu_vgic_free(struct vcpu *v)
     return 0;
 }
 
-struct vcpu *vgic_get_target_vcpu(struct vcpu *v, unsigned int virq)
+struct vcpu *vgic_get_target_vcpu(struct vcpu *v, struct pending_irq *p)
 {
-    struct vgic_irq_rank *rank = vgic_rank_irq(v, virq);
-    int target = read_atomic(&rank->vcpu[virq & INTERRUPT_RANK_MASK]);
+    struct vgic_irq_rank *rank = vgic_rank_irq(v, p->irq);
+    int target = read_atomic(&rank->vcpu[p->irq & INTERRUPT_RANK_MASK]);
+
     return v->domain->vcpu[target];
 }
 
@@ -391,8 +392,8 @@ void arch_move_irqs(struct vcpu *v)
 
     for ( i = 32; i < vgic_num_irqs(d); i++ )
     {
-        v_target = vgic_get_target_vcpu(v, i);
-        p = irq_to_pending(v_target, i);
+        p = irq_to_pending(v, i);
+        v_target = vgic_get_target_vcpu(v, p);
 
         if ( v_target == v && !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
             irq_set_affinity(p->desc, cpu_mask);
@@ -414,10 +415,10 @@ void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n)
 
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
         irq = i + (32 * n);
-        v_target = vgic_get_target_vcpu(v, irq);
+        p = irq_to_pending(v, irq);
+        v_target = vgic_get_target_vcpu(v, p);
 
         spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
-        p = irq_to_pending(v_target, irq);
         clear_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
         gic_remove_from_lr_pending(v_target, p);
         desc = p->desc;
@@ -468,9 +469,9 @@ void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
 
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
         irq = i + (32 * n);
-        v_target = vgic_get_target_vcpu(v, irq);
+        p = irq_to_pending(v, irq);
+        v_target = vgic_get_target_vcpu(v, p);
         spin_lock_irqsave(&v_target->arch.vgic.lock, vcpu_flags);
-        p = irq_to_pending(v_target, irq);
         vgic_irq_lock(p, flags);
         set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
         int_type = test_bit(GIC_IRQ_GUEST_LEVEL, &p->status) ?
@@ -666,12 +667,13 @@ out:
 
 void vgic_vcpu_inject_spi(struct domain *d, unsigned int virq)
 {
+    struct pending_irq *p = irq_to_pending(d->vcpu[0], virq);
     struct vcpu *v;
 
     /* the IRQ needs to be an SPI */
     ASSERT(virq >= 32 && virq <= vgic_num_irqs(d));
 
-    v = vgic_get_target_vcpu(d->vcpu[0], virq);
+    v = vgic_get_target_vcpu(d->vcpu[0], p);
     vgic_vcpu_inject_irq(v, virq);
 }
 

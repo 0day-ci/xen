@@ -559,7 +559,7 @@ void gic_update_one_lr(struct vcpu *v, int i)
             smp_wmb();
             if ( test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
             {
-                struct vcpu *v_target = vgic_get_target_vcpu(v, irq);
+                struct vcpu *v_target = vgic_get_target_vcpu(v, p);
                 irq_set_affinity(p->desc, cpumask_of(v_target->processor));
                 clear_bit(GIC_IRQ_GUEST_MIGRATING, &p->status);
             }
