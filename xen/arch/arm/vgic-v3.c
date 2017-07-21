@@ -1784,7 +1784,7 @@ static int vgic_v3_lpi_get_priority(struct domain *d, uint32_t vlpi)
 
     ASSERT(p);
 
-    return p->lpi_priority;
+    return p->priority;
 }
 
 static const struct vgic_ops v3_ops = {

@@ -419,7 +419,7 @@ static int update_lpi_property(struct domain *d, struct pending_irq *p)
     if ( ret )
         return ret;
 
-    write_atomic(&p->lpi_priority, property & LPI_PROP_PRIO_MASK);
+    write_atomic(&p->priority, property & LPI_PROP_PRIO_MASK);
 
     if ( property & LPI_PROP_ENABLED )
         set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
@@ -445,7 +445,7 @@ static void update_lpi_vgic_status(struct vcpu *v, struct pending_irq *p)
     {
         if ( !list_empty(&p->inflight) &&
              !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
-            gic_raise_guest_irq(v, p->irq, p->lpi_priority);
+            gic_raise_guest_irq(v, p->irq, p->priority);
     }
     else
         gic_remove_from_lr_pending(v, p);

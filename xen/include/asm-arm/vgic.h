@@ -79,7 +79,7 @@ struct pending_irq
 #define GIC_INVALID_LR         (uint8_t)~0
     uint8_t lr;
     uint8_t cur_priority;       /* Holds the priority of an injected IRQ. */
-    uint8_t lpi_priority;       /* Caches the priority if this is an LPI. */
+    uint8_t priority;           /* Holds the priority for any new IRQ. */
     uint8_t lpi_vcpu_id;        /* The VCPU for an LPI. */
     /* inflight is used to append instances of pending_irq to
      * vgic.inflight_irqs */
