@@ -508,6 +508,7 @@ void gic_update_one_lr(struct vcpu *v, int i)
 
     if ( lr_val.state & GICH_LR_ACTIVE )
     {
+        vgic_irq_lock(p, flags);
         set_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
         if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
              test_and_clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status) )
@@ -521,6 +522,7 @@ void gic_update_one_lr(struct vcpu *v, int i)
                 gdprintk(XENLOG_WARNING, "unable to inject hw irq=%d into d%dv%d: already active in LR%d\n",
                          irq, v->domain->domain_id, v->vcpu_id, i);
         }
+        vgic_irq_unlock(p, flags);
     }
     else if ( lr_val.state & GICH_LR_PENDING )
     {
