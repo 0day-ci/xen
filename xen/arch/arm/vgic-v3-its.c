@@ -402,6 +402,7 @@ static int update_lpi_property(struct domain *d, struct pending_irq *p)
     uint8_t property;
     int ret;
 
+    ASSERT(spin_is_locked(&p->lock));
     /*
      * If no redistributor has its LPIs enabled yet, we can't access the
      * property table. In this case we just can't update the properties,
@@ -419,7 +420,7 @@ static int update_lpi_property(struct domain *d, struct pending_irq *p)
     if ( ret )
         return ret;
 
-    write_atomic(&p->priority, property & LPI_PROP_PRIO_MASK);
+    p->priority = property & LPI_PROP_PRIO_MASK;
 
     if ( property & LPI_PROP_ENABLED )
         set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
@@ -457,7 +458,7 @@ static int its_handle_inv(struct virt_its *its, uint64_t *cmdptr)
     uint32_t devid = its_cmd_get_deviceid(cmdptr);
     uint32_t eventid = its_cmd_get_id(cmdptr);
     struct pending_irq *p;
-    unsigned long flags;
+    unsigned long flags, vcpu_flags;
     struct vcpu *vcpu;
     uint32_t vlpi;
     int ret = -1;
@@ -485,7 +486,8 @@ static int its_handle_inv(struct virt_its *its, uint64_t *cmdptr)
     if ( unlikely(!p) )
         goto out_unlock_its;
 
-    spin_lock_irqsave(&vcpu->arch.vgic.lock, flags);
+    spin_lock_irqsave(&vcpu->arch.vgic.lock, vcpu_flags);
+    vgic_irq_lock(p, flags);
 
     /* Read the property table and update our cached status. */
     if ( update_lpi_property(d, p) )
@@ -497,7 +499,8 @@ static int its_handle_inv(struct virt_its *its, uint64_t *cmdptr)
     ret = 0;
 
 out_unlock:
-    spin_unlock_irqrestore(&vcpu->arch.vgic.lock, flags);
+    vgic_irq_unlock(p, flags);
+    spin_unlock_irqrestore(&vcpu->arch.vgic.lock, vcpu_flags);
 
 out_unlock_its:
     spin_unlock(&its->its_lock);
@@ -517,7 +520,7 @@ static int its_handle_invall(struct virt_its *its, uint64_t *cmdptr)
     struct pending_irq *pirqs[16];
     uint64_t vlpi = 0;          /* 64-bit to catch overflows */
     unsigned int nr_lpis, i;
-    unsigned long flags;
+    unsigned long flags, vcpu_flags;
     int ret = 0;
 
     /*
@@ -542,7 +545,7 @@ static int its_handle_invall(struct virt_its *its, uint64_t *cmdptr)
     vcpu = get_vcpu_from_collection(its, collid);
     spin_unlock(&its->its_lock);
 
-    spin_lock_irqsave(&vcpu->arch.vgic.lock, flags);
+    spin_lock_irqsave(&vcpu->arch.vgic.lock, vcpu_flags);
     read_lock(&its->d->arch.vgic.pend_lpi_tree_lock);
 
     do
@@ -555,9 +558,13 @@ static int its_handle_invall(struct virt_its *its, uint64_t *cmdptr)
 
         for ( i = 0; i < nr_lpis; i++ )
         {
+            vgic_irq_lock(pirqs[i], flags);
             /* We only care about LPIs on our VCPU. */
             if ( pirqs[i]->lpi_vcpu_id != vcpu->vcpu_id )
+            {
+                vgic_irq_unlock(pirqs[i], flags);
                 continue;
+            }
 
             vlpi = pirqs[i]->irq;
             /* If that fails for a single LPI, carry on to handle the rest. */
@@ -566,6 +573,8 @@ static int its_handle_invall(struct virt_its *its, uint64_t *cmdptr)
                 update_lpi_vgic_status(vcpu, pirqs[i]);
             else
                 ret = err;
+
+            vgic_irq_unlock(pirqs[i], flags);
         }
     /*
      * Loop over the next gang of pending_irqs until we reached the end of
@@ -576,7 +585,7 @@ static int its_handle_invall(struct virt_its *its, uint64_t *cmdptr)
               (nr_lpis == ARRAY_SIZE(pirqs)) );
 
     read_unlock(&its->d->arch.vgic.pend_lpi_tree_lock);
-    spin_unlock_irqrestore(&vcpu->arch.vgic.lock, flags);
+    spin_unlock_irqrestore(&vcpu->arch.vgic.lock, vcpu_flags);
 
     return ret;
 }
@@ -712,6 +721,7 @@ static int its_handle_mapti(struct virt_its *its, uint64_t *cmdptr)
     uint32_t intid = its_cmd_get_physical_id(cmdptr), _intid;
     uint16_t collid = its_cmd_get_collection(cmdptr);
     struct pending_irq *pirq;
+    unsigned long flags;
     struct vcpu *vcpu = NULL;
     int ret = -1;
 
@@ -765,7 +775,9 @@ static int its_handle_mapti(struct virt_its *its, uint64_t *cmdptr)
      * We don't need the VGIC VCPU lock here, because the pending_irq isn't
      * in the radix tree yet.
      */
+    vgic_irq_lock(pirq, flags);
     ret = update_lpi_property(its->d, pirq);
+    vgic_irq_unlock(pirq, flags);
     if ( ret )
         goto out_remove_host_entry;
 
