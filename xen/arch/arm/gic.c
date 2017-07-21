@@ -666,7 +666,7 @@ int gic_events_need_delivery(void)
 {
     struct vcpu *v = current;
     struct pending_irq *p;
-    unsigned long flags;
+    unsigned long flags, vcpu_flags;
     const unsigned long apr = gic_hw_ops->read_apr(0);
     int mask_priority;
     int active_priority;
@@ -675,7 +675,7 @@ int gic_events_need_delivery(void)
     mask_priority = gic_hw_ops->read_vmcr_priority();
     active_priority = find_next_bit(&apr, 32, 0);
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    spin_lock_irqsave(&v->arch.vgic.lock, vcpu_flags);
 
     /* TODO: We order the guest irqs by priority, but we don't change
      * the priority of host irqs. */
@@ -684,19 +684,21 @@ int gic_events_need_delivery(void)
      * ordered by priority */
     list_for_each_entry( p, &v->arch.vgic.inflight_irqs, inflight )
     {
-        if ( GIC_PRI_TO_GUEST(p->cur_priority) >= mask_priority )
-            goto out;
-        if ( GIC_PRI_TO_GUEST(p->cur_priority) >= active_priority )
-            goto out;
-        if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) )
+        vgic_irq_lock(p, flags);
+        if ( GIC_PRI_TO_GUEST(p->cur_priority) < mask_priority &&
+             GIC_PRI_TO_GUEST(p->cur_priority) < active_priority &&
+             !test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) )
         {
-            rc = 1;
-            goto out;
+            vgic_irq_unlock(p, flags);
+            continue;
         }
+
+        rc = test_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+        vgic_irq_unlock(p, flags);
+        break;
     }
 
-out:
-    spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    spin_unlock_irqrestore(&v->arch.vgic.lock, vcpu_flags);
     return rc;
 }
 
