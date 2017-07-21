@@ -560,7 +560,7 @@ static int its_handle_invall(struct virt_its *its, uint64_t *cmdptr)
         {
             vgic_irq_lock(pirqs[i], flags);
             /* We only care about LPIs on our VCPU. */
-            if ( pirqs[i]->lpi_vcpu_id != vcpu->vcpu_id )
+            if ( pirqs[i]->vcpu_id != vcpu->vcpu_id )
             {
                 vgic_irq_unlock(pirqs[i], flags);
                 continue;
@@ -781,7 +781,7 @@ static int its_handle_mapti(struct virt_its *its, uint64_t *cmdptr)
     if ( ret )
         goto out_remove_host_entry;
 
-    pirq->lpi_vcpu_id = vcpu->vcpu_id;
+    pirq->vcpu_id = vcpu->vcpu_id;
     /*
      * Mark this LPI as new, so any older (now unmapped) LPI in any LR
      * can be easily recognised as such.
@@ -852,8 +852,7 @@ static int its_handle_movi(struct virt_its *its, uint64_t *cmdptr)
      */
     spin_lock_irqsave(&ovcpu->arch.vgic.lock, flags);
 
-    /* Update our cached vcpu_id in the pending_irq. */
-    p->lpi_vcpu_id = nvcpu->vcpu_id;
+    p->vcpu_id = nvcpu->vcpu_id;
 
     spin_unlock_irqrestore(&ovcpu->arch.vgic.lock, flags);
 

@@ -149,7 +149,7 @@ void vgic_vcpu_inject_lpi(struct domain *d, unsigned int virq)
     if ( !p )
         return;
 
-    vcpu_id = ACCESS_ONCE(p->lpi_vcpu_id);
+    vcpu_id = ACCESS_ONCE(p->vcpu_id);
     if ( vcpu_id >= d->max_vcpus )
           return;
 
