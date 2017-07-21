@@ -243,6 +243,43 @@ static int vgic_get_virq_priority(struct vcpu *v, unsigned int virq)
     return ACCESS_ONCE(rank->priority[virq & INTERRUPT_RANK_MASK]);
 }
 
+#define MAX_IRQS_PER_IPRIORITYR 4
+uint32_t vgic_fetch_irq_priority(struct vcpu *v, unsigned int nrirqs,
+                                 unsigned int first_irq)
+{
+    struct pending_irq *pirqs[MAX_IRQS_PER_IPRIORITYR];
+    unsigned long flags;
+    uint32_t ret = 0, i;
+
+    local_irq_save(flags);
+    vgic_lock_irqs(v, nrirqs, first_irq, pirqs);
+
+    for ( i = 0; i < nrirqs; i++ )
+        ret |= pirqs[i]->priority << (i * 8);
+
+    vgic_unlock_irqs(pirqs, nrirqs);
+    local_irq_restore(flags);
+
+    return ret;
+}
+
+void vgic_store_irq_priority(struct vcpu *v, unsigned int nrirqs,
+                             unsigned int first_irq, uint32_t value)
+{
+    struct pending_irq *pirqs[MAX_IRQS_PER_IPRIORITYR];
+    unsigned long flags;
+    unsigned int i;
+
+    local_irq_save(flags);
+    vgic_lock_irqs(v, nrirqs, first_irq, pirqs);
+
+    for ( i = 0; i < nrirqs; i++, value >>= 8 )
+        pirqs[i]->priority = value & 0xff;
+
+    vgic_unlock_irqs(pirqs, nrirqs);
+    local_irq_restore(flags);
+}
+
 bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq)
 {
     unsigned long flags;

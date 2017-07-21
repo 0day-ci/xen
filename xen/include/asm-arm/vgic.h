@@ -198,6 +198,11 @@ void vgic_lock_irqs(struct vcpu *v, unsigned int nrirqs, unsigned int first_irq,
                     struct pending_irq **pirqs);
 void vgic_unlock_irqs(struct pending_irq **pirqs, unsigned int nrirqs);
 
+uint32_t vgic_fetch_irq_priority(struct vcpu *v, unsigned int nrirqs,
+                                 unsigned int first_irq);
+void vgic_store_irq_priority(struct vcpu *v, unsigned int nrirqs,
+                             unsigned int first_irq, uint32_t reg);
+
 enum gic_sgi_mode;
 
 /*
