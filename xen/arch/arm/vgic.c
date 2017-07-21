@@ -224,6 +224,48 @@ int vcpu_vgic_free(struct vcpu *v)
     return 0;
 }
 
+/**
+ * vgic_lock_vcpu_irq(): lock both the pending_irq and the corresponding VCPU
+ *
+ * @v: the VCPU (for private IRQs)
+ * @p: pointer to the locked struct pending_irq
+ * @flags: pointer to the IRQ flags used when locking the VCPU
+ *
+ * The function takes a locked IRQ and returns with both the IRQ and the
+ * corresponding VCPU locked. This is non-trivial due to the locking order
+ * being actually the other way round (VCPU first, then IRQ).
+ *
+ * Returns: pointer to the VCPU this IRQ is targeting.
+ */
+struct vcpu *vgic_lock_vcpu_irq(struct vcpu *v, struct pending_irq *p,
+                                unsigned long *flags)
+{
+    struct vcpu *target_vcpu;
+
+    ASSERT(spin_is_locked(&p->lock));
+
+    target_vcpu = vgic_get_target_vcpu(v, p);
+    spin_unlock(&p->lock);
+
+    do
+    {
+        struct vcpu *current_vcpu;
+
+        spin_lock_irqsave(&target_vcpu->arch.vgic.lock, *flags);
+        spin_lock(&p->lock);
+
+        current_vcpu = vgic_get_target_vcpu(v, p);
+
+        if ( target_vcpu->vcpu_id == current_vcpu->vcpu_id )
+            return target_vcpu;
+
+        spin_unlock(&p->lock);
+        spin_unlock_irqrestore(&target_vcpu->arch.vgic.lock, *flags);
+
+        target_vcpu = current_vcpu;
+    } while (1);
+}
+
 struct vcpu *vgic_get_target_vcpu(struct vcpu *v, struct pending_irq *p)
 {
     struct vgic_irq_rank *rank = vgic_rank_irq(v, p->irq);
