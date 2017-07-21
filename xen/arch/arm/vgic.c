@@ -375,6 +375,26 @@ static inline unsigned int vgic_get_virq_type(struct vcpu *v, int n, int index)
         return IRQ_TYPE_LEVEL_HIGH;
 }
 
+void vgic_lock_irqs(struct vcpu *v, unsigned int nrirqs,
+                    unsigned int first_irq, struct pending_irq **pirqs)
+{
+    unsigned int i;
+
+    for ( i = 0; i < nrirqs; i++ )
+    {
+        pirqs[i] = irq_to_pending(v, first_irq + i);
+        spin_lock(&pirqs[i]->lock);
+    }
+}
+
+void vgic_unlock_irqs(struct pending_irq **pirqs, unsigned int nrirqs)
+{
+    int i;
+
+    for ( i = nrirqs - 1; i >= 0; i-- )
+        spin_unlock(&pirqs[i]->lock);
+}
+
 void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
 {
     const unsigned long mask = r;

@@ -194,6 +194,10 @@ static inline int REG_RANK_NR(int b, uint32_t n)
     }
 }
 
+void vgic_lock_irqs(struct vcpu *v, unsigned int nrirqs, unsigned int first_irq,
+                    struct pending_irq **pirqs);
+void vgic_unlock_irqs(struct pending_irq **pirqs, unsigned int nrirqs);
+
 enum gic_sgi_mode;
 
 /*
