@@ -69,6 +69,7 @@ void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
     memset(p, 0, sizeof(*p));
     INIT_LIST_HEAD(&p->inflight);
     INIT_LIST_HEAD(&p->lr_queue);
+    spin_lock_init(&p->lock);
     p->irq = virq;
     p->lpi_vcpu_id = INVALID_VCPU_ID;
 }
