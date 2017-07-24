@@ -493,6 +493,7 @@ static int vmx_init_vmcs_config(void)
         vmx_virt_exception         = !!(_vmx_secondary_exec_control &
                                        SECONDARY_EXEC_ENABLE_VIRT_EXCEPTIONS);
         vmx_display_features();
+        calculate_vvmx_max_policy();
 
         /* IA-32 SDM Vol 3B: VMCS size is never greater than 4kB. */
         if ( raw_vmx_msr_policy.basic.vmcs_region_size > PAGE_SIZE )

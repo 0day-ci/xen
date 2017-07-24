@@ -244,5 +244,7 @@ int nept_translate_l2ga(struct vcpu *v, paddr_t l2ga,
                         uint64_t *exit_qual, uint32_t *exit_reason);
 int nvmx_cpu_up_prepare(unsigned int cpu);
 void nvmx_cpu_dead(unsigned int cpu);
+
+void calculate_vvmx_max_policy(void);
 #endif /* __ASM_X86_HVM_VVMX_H__ */
 

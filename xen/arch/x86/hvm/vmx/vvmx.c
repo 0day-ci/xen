@@ -1941,12 +1941,136 @@ int nvmx_handle_invvpid(struct cpu_user_regs *regs)
     return X86EMUL_OKAY;
 }
 
+static struct vmx_msr_policy __read_mostly vvmx_max_msr_policy;
+
 #define __emul_value(enable1, default1) \
     ((enable1 | default1) << 32 | (default1))
 
 #define gen_vmx_msr(enable1, default1, host_value) \
     (((__emul_value(enable1, default1) & host_value) & (~0ul << 32)) | \
     ((uint32_t)(__emul_value(enable1, default1) | host_value)))
+
+void __init calculate_vvmx_max_policy(void)
+{
+    struct vmx_msr_policy *p = &vvmx_max_msr_policy;
+    uint64_t data, *msr;
+    u32 default1_bits;
+
+    *p = raw_vmx_msr_policy;
+
+    /* Pinbased controls 1-settings */
+    data = PIN_BASED_EXT_INTR_MASK |
+           PIN_BASED_NMI_EXITING |
+           PIN_BASED_PREEMPT_TIMER;
+
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_PINBASED_CTLS);
+    *msr = gen_vmx_msr(data, VMX_PINBASED_CTLS_DEFAULT1, *msr);
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_TRUE_PINBASED_CTLS);
+    *msr = gen_vmx_msr(data, VMX_PINBASED_CTLS_DEFAULT1, *msr);
+
+    /* Procbased controls 1-settings */
+    default1_bits = VMX_PROCBASED_CTLS_DEFAULT1;
+    data = CPU_BASED_HLT_EXITING |
+           CPU_BASED_VIRTUAL_INTR_PENDING |
+           CPU_BASED_CR8_LOAD_EXITING |
+           CPU_BASED_CR8_STORE_EXITING |
+           CPU_BASED_INVLPG_EXITING |
+           CPU_BASED_CR3_LOAD_EXITING |
+           CPU_BASED_CR3_STORE_EXITING |
+           CPU_BASED_MONITOR_EXITING |
+           CPU_BASED_MWAIT_EXITING |
+           CPU_BASED_MOV_DR_EXITING |
+           CPU_BASED_ACTIVATE_IO_BITMAP |
+           CPU_BASED_USE_TSC_OFFSETING |
+           CPU_BASED_UNCOND_IO_EXITING |
+           CPU_BASED_RDTSC_EXITING |
+           CPU_BASED_MONITOR_TRAP_FLAG |
+           CPU_BASED_VIRTUAL_NMI_PENDING |
+           CPU_BASED_ACTIVATE_MSR_BITMAP |
+           CPU_BASED_PAUSE_EXITING |
+           CPU_BASED_RDPMC_EXITING |
+           CPU_BASED_TPR_SHADOW |
+           CPU_BASED_ACTIVATE_SECONDARY_CONTROLS;
+
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_PROCBASED_CTLS);
+    *msr = gen_vmx_msr(data, default1_bits, *msr);
+
+    default1_bits &= ~(CPU_BASED_CR3_LOAD_EXITING |
+                       CPU_BASED_CR3_STORE_EXITING |
+                       CPU_BASED_INVLPG_EXITING);
+
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_TRUE_PROCBASED_CTLS);
+    *msr = gen_vmx_msr(data, default1_bits, *msr);
+
+    /* Procbased-2 controls 1-settings */
+    data = SECONDARY_EXEC_DESCRIPTOR_TABLE_EXITING |
+           SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES |
+           SECONDARY_EXEC_ENABLE_VPID |
+           SECONDARY_EXEC_UNRESTRICTED_GUEST |
+           SECONDARY_EXEC_ENABLE_EPT;
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_PROCBASED_CTLS2);
+    *msr = gen_vmx_msr(data, 0, *msr);
+
+    /* Vmexit controls 1-settings */
+    data = VM_EXIT_ACK_INTR_ON_EXIT |
+           VM_EXIT_IA32E_MODE |
+           VM_EXIT_SAVE_PREEMPT_TIMER |
+           VM_EXIT_SAVE_GUEST_PAT |
+           VM_EXIT_LOAD_HOST_PAT |
+           VM_EXIT_SAVE_GUEST_EFER |
+           VM_EXIT_LOAD_HOST_EFER |
+           VM_EXIT_LOAD_PERF_GLOBAL_CTRL;
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_EXIT_CTLS);
+    *msr = gen_vmx_msr(data, VMX_EXIT_CTLS_DEFAULT1, *msr);
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_TRUE_EXIT_CTLS);
+    *msr = gen_vmx_msr(data, VMX_EXIT_CTLS_DEFAULT1, *msr);
+
+    /* Vmentry controls 1-settings */
+    data = VM_ENTRY_LOAD_GUEST_PAT |
+           VM_ENTRY_LOAD_GUEST_EFER |
+           VM_ENTRY_LOAD_PERF_GLOBAL_CTRL |
+           VM_ENTRY_IA32E_MODE;
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_ENTRY_CTLS);
+    *msr = gen_vmx_msr(data, VMX_ENTRY_CTLS_DEFAULT1, *msr);
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_TRUE_ENTRY_CTLS);
+    *msr = gen_vmx_msr(data, VMX_ENTRY_CTLS_DEFAULT1, *msr);
+
+    /* MSR_IA32_VMX_VMCS_ENUM */
+    /* The max index of VVMCS encoding is 0x1f. */
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_VMCS_ENUM);
+    *msr = 0x1f << 1;
+
+    /* MSR_IA32_VMX_CR0_FIXED0 */
+    /* PG, PE bits must be 1 in VMX operation */
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_CR0_FIXED0);
+    *msr = X86_CR0_PE | X86_CR0_PG;
+
+    /* MSR_IA32_VMX_CR0_FIXED1 */
+    /* allow 0-settings for all bits */
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_CR0_FIXED1);
+    *msr = 0xffffffff;
+
+    /* MSR_IA32_VMX_CR4_FIXED0 */
+    /* VMXE bit must be 1 in VMX operation */
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_CR4_FIXED0);
+    *msr = X86_CR4_VMXE;
+
+    /* MSR_IA32_VMX_CR4_FIXED1 */
+    /* Treated dynamically */
+
+    /* MSR_IA32_VMX_MISC */
+    /* Do not support CR3-target feature now */
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_MISC);
+    *msr &= ~VMX_MISC_CR3_TARGET;
+
+    /* MSR_IA32_VMX_EPT_VPID_CAP */
+    msr = get_vmx_msr_ptr(p, MSR_IA32_VMX_EPT_VPID_CAP);
+    *msr = nept_get_ept_vpid_cap();
+
+    /* MSR_IA32_VMX_VMFUNC is N/A */
+    p->available &= ~gen_vmx_msr_mask(MSR_IA32_VMX_VMFUNC,
+                                      MSR_IA32_VMX_VMFUNC);
+}
 
 /*
  * Capability reporting
@@ -1955,167 +2079,21 @@ int nvmx_msr_read_intercept(unsigned int msr, u64 *msr_content)
 {
     struct vcpu *v = current;
     struct domain *d = v->domain;
-    u64 data = 0, host_data = 0;
+    const struct vmx_msr_policy *p = &vvmx_max_msr_policy;
     int r = 1;
 
     /* VMX capablity MSRs are available only when guest supports VMX. */
     if ( !nestedhvm_enabled(d) || !d->arch.cpuid->basic.vmx )
         return 0;
 
-    /*
-     * These MSRs are only available when flags in other MSRs are set.
-     * These prerequisites are listed in the Intel 64 and IA-32
-     * Architectures Software Developer’s Manual, Vol 3, Appendix A.
-     */
-    switch ( msr )
-    {
-    case MSR_IA32_VMX_PROCBASED_CTLS2:
-        if ( !cpu_has_vmx_secondary_exec_control )
-            return 0;
-        break;
+    if ( !vmx_msr_available(p, msr) )
+        return 0;
 
-    case MSR_IA32_VMX_EPT_VPID_CAP:
-        if ( !(cpu_has_vmx_ept || cpu_has_vmx_vpid) )
-            return 0;
-        break;
+    if ( msr == MSR_IA32_VMX_CR4_FIXED1 )
+        *msr_content = hvm_cr4_guest_valid_bits(v, 0);
+    else
+        *msr_content = get_vmx_msr_val(p, msr);
 
-    case MSR_IA32_VMX_TRUE_PINBASED_CTLS:
-    case MSR_IA32_VMX_TRUE_PROCBASED_CTLS:
-    case MSR_IA32_VMX_TRUE_EXIT_CTLS:
-    case MSR_IA32_VMX_TRUE_ENTRY_CTLS:
-        if ( !(vmx_basic_msr & VMX_BASIC_DEFAULT1_ZERO) )
-            return 0;
-        break;
-
-    case MSR_IA32_VMX_VMFUNC:
-        if ( !cpu_has_vmx_vmfunc )
-            return 0;
-        break;
-    }
-
-    rdmsrl(msr, host_data);
-
-    /*
-     * Remove unsupport features from n1 guest capability MSR
-     */
-    switch (msr) {
-    case MSR_IA32_VMX_BASIC:
-    {
-        const struct vmcs_struct *vmcs =
-            map_domain_page(_mfn(PFN_DOWN(v->arch.hvm_vmx.vmcs_pa)));
-
-        data = (host_data & (~0ul << 32)) |
-               (vmcs->vmcs_revision_id & 0x7fffffff);
-        unmap_domain_page(vmcs);
-        break;
-    }
-    case MSR_IA32_VMX_PINBASED_CTLS:
-    case MSR_IA32_VMX_TRUE_PINBASED_CTLS:
-        /* 1-settings */
-        data = PIN_BASED_EXT_INTR_MASK |
-               PIN_BASED_NMI_EXITING |
-               PIN_BASED_PREEMPT_TIMER;
-        data = gen_vmx_msr(data, VMX_PINBASED_CTLS_DEFAULT1, host_data);
-        break;
-    case MSR_IA32_VMX_PROCBASED_CTLS:
-    case MSR_IA32_VMX_TRUE_PROCBASED_CTLS:
-    {
-        u32 default1_bits = VMX_PROCBASED_CTLS_DEFAULT1;
-        /* 1-settings */
-        data = CPU_BASED_HLT_EXITING |
-               CPU_BASED_VIRTUAL_INTR_PENDING |
-               CPU_BASED_CR8_LOAD_EXITING |
-               CPU_BASED_CR8_STORE_EXITING |
-               CPU_BASED_INVLPG_EXITING |
-               CPU_BASED_CR3_LOAD_EXITING |
-               CPU_BASED_CR3_STORE_EXITING |
-               CPU_BASED_MONITOR_EXITING |
-               CPU_BASED_MWAIT_EXITING |
-               CPU_BASED_MOV_DR_EXITING |
-               CPU_BASED_ACTIVATE_IO_BITMAP |
-               CPU_BASED_USE_TSC_OFFSETING |
-               CPU_BASED_UNCOND_IO_EXITING |
-               CPU_BASED_RDTSC_EXITING |
-               CPU_BASED_MONITOR_TRAP_FLAG |
-               CPU_BASED_VIRTUAL_NMI_PENDING |
-               CPU_BASED_ACTIVATE_MSR_BITMAP |
-               CPU_BASED_PAUSE_EXITING |
-               CPU_BASED_RDPMC_EXITING |
-               CPU_BASED_TPR_SHADOW |
-               CPU_BASED_ACTIVATE_SECONDARY_CONTROLS;
-
-        if ( msr == MSR_IA32_VMX_TRUE_PROCBASED_CTLS )
-            default1_bits &= ~(CPU_BASED_CR3_LOAD_EXITING |
-                               CPU_BASED_CR3_STORE_EXITING |
-                               CPU_BASED_INVLPG_EXITING);
-
-        data = gen_vmx_msr(data, default1_bits, host_data);
-        break;
-    }
-    case MSR_IA32_VMX_PROCBASED_CTLS2:
-        /* 1-settings */
-        data = SECONDARY_EXEC_DESCRIPTOR_TABLE_EXITING |
-               SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES |
-               SECONDARY_EXEC_ENABLE_VPID |
-               SECONDARY_EXEC_UNRESTRICTED_GUEST |
-               SECONDARY_EXEC_ENABLE_EPT;
-        data = gen_vmx_msr(data, 0, host_data);
-        break;
-    case MSR_IA32_VMX_EXIT_CTLS:
-    case MSR_IA32_VMX_TRUE_EXIT_CTLS:
-        /* 1-settings */
-        data = VM_EXIT_ACK_INTR_ON_EXIT |
-               VM_EXIT_IA32E_MODE |
-               VM_EXIT_SAVE_PREEMPT_TIMER |
-               VM_EXIT_SAVE_GUEST_PAT |
-               VM_EXIT_LOAD_HOST_PAT |
-               VM_EXIT_SAVE_GUEST_EFER |
-               VM_EXIT_LOAD_HOST_EFER |
-               VM_EXIT_LOAD_PERF_GLOBAL_CTRL;
-        data = gen_vmx_msr(data, VMX_EXIT_CTLS_DEFAULT1, host_data);
-        break;
-    case MSR_IA32_VMX_ENTRY_CTLS:
-    case MSR_IA32_VMX_TRUE_ENTRY_CTLS:
-        /* 1-settings */
-        data = VM_ENTRY_LOAD_GUEST_PAT |
-               VM_ENTRY_LOAD_GUEST_EFER |
-               VM_ENTRY_LOAD_PERF_GLOBAL_CTRL |
-               VM_ENTRY_IA32E_MODE;
-        data = gen_vmx_msr(data, VMX_ENTRY_CTLS_DEFAULT1, host_data);
-        break;
-
-    case MSR_IA32_VMX_VMCS_ENUM:
-        /* The max index of VVMCS encoding is 0x1f. */
-        data = 0x1f << 1;
-        break;
-    case MSR_IA32_VMX_CR0_FIXED0:
-        /* PG, PE bits must be 1 in VMX operation */
-        data = X86_CR0_PE | X86_CR0_PG;
-        break;
-    case MSR_IA32_VMX_CR0_FIXED1:
-        /* allow 0-settings for all bits */
-        data = 0xffffffff;
-        break;
-    case MSR_IA32_VMX_CR4_FIXED0:
-        /* VMXE bit must be 1 in VMX operation */
-        data = X86_CR4_VMXE;
-        break;
-    case MSR_IA32_VMX_CR4_FIXED1:
-        data = hvm_cr4_guest_valid_bits(v, 0);
-        break;
-    case MSR_IA32_VMX_MISC:
-        /* Do not support CR3-target feature now */
-        data = host_data & ~VMX_MISC_CR3_TARGET;
-        break;
-    case MSR_IA32_VMX_EPT_VPID_CAP:
-        data = nept_get_ept_vpid_cap();
-        break;
-    default:
-        r = 0;
-        break;
-    }
-
-    *msr_content = data;
     return r;
 }
 
