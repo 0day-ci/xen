@@ -2072,6 +2072,18 @@ void __init calculate_vvmx_max_policy(void)
                                       MSR_IA32_VMX_VMFUNC);
 }
 
+int init_domain_vmx_msr_policy(struct domain *d)
+{
+    d->arch.vmx_msr = xmalloc(struct vmx_msr_policy);
+
+    if ( !d->arch.vmx_msr )
+        return -ENOMEM;
+
+    *d->arch.vmx_msr = vvmx_max_msr_policy;
+
+    return 0;
+}
+
 /*
  * Capability reporting
  */
@@ -2079,7 +2091,7 @@ int nvmx_msr_read_intercept(unsigned int msr, u64 *msr_content)
 {
     struct vcpu *v = current;
     struct domain *d = v->domain;
-    const struct vmx_msr_policy *p = &vvmx_max_msr_policy;
+    const struct vmx_msr_policy *p = d->arch.vmx_msr;
     int r = 1;
 
     /* VMX capablity MSRs are available only when guest supports VMX. */

@@ -425,6 +425,7 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
     {
         d->arch.emulation_flags = 0;
         d->arch.cpuid = ZERO_BLOCK_PTR; /* Catch stray misuses. */
+        d->arch.vmx_msr = ZERO_BLOCK_PTR;
     }
     else
     {
@@ -468,6 +469,9 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
         paging_initialised = 1;
 
         if ( (rc = init_domain_cpuid_policy(d)) )
+            goto fail;
+
+        if ( (rc = init_domain_vmx_msr_policy(d)) )
             goto fail;
 
         d->arch.ioport_caps = 
@@ -541,6 +545,7 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
     cleanup_domain_irq_mapping(d);
     free_xenheap_page(d->shared_info);
     xfree(d->arch.cpuid);
+    xfree(d->arch.vmx_msr);
     if ( paging_initialised )
         paging_final_teardown(d);
     free_perdomain_mappings(d);
@@ -555,6 +560,7 @@ void arch_domain_destroy(struct domain *d)
 
     xfree(d->arch.e820);
     xfree(d->arch.cpuid);
+    xfree(d->arch.vmx_msr);
 
     free_domain_pirqs(d);
     if ( !is_idle_domain(d) )

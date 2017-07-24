@@ -246,5 +246,6 @@ int nvmx_cpu_up_prepare(unsigned int cpu);
 void nvmx_cpu_dead(unsigned int cpu);
 
 void calculate_vvmx_max_policy(void);
+int init_domain_vmx_msr_policy(struct domain *d);
 #endif /* __ASM_X86_HVM_VVMX_H__ */
 
