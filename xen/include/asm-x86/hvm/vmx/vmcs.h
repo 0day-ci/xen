@@ -942,6 +942,9 @@ uint64_t get_vmx_msr_val(const struct vmx_msr_policy *p, uint32_t msr);
 uint64_t *get_vmx_msr_ptr(struct vmx_msr_policy *p, uint32_t msr);
 uint32_t gen_vmx_msr_mask(uint32_t start_msr, uint32_t end_msr);
 
+extern struct vmx_msr_policy raw_vmx_msr_policy;
+int calculate_vmx_raw_policy(bool bsp);
+
 #endif /* ASM_X86_HVM_VMX_VMCS_H__ */
 
 /*

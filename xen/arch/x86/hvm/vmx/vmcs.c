@@ -144,6 +144,8 @@ static void __init vmx_display_features(void)
         printk(" - none\n");
 }
 
+struct vmx_msr_policy __read_mostly raw_vmx_msr_policy;
+
 bool vmx_msr_available(const struct vmx_msr_policy *p, uint32_t msr)
 {
     if ( msr < MSR_IA32_VMX_BASIC || msr > MSR_IA32_VMX_LAST )
@@ -178,6 +180,78 @@ uint32_t gen_vmx_msr_mask(uint32_t start_msr, uint32_t end_msr)
            (start_msr - MSR_IA32_VMX_BASIC);
 }
 
+int calculate_vmx_raw_policy(bool bsp)
+{
+    struct vmx_msr_policy policy;
+    struct vmx_msr_policy *p = &policy;
+    unsigned int msr;
+
+    /* Raw policy is filled only on boot CPU */
+    if ( bsp )
+        p = &raw_vmx_msr_policy;
+    else
+        memset(&policy, 0, sizeof(policy));
+
+    p->available = gen_vmx_msr_mask(MSR_IA32_VMX_BASIC, MSR_IA32_VMX_VMCS_ENUM);
+    for ( msr = MSR_IA32_VMX_BASIC; msr <= MSR_IA32_VMX_VMCS_ENUM; msr++ )
+        rdmsrl(msr, *get_vmx_msr_ptr(p, msr));
+
+    if ( p->basic.default1_zero )
+    {
+        p->available |= gen_vmx_msr_mask(MSR_IA32_VMX_TRUE_PINBASED_CTLS,
+                                         MSR_IA32_VMX_TRUE_ENTRY_CTLS);
+        for ( msr = MSR_IA32_VMX_TRUE_PINBASED_CTLS;
+              msr <= MSR_IA32_VMX_TRUE_ENTRY_CTLS; msr++ )
+            rdmsrl(msr, *get_vmx_msr_ptr(p, msr));
+    }
+
+    if ( p->procbased_ctls.allowed_1.activate_secondary_controls )
+    {
+        p->available |= gen_vmx_msr_mask(MSR_IA32_VMX_PROCBASED_CTLS2,
+                                         MSR_IA32_VMX_PROCBASED_CTLS2);
+        msr = MSR_IA32_VMX_PROCBASED_CTLS2;
+        rdmsrl(msr, *get_vmx_msr_ptr(p, msr));
+
+        if ( p->procbased_ctls2.allowed_1.enable_ept ||
+             p->procbased_ctls2.allowed_1.enable_vpid )
+        {
+            p->available |= gen_vmx_msr_mask(MSR_IA32_VMX_EPT_VPID_CAP,
+                                             MSR_IA32_VMX_EPT_VPID_CAP);
+            msr = MSR_IA32_VMX_EPT_VPID_CAP;
+            rdmsrl(msr, *get_vmx_msr_ptr(p, msr));
+        }
+
+        if ( p->procbased_ctls2.allowed_1.enable_vm_functions )
+        {
+            p->available |= gen_vmx_msr_mask(MSR_IA32_VMX_VMFUNC,
+                                             MSR_IA32_VMX_VMFUNC);
+            msr = MSR_IA32_VMX_VMFUNC;
+            rdmsrl(msr, *get_vmx_msr_ptr(p, msr));
+        }
+    }
+
+    /* Check that secondary CPUs have exactly the same bits in VMX MSRs */
+    if ( !bsp && memcmp(p, &raw_vmx_msr_policy, sizeof(*p)) != 0 )
+    {
+        for ( msr = MSR_IA32_VMX_BASIC; msr <= MSR_IA32_VMX_LAST; msr++ )
+        {
+            if ( get_vmx_msr_val(p, msr) !=
+                 get_vmx_msr_val(&raw_vmx_msr_policy, msr) )
+            {
+                printk("VMX msr %#x: saw 0x%016"PRIx64" expected 0x%016"PRIx64"\n",
+                        msr, get_vmx_msr_val(p, msr),
+                        get_vmx_msr_val(&raw_vmx_msr_policy, msr));
+            }
+        }
+
+        printk("VMX: Capabilities fatally differ between CPU%d and boot CPU\n",
+               smp_processor_id());
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
 static u32 adjust_vmx_controls(
     const char *name, u32 ctl_min, u32 ctl_opt, u32 msr, bool_t *mismatch)
 {
@@ -197,13 +271,6 @@ static u32 adjust_vmx_controls(
     }
 
     return ctl;
-}
-
-static bool_t cap_check(const char *name, u32 expected, u32 saw)
-{
-    if ( saw != expected )
-        printk("VMX %s: saw %#x expected %#x\n", name, saw, expected);
-    return saw != expected;
 }
 
 static int vmx_init_vmcs_config(void)
@@ -438,56 +505,6 @@ static int vmx_init_vmcs_config(void)
             return -EINVAL;
         }
     }
-    else
-    {
-        /* Globals are already initialised: re-check them. */
-        mismatch |= cap_check(
-            "VMCS revision ID",
-            vmcs_revision_id, vmx_basic_msr_low & VMX_BASIC_REVISION_MASK);
-        mismatch |= cap_check(
-            "Pin-Based Exec Control",
-            vmx_pin_based_exec_control, _vmx_pin_based_exec_control);
-        mismatch |= cap_check(
-            "CPU-Based Exec Control",
-            vmx_cpu_based_exec_control, _vmx_cpu_based_exec_control);
-        mismatch |= cap_check(
-            "Secondary Exec Control",
-            vmx_secondary_exec_control, _vmx_secondary_exec_control);
-        mismatch |= cap_check(
-            "VMExit Control",
-            vmx_vmexit_control, _vmx_vmexit_control);
-        mismatch |= cap_check(
-            "VMEntry Control",
-            vmx_vmentry_control, _vmx_vmentry_control);
-        mismatch |= cap_check(
-            "EPT and VPID Capability",
-            vmx_ept_vpid_cap, _vmx_ept_vpid_cap);
-        mismatch |= cap_check(
-            "VMFUNC Capability",
-            vmx_vmfunc, _vmx_vmfunc);
-        if ( cpu_has_vmx_ins_outs_instr_info !=
-             !!(vmx_basic_msr_high & (VMX_BASIC_INS_OUT_INFO >> 32)) )
-        {
-            printk("VMX INS/OUTS Instruction Info: saw %d expected %d\n",
-                   !!(vmx_basic_msr_high & (VMX_BASIC_INS_OUT_INFO >> 32)),
-                   cpu_has_vmx_ins_outs_instr_info);
-            mismatch = 1;
-        }
-        if ( (vmx_basic_msr_high & (VMX_BASIC_VMCS_SIZE_MASK >> 32)) !=
-             ((vmx_basic_msr & VMX_BASIC_VMCS_SIZE_MASK) >> 32) )
-        {
-            printk("VMX: CPU%d unexpected VMCS size %Lu\n",
-                   smp_processor_id(),
-                   vmx_basic_msr_high & (VMX_BASIC_VMCS_SIZE_MASK >> 32));
-            mismatch = 1;
-        }
-        if ( mismatch )
-        {
-            printk("VMX: Capabilities fatally differ between CPU%d and CPU0\n",
-                   smp_processor_id());
-            return -EINVAL;
-        }
-    }
 
     /* IA-32 SDM Vol 3B: 64-bit CPUs always have VMX_BASIC_MSR[48]==0. */
     if ( vmx_basic_msr_high & (VMX_BASIC_32BIT_ADDRESSES >> 32) )
@@ -636,6 +653,9 @@ int vmx_cpu_up(void)
     u64 cr0, vmx_cr0_fixed0, vmx_cr0_fixed1;
 
     BUG_ON(!(read_cr4() & X86_CR4_VMXE));
+
+    if ( (rc = calculate_vmx_raw_policy(false)) != 0 )
+        return rc;
 
     /* 
      * Ensure the current processor operating mode meets 
