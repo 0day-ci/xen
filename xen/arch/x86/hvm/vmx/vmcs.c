@@ -257,7 +257,8 @@ static u32 adjust_vmx_controls(
 {
     u32 vmx_msr_low, vmx_msr_high, ctl = ctl_min | ctl_opt;
 
-    rdmsr(msr, vmx_msr_low, vmx_msr_high);
+    vmx_msr_low = get_vmx_msr_val(&raw_vmx_msr_policy, msr);
+    vmx_msr_high = get_vmx_msr_val(&raw_vmx_msr_policy, msr) >> 32;
 
     ctl &= vmx_msr_high; /* bit == 0 in high word ==> must be zero */
     ctl |= vmx_msr_low;  /* bit == 1 in low word  ==> must be one  */
@@ -275,18 +276,15 @@ static u32 adjust_vmx_controls(
 
 static int vmx_init_vmcs_config(void)
 {
-    u32 vmx_basic_msr_low, vmx_basic_msr_high, min, opt;
+    u32 min, opt;
     u32 _vmx_pin_based_exec_control;
     u32 _vmx_cpu_based_exec_control;
     u32 _vmx_secondary_exec_control = 0;
     u64 _vmx_ept_vpid_cap = 0;
-    u64 _vmx_misc_cap = 0;
     u32 _vmx_vmexit_control;
     u32 _vmx_vmentry_control;
     u64 _vmx_vmfunc = 0;
     bool_t mismatch = 0;
-
-    rdmsr(MSR_IA32_VMX_BASIC, vmx_basic_msr_low, vmx_basic_msr_high);
 
     min = (PIN_BASED_EXT_INTR_MASK |
            PIN_BASED_NMI_EXITING);
@@ -321,7 +319,7 @@ static int vmx_init_vmcs_config(void)
         _vmx_cpu_based_exec_control &=
             ~(CPU_BASED_CR8_LOAD_EXITING | CPU_BASED_CR8_STORE_EXITING);
 
-    if ( _vmx_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS )
+    if ( vmx_msr_available(&raw_vmx_msr_policy, MSR_IA32_VMX_PROCBASED_CTLS2) )
     {
         min = 0;
         opt = (SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES |
@@ -335,8 +333,7 @@ static int vmx_init_vmcs_config(void)
                SECONDARY_EXEC_ENABLE_VIRT_EXCEPTIONS |
                SECONDARY_EXEC_XSAVES |
                SECONDARY_EXEC_TSC_SCALING);
-        rdmsrl(MSR_IA32_VMX_MISC, _vmx_misc_cap);
-        if ( _vmx_misc_cap & VMX_MISC_VMWRITE_ALL )
+        if ( raw_vmx_msr_policy.misc.vmwrite_all )
             opt |= SECONDARY_EXEC_ENABLE_VMCS_SHADOWING;
         if ( opt_vpid_enabled )
             opt |= SECONDARY_EXEC_ENABLE_VPID;
@@ -361,10 +358,9 @@ static int vmx_init_vmcs_config(void)
     }
 
     /* The IA32_VMX_EPT_VPID_CAP MSR exists only when EPT or VPID available */
-    if ( _vmx_secondary_exec_control & (SECONDARY_EXEC_ENABLE_EPT |
-                                        SECONDARY_EXEC_ENABLE_VPID) )
+    if ( vmx_msr_available(&raw_vmx_msr_policy, MSR_IA32_VMX_EPT_VPID_CAP) )
     {
-        rdmsrl(MSR_IA32_VMX_EPT_VPID_CAP, _vmx_ept_vpid_cap);
+        _vmx_ept_vpid_cap = raw_vmx_msr_policy.ept_vpid_cap.raw;
 
         if ( !opt_ept_ad )
             _vmx_ept_vpid_cap &= ~VMX_EPT_AD_BIT;
@@ -409,10 +405,14 @@ static int vmx_init_vmcs_config(void)
          * To use EPT we expect to be able to clear certain intercepts.
          * We check VMX_BASIC_MSR[55] to correctly handle default controls.
          */
-        uint32_t must_be_one, must_be_zero, msr = MSR_IA32_VMX_PROCBASED_CTLS;
-        if ( vmx_basic_msr_high & (VMX_BASIC_DEFAULT1_ZERO >> 32) )
-            msr = MSR_IA32_VMX_TRUE_PROCBASED_CTLS;
-        rdmsr(msr, must_be_one, must_be_zero);
+        uint32_t must_be_one = raw_vmx_msr_policy.procbased_ctls.allowed_0.raw;
+        uint32_t must_be_zero = raw_vmx_msr_policy.procbased_ctls.allowed_1.raw;
+        if ( vmx_msr_available(&raw_vmx_msr_policy,
+                               MSR_IA32_VMX_TRUE_PROCBASED_CTLS) )
+        {
+            must_be_one = raw_vmx_msr_policy.true_procbased_ctls.allowed_0.raw;
+            must_be_zero = raw_vmx_msr_policy.true_procbased_ctls.allowed_1.raw;
+        }
         if ( must_be_one & (CPU_BASED_INVLPG_EXITING |
                             CPU_BASED_CR3_LOAD_EXITING |
                             CPU_BASED_CR3_STORE_EXITING) )
@@ -453,9 +453,9 @@ static int vmx_init_vmcs_config(void)
         _vmx_pin_based_exec_control  &= ~ PIN_BASED_POSTED_INTERRUPT;
 
     /* The IA32_VMX_VMFUNC MSR exists only when VMFUNC is available */
-    if ( _vmx_secondary_exec_control & SECONDARY_EXEC_ENABLE_VM_FUNCTIONS )
+    if ( vmx_msr_available(&raw_vmx_msr_policy, MSR_IA32_VMX_VMFUNC) )
     {
-        rdmsrl(MSR_IA32_VMX_VMFUNC, _vmx_vmfunc);
+        _vmx_vmfunc = raw_vmx_msr_policy.vmfunc.raw;
 
         /*
          * VMFUNC leaf 0 (EPTP switching) must be supported.
@@ -481,33 +481,31 @@ static int vmx_init_vmcs_config(void)
     if ( !vmx_pin_based_exec_control )
     {
         /* First time through. */
-        vmcs_revision_id           = vmx_basic_msr_low & VMX_BASIC_REVISION_MASK;
+        vmcs_revision_id           = raw_vmx_msr_policy.basic.vmcs_revision_id;
         vmx_pin_based_exec_control = _vmx_pin_based_exec_control;
         vmx_cpu_based_exec_control = _vmx_cpu_based_exec_control;
         vmx_secondary_exec_control = _vmx_secondary_exec_control;
         vmx_ept_vpid_cap           = _vmx_ept_vpid_cap;
         vmx_vmexit_control         = _vmx_vmexit_control;
         vmx_vmentry_control        = _vmx_vmentry_control;
-        vmx_basic_msr              = ((u64)vmx_basic_msr_high << 32) |
-                                     vmx_basic_msr_low;
+        vmx_basic_msr              = raw_vmx_msr_policy.basic.raw;
         vmx_vmfunc                 = _vmx_vmfunc;
         vmx_virt_exception         = !!(_vmx_secondary_exec_control &
                                        SECONDARY_EXEC_ENABLE_VIRT_EXCEPTIONS);
         vmx_display_features();
 
         /* IA-32 SDM Vol 3B: VMCS size is never greater than 4kB. */
-        if ( (vmx_basic_msr_high & (VMX_BASIC_VMCS_SIZE_MASK >> 32)) >
-             PAGE_SIZE )
+        if ( raw_vmx_msr_policy.basic.vmcs_region_size > PAGE_SIZE )
         {
-            printk("VMX: CPU%d VMCS size is too big (%Lu bytes)\n",
+            printk("VMX: CPU%d VMCS size is too big (%d bytes)\n",
                    smp_processor_id(),
-                   vmx_basic_msr_high & (VMX_BASIC_VMCS_SIZE_MASK >> 32));
+                   raw_vmx_msr_policy.basic.vmcs_region_size);
             return -EINVAL;
         }
     }
 
     /* IA-32 SDM Vol 3B: 64-bit CPUs always have VMX_BASIC_MSR[48]==0. */
-    if ( vmx_basic_msr_high & (VMX_BASIC_32BIT_ADDRESSES >> 32) )
+    if ( raw_vmx_msr_policy.basic.addresses_32bit )
     {
         printk("VMX: CPU%d limits VMX structure pointers to 32 bits\n",
                smp_processor_id());
@@ -515,9 +513,7 @@ static int vmx_init_vmcs_config(void)
     }
 
     /* Require Write-Back (WB) memory type for VMCS accesses. */
-    opt = (vmx_basic_msr_high & (VMX_BASIC_MEMORY_TYPE_MASK >> 32)) /
-          ((VMX_BASIC_MEMORY_TYPE_MASK & -VMX_BASIC_MEMORY_TYPE_MASK) >> 32);
-    if ( opt != MTRR_TYPE_WRBACK )
+    if ( raw_vmx_msr_policy.basic.memory_type != MTRR_TYPE_WRBACK )
     {
         printk("VMX: CPU%d has unexpected VMCS access type %u\n",
                smp_processor_id(), opt);
@@ -662,8 +658,8 @@ int vmx_cpu_up(void)
      * the requred CRO fixed bits in VMX operation. 
      */
     cr0 = read_cr0();
-    rdmsrl(MSR_IA32_VMX_CR0_FIXED0, vmx_cr0_fixed0);
-    rdmsrl(MSR_IA32_VMX_CR0_FIXED1, vmx_cr0_fixed1);
+    vmx_cr0_fixed0 = raw_vmx_msr_policy.cr0_fixed_0.raw;
+    vmx_cr0_fixed1 = raw_vmx_msr_policy.cr0_fixed_1.raw;
     if ( (~cr0 & vmx_cr0_fixed0) || (cr0 & ~vmx_cr0_fixed1) )
     {
         printk("CPU%d: some settings of host CR0 are " 
