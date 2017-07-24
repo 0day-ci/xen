@@ -144,6 +144,40 @@ static void __init vmx_display_features(void)
         printk(" - none\n");
 }
 
+bool vmx_msr_available(const struct vmx_msr_policy *p, uint32_t msr)
+{
+    if ( msr < MSR_IA32_VMX_BASIC || msr > MSR_IA32_VMX_LAST )
+        return 0;
+
+    return p->available & (1u << (msr - MSR_IA32_VMX_BASIC));
+}
+
+uint64_t get_vmx_msr_val(const struct vmx_msr_policy *p, uint32_t msr)
+{
+    if ( !vmx_msr_available(p, msr))
+        return 0;
+
+    return p->msr[msr - MSR_IA32_VMX_BASIC];
+}
+
+uint64_t *get_vmx_msr_ptr(struct vmx_msr_policy *p, uint32_t msr)
+{
+    if ( !vmx_msr_available(p, msr))
+        return NULL;
+
+    return &p->msr[msr - MSR_IA32_VMX_BASIC];
+}
+
+uint32_t gen_vmx_msr_mask(uint32_t start_msr, uint32_t end_msr)
+{
+    if ( start_msr < MSR_IA32_VMX_BASIC || start_msr > MSR_IA32_VMX_LAST ||
+         end_msr < MSR_IA32_VMX_BASIC || end_msr > MSR_IA32_VMX_LAST )
+        return 0;
+
+    return ((1u << (end_msr - start_msr + 1)) - 1) <<
+           (start_msr - MSR_IA32_VMX_BASIC);
+}
+
 static u32 adjust_vmx_controls(
     const char *name, u32 ctl_min, u32 ctl_opt, u32 msr, bool_t *mismatch)
 {
@@ -1956,6 +1990,50 @@ void __init setup_vmcs_dump(void)
     register_keyhandler('v', vmcs_dump, "dump VT-x VMCSs", 1);
 }
 
+static void __init __maybe_unused build_assertions(void)
+{
+    struct vmx_msr_policy policy;
+
+    BUILD_BUG_ON(sizeof(policy.basic) !=
+                 sizeof(policy.basic.raw));
+    BUILD_BUG_ON(sizeof(policy.pinbased_ctls) !=
+                 sizeof(policy.pinbased_ctls.raw));
+    BUILD_BUG_ON(sizeof(policy.procbased_ctls) !=
+                 sizeof(policy.procbased_ctls.raw));
+    BUILD_BUG_ON(sizeof(policy.exit_ctls) !=
+                 sizeof(policy.exit_ctls.raw));
+    BUILD_BUG_ON(sizeof(policy.entry_ctls) !=
+                 sizeof(policy.entry_ctls.raw));
+    BUILD_BUG_ON(sizeof(policy.misc) !=
+                 sizeof(policy.misc.raw));
+    BUILD_BUG_ON(sizeof(policy.cr0_fixed_0) !=
+                 sizeof(policy.cr0_fixed_0.raw));
+    BUILD_BUG_ON(sizeof(policy.cr0_fixed_1) !=
+                 sizeof(policy.cr0_fixed_1.raw));
+    BUILD_BUG_ON(sizeof(policy.cr4_fixed_0) !=
+                 sizeof(policy.cr4_fixed_0.raw));
+    BUILD_BUG_ON(sizeof(policy.cr4_fixed_1) !=
+                 sizeof(policy.cr4_fixed_1.raw));
+    BUILD_BUG_ON(sizeof(policy.vmcs_enum) !=
+                 sizeof(policy.vmcs_enum.raw));
+    BUILD_BUG_ON(sizeof(policy.procbased_ctls2) !=
+                 sizeof(policy.procbased_ctls2.raw));
+    BUILD_BUG_ON(sizeof(policy.ept_vpid_cap) !=
+                 sizeof(policy.ept_vpid_cap.raw));
+    BUILD_BUG_ON(sizeof(policy.true_pinbased_ctls) !=
+                 sizeof(policy.true_pinbased_ctls.raw));
+    BUILD_BUG_ON(sizeof(policy.true_procbased_ctls) !=
+                 sizeof(policy.true_procbased_ctls.raw));
+    BUILD_BUG_ON(sizeof(policy.true_exit_ctls) !=
+                 sizeof(policy.true_exit_ctls.raw));
+    BUILD_BUG_ON(sizeof(policy.true_entry_ctls) !=
+                 sizeof(policy.true_entry_ctls.raw));
+    BUILD_BUG_ON(sizeof(policy.vmfunc) !=
+                 sizeof(policy.vmfunc.raw));
+
+    BUILD_BUG_ON(MSR_IA32_VMX_LAST - MSR_IA32_VMX_BASIC + 1 >
+                 sizeof(policy.available) * 8);
+}
 
 /*
  * Local variables:

@@ -562,6 +562,386 @@ void vmx_domain_flush_pml_buffers(struct domain *d);
 
 void vmx_domain_update_eptp(struct domain *d);
 
+union vmx_pin_based_exec_control_bits {
+    uint32_t raw;
+    struct {
+        bool ext_intr_exiting:1;
+        uint32_t             :2;  /* 1:2 reserved */
+        bool      nmi_exiting:1;
+        uint32_t             :1;  /* 4 reserved */
+        bool     virtual_nmis:1;
+        bool    preempt_timer:1;
+        bool posted_interrupt:1;
+        uint32_t             :24; /* 8:31 reserved */
+    };
+};
+
+union vmx_cpu_based_exec_control_bits {
+    uint32_t raw;
+    struct {
+        uint32_t                        :2;  /* 0:1 reserved */
+        bool        virtual_intr_pending:1;
+        bool           use_tsc_offseting:1;
+        uint32_t                        :3;  /* 4:6 reserved */
+        bool                 hlt_exiting:1;
+        uint32_t                        :1;  /* 8 reserved */
+        bool              invlpg_exiting:1;
+        bool               mwait_exiting:1;
+        bool               rdpmc_exiting:1;
+        bool               rdtsc_exiting:1;
+        uint32_t                        :2;  /* 13:14 reserved */
+        bool            cr3_load_exiting:1;
+        bool           cr3_store_exiting:1;
+        uint32_t                        :2;  /* 17:18 reserved */
+        bool            cr8_load_exiting:1;
+        bool           cr8_store_exiting:1;
+        bool                tpr_shadow_0:1;
+        bool         virtual_nmi_pending:1;
+        bool              mov_dr_exiting:1;
+        bool           uncond_io_exiting:1;
+        bool          activate_io_bitmap:1;
+        uint32_t                        :1;  /* 26 reserved */
+        bool           monitor_trap_flag:1;
+        bool         activate_msr_bitmap:1;
+        bool             monitor_exiting:1;
+        bool               pause_exiting:1;
+        bool activate_secondary_controls:1;
+    };
+};
+
+union vmx_vmexit_control_bits {
+    uint32_t raw;
+    struct {
+        uint32_t                    :2;  /* 0:1 reserved */
+        bool       save_debug_cntrls:1;
+        uint32_t                    :6;  /* 3:8 reserved */
+        bool              ia32e_mode:1;
+        uint32_t                    :2;  /* 10:11 reserved */
+        bool   load_perf_global_ctrl:1;
+        uint32_t                    :2;  /* 13:14 reserved */
+        bool        ack_intr_on_exit:1;
+        uint32_t                    :2;  /* 16:17 reserved */
+        bool          save_guest_pat:1;
+        bool           load_host_pat:1;
+        bool         save_guest_efer:1;
+        bool          load_host_efer:1;
+        bool      save_preempt_timer:1;
+        bool           clear_bndcfgs:1;
+        bool conceal_vmexits_from_pt:1;
+        uint32_t                    :7;  /* 25:31 reserved */
+    };
+};
+
+union vmx_vmentry_control_bits {
+    uint32_t raw;
+    struct {
+        uint32_t                        :2;  /* 0:1 reserved */
+        bool           load_debug_cntrls:1;
+        uint32_t                        :6;  /* 3:8 reserved */
+        bool                  ia32e_mode:1;
+        bool                         smm:1;
+        bool          deact_dual_monitor:1;
+        uint32_t                        :1;  /* 12 reserved */
+        bool       load_perf_global_ctrl:1;
+        bool              load_guest_pat:1;
+        bool             load_guest_efer:1;
+        bool                load_bndcfgs:1;
+        bool   conceal_vmentries_from_pt:1;
+        uint32_t                        :14; /* 18:31 reserved */
+    };
+};
+
+union vmx_secondary_exec_control_bits {
+    uint32_t raw;
+    struct {
+        bool    virtualize_apic_accesses:1;
+        bool                  enable_ept:1;
+        bool    descriptor_table_exiting:1;
+        bool               enable_rdtscp:1;
+        bool      virtualize_x2apic_mode:1;
+        bool                 enable_vpid:1;
+        bool              wbinvd_exiting:1;
+        bool          unrestricted_guest:1;
+        bool          apic_register_virt:1;
+        bool       virtual_intr_delivery:1;
+        bool          pause_loop_exiting:1;
+        bool              rdrand_exiting:1;
+        bool              enable_invpcid:1;
+        bool         enable_vm_functions:1;
+        bool       enable_vmcs_shadowing:1;
+        bool               encls_exiting:1;
+        bool              rdseed_exiting:1;
+        bool                  enable_pml:1;
+        bool      enable_virt_exceptions:1;
+        bool conceal_vmx_nonroot_from_pt:1;
+        bool                      xsaves:1;
+        uint32_t                        :1;  /* 21 reserved */
+        bool   ept_mode_based_exec_cntrl:1;
+        uint32_t                        :2;  /* 23:24 reserved */
+        bool                 tsc_scaling:1;
+        uint32_t                        :6;  /* 26:31 reserved */
+    };
+};
+
+struct cr0_bits {
+    bool     pe:1;
+    bool     mp:1;
+    bool     em:1;
+    bool     ts:1;
+    bool     et:1;
+    bool     ne:1;
+    uint32_t   :10; /* 6:15 reserved */
+    bool     wp:1;
+    uint32_t   :1;  /* 17 reserved */
+    bool     am:1;
+    uint32_t   :10; /* 19:28 reserved */
+    bool     nw:1;
+    bool     cd:1;
+    bool     pg:1;
+};
+
+struct cr4_bits {
+    bool        vme:1;
+    bool        pvi:1;
+    bool        tsd:1;
+    bool         de:1;
+    bool        pse:1;
+    bool        pae:1;
+    bool        mce:1;
+    bool        pge:1;
+    bool        pce:1;
+    bool     osfxsr:1;
+    bool osxmmexcpt:1;
+    bool       umip:1;
+    uint32_t       :1;  /* 12 reserved */
+    bool       vmxe:1;
+    bool       smxe:1;
+    uint32_t       :1;  /* 15 reserved */
+    bool   fsgsbase:1;
+    bool      pcide:1;
+    bool    osxsave:1;
+    uint32_t       :1;  /* 19 reserved */
+    bool       smep:1;
+    bool       smap:1;
+    bool        pke:1;
+    uint32_t       :9;  /* 23:31 reserved */
+};
+
+struct vmx_msr_policy
+{
+    /*
+     * Bitmap of readable MSRs, starting from MSR_IA32_VMX_BASIC,
+     * derived from contents of MSRs in this structure.
+     */
+    uint32_t available;
+
+    union {
+        uint64_t msr[MSR_IA32_VMX_LAST - MSR_IA32_VMX_BASIC + 1];
+
+        struct {
+            /* MSR_IA32_VMX_BASIC */
+            union {
+                uint64_t raw;
+                struct {
+                    uint32_t vmcs_revision_id:31;
+                    bool                  mbz:1;  /* 31 always zero */
+                    uint32_t vmcs_region_size:13;
+                    uint32_t                 :3;  /* 45:47 reserved */
+                    bool      addresses_32bit:1;
+                    bool         dual_monitor:1;
+                    uint32_t      memory_type:4;
+                    bool         ins_out_info:1;
+                    bool        default1_zero:1;
+                    uint32_t                 :8;  /* 56:63 reserved */
+                };
+            } basic;
+
+            /* MSR_IA32_VMX_PINBASED_CTLS */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_pin_based_exec_control_bits allowed_0;
+                    union vmx_pin_based_exec_control_bits allowed_1;
+                };
+            } pinbased_ctls;
+
+            /* MSR_IA32_VMX_PROCBASED_CTLS */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_cpu_based_exec_control_bits allowed_0;
+                    union vmx_cpu_based_exec_control_bits allowed_1;
+                };
+            } procbased_ctls;
+
+            /* MSR_IA32_VMX_EXIT_CTLS */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_vmexit_control_bits allowed_0;
+                    union vmx_vmexit_control_bits allowed_1;
+                };
+            } exit_ctls;
+
+            /* MSR_IA32_VMX_ENTRY_CTLS */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_vmentry_control_bits allowed_0;
+                    union vmx_vmentry_control_bits allowed_1;
+                };
+            } entry_ctls;
+
+            /* MSR_IA32_VMX_MISC */
+            union {
+                uint64_t raw;
+                struct {
+                    uint32_t      preempt_timer_scale:5;
+                    bool            vmexit_stores_lma:1;
+                    bool           hlt_activity_state:1;
+                    bool      shutdown_activity_state:1;
+                    bool wait_for_sipi_activity_state:1;
+                    uint32_t                         :5;  /* 9:13 reserved */
+                    bool                    pt_in_vmx:1;
+                    bool          ia32_smbase_support:1;
+                    uint32_t               cr3_target:9;
+                    uint32_t       max_msr_load_count:3;
+                    bool    ia32_smm_monitor_ctl_bit2:1;
+                    bool                  vmwrite_all:1;
+                    bool           inject_ilen0_event:1;
+                    uint32_t                         :1;  /* 31 reserved */
+                    uint32_t         mseg_revision_id;
+                };
+            } misc;
+
+            /* MSR_IA32_VMX_CR0_FIXED0 */
+            union {
+                uint64_t raw;
+                struct cr0_bits allowed_0;
+            } cr0_fixed_0;
+
+            /* MSR_IA32_VMX_CR0_FIXED1 */
+            union {
+                uint64_t raw;
+                struct cr0_bits allowed_1;
+            } cr0_fixed_1;
+
+            /* MSR_IA32_VMX_CR4_FIXED0 */
+            union {
+                uint64_t raw;
+                struct cr4_bits allowed_0;
+            } cr4_fixed_0;
+
+            /* MSR_IA32_VMX_CR4_FIXED1 */
+            union {
+                uint64_t raw;
+                struct cr4_bits allowed_1;
+            } cr4_fixed_1;
+
+            /* MSR_IA32_VMX_VMCS_ENUM */
+            union {
+                uint64_t raw;
+                struct {
+                    uint32_t                      :1;  /* 0 reserved */
+                    uint32_t vmcs_encoding_max_idx:9;
+                    uint64_t                      :54; /* 10:63 reserved */
+                };
+            } vmcs_enum;
+
+            /* MSR_IA32_VMX_PROCBASED_CTLS2 */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_secondary_exec_control_bits allowed_0;
+                    union vmx_secondary_exec_control_bits allowed_1;
+                };
+            } procbased_ctls2;
+
+            /* MSR_IA32_VMX_EPT_VPID_CAP */
+            union {
+                uint64_t raw;
+                struct {
+                    bool     exec_only_supported:1;
+                    uint32_t                    :5;  /* 1:5 reserved */
+                    bool walk_length_4_supported:1;
+                    uint32_t                    :1;  /* 7 reserved */
+                    bool          memory_type_uc:1;
+                    uint32_t                    :5;  /* 9:13 reserved */
+                    bool          memory_type_wb:1;
+                    uint32_t                    :1;  /* 15 reserved */
+                    bool           superpage_2mb:1;
+                    bool           superpage_1gb:1;
+                    uint32_t                    :2;  /* 18:19 reserved */
+                    bool      invept_instruction:1;
+                    bool                  ad_bit:1;
+                    bool advanced_ept_violations:1;
+                    uint32_t                    :2;  /* 23:24 reserved */
+                    bool   invept_single_context:1;
+                    bool      invept_all_context:1;
+                    uint32_t                    :5;  /* 27:31 reserved */
+                    bool     invvpid_instruction:1;
+                    uint32_t                    :7;  /* 33:39 reserved */
+                    bool invvpid_individual_addr:1;
+                    bool  invvpid_single_context:1;
+                    bool     invvpid_all_context:1;
+                    bool invvpid_single_context_retaining_global:1;
+                    uint32_t                    :20; /* 44:63 reserved */
+                };
+            } ept_vpid_cap;
+
+            /* MSR_IA32_VMX_TRUE_PINBASED_CTLS */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_pin_based_exec_control_bits allowed_0;
+                    union vmx_pin_based_exec_control_bits allowed_1;
+                };
+            } true_pinbased_ctls;
+
+            /* MSR_IA32_VMX_TRUE_PROCBASED_CTLS */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_cpu_based_exec_control_bits allowed_0;
+                    union vmx_cpu_based_exec_control_bits allowed_1;
+                };
+            } true_procbased_ctls;
+
+            /* MSR_IA32_VMX_TRUE_EXIT_CTLS */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_vmexit_control_bits allowed_0;
+                    union vmx_vmexit_control_bits allowed_1;
+                };
+            } true_exit_ctls;
+
+            /* MSR_IA32_VMX_TRUE_ENTRY_CTLS */
+            union {
+                uint64_t raw;
+                struct {
+                    union vmx_vmentry_control_bits allowed_0;
+                    union vmx_vmentry_control_bits allowed_1;
+                };
+            } true_entry_ctls;
+
+            /* MSR_IA32_VMX_VMFUNC */
+            union {
+                uint64_t raw;
+                struct {
+                    bool eptp_switching:1;
+                    uint64_t           :63; /* 1:63 reserved */
+                };
+            } vmfunc;
+        };
+    };
+};
+
+bool vmx_msr_available(const struct vmx_msr_policy *p, uint32_t msr);
+uint64_t get_vmx_msr_val(const struct vmx_msr_policy *p, uint32_t msr);
+uint64_t *get_vmx_msr_ptr(struct vmx_msr_policy *p, uint32_t msr);
+uint32_t gen_vmx_msr_mask(uint32_t start_msr, uint32_t end_msr);
+
 #endif /* ASM_X86_HVM_VMX_VMCS_H__ */
 
 /*
