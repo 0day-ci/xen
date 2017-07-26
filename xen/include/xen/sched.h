@@ -483,6 +483,12 @@ struct domain
         unsigned int guest_request_enabled       : 1;
         unsigned int guest_request_sync          : 1;
     } monitor;
+
+#ifdef CONFIG_TRACE_PC
+    uint64_t* tracing_buffer;
+    unsigned int tracing_buffer_pos;
+    unsigned int tracing_buffer_size;
+#endif
 };
 
 /* Protect updates/reads (resp.) of domain_list and domain_hash. */

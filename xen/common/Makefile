@@ -6,6 +6,8 @@ obj-y += cpupool.o
 obj-$(CONFIG_HAS_DEVICE_TREE) += device_tree.o
 obj-y += domctl.o
 obj-y += domain.o
+obj-y += trace_pc.o
+obj-$(CONFIG_TRACE_PC) += trace_pc_stub.o
 obj-y += event_2l.o
 obj-y += event_channel.o
 obj-y += event_fifo.o
@@ -80,3 +82,14 @@ subdir-$(CONFIG_GCOV) += gcov
 
 subdir-y += libelf
 subdir-$(CONFIG_HAS_DEVICE_TREE) += libfdt
+
+objs-need-tracing := bsearch.o \
+    decompress.o device_tree.o domain.o domctl.o earlycpio.o grant_table.o \
+    guestcopy.o gunzip.o inflate.o kernel.o kexec.o keyhandler.o kimage.o \
+    lib.o livepatch.o lzo.o mem_access.o memory.o multicall.o notifier.o \
+    page_alloc.o pdx.o perfc.o radix_tree.o rangeset.o \
+    rbtree.o shutdown.o sort.o stop_machine.o \
+    symbols.o symbols-dummy.o sysctl.o time.o tmem.o \
+    tmem_control.o tmem_xen.o trace.o unlz4.o unlzo.o unxz.o version.o \
+    virtual_region.o vmap.o vm_event.o warning.o xenoprof.o \
+    xmalloc_tlsf.o

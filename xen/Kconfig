@@ -38,4 +38,8 @@ config LTO
 
 	  If unsure, say N.
 
+config TRACE_PC
+    bool "Enable tracing e.g. for fuzzing"
+    default false
+
 source "Kconfig.debug"

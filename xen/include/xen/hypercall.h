@@ -83,6 +83,13 @@ do_xen_version(
     XEN_GUEST_HANDLE_PARAM(void) arg);
 
 extern long
+do_trace_pc(
+    domid_t dom_id,
+    int mode,
+    unsigned int size,
+    XEN_GUEST_HANDLE_PARAM(uint64_t) buf);
+
+extern long
 do_console_io(
     int cmd,
     int count,

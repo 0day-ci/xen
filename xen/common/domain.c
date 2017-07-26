@@ -874,6 +874,10 @@ void domain_destroy(struct domain *d)
     rcu_assign_pointer(*pd, d->next_in_hashbucket);
     spin_unlock(&domlist_update_lock);
 
+#ifdef CONFIG_TRACE_PC
+    xfree(d->tracing_buffer);
+#endif
+
     /* Schedule RCU asynchronous completion of domain destroy. */
     call_rcu(&d->rcu, complete_domain_destroy);
 }

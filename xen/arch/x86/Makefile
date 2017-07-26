@@ -74,6 +74,8 @@ efi-y := $(shell if [ ! -r $(BASEDIR)/include/xen/compile.h -o \
                       -O $(BASEDIR)/include/xen/compile.h ]; then \
                          echo '$(TARGET).efi'; fi)
 
+objs-need-tracing := cpuid.o hypercall.o
+
 ifneq ($(build_id_linker),)
 notes_phdrs = --notes
 else

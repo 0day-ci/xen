@@ -68,6 +68,7 @@ const hypercall_args_t hypercall_args_table[NR_hypercalls] =
     ARGS(xenpmu_op, 2),
     ARGS(dm_op, 3),
     ARGS(mca, 1),
+    ARGS(trace_pc, 4),
     ARGS(arch_1, 1),
 };
 
