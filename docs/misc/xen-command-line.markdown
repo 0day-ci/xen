@@ -474,6 +474,7 @@ combination with the `low_crashinfo` command line option.
 ### crashkernel
 > `= <ramsize-range>:<size>[,...][{@,<}<offset>]`
 > `= <size>[{@,<}<offset>]`
+> `= <size>,below=offset>]`
 
 Specify sizes and optionally placement of the crash kernel reservation
 area.  The `<ramsize-range>:<size>` pairs indicate how much memory to
