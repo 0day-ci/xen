@@ -83,6 +83,33 @@ int xc_get_cpu_featureset(xc_interface *xch, uint32_t index,
     return ret;
 }
 
+int xc_get_system_cpuid_policy(xc_interface *xch, uint32_t index,
+                               uint32_t *nr_leaves, xen_cpuid_leaf_t *leaves)
+{
+    DECLARE_SYSCTL;
+    DECLARE_HYPERCALL_BOUNCE(leaves,
+                             *nr_leaves * sizeof(*leaves),
+                             XC_HYPERCALL_BUFFER_BOUNCE_OUT);
+    int ret;
+
+    if ( xc_hypercall_bounce_pre(xch, leaves) )
+        return -1;
+
+    sysctl.cmd = XEN_SYSCTL_get_cpuid_policy;
+    sysctl.u.cpuid_policy.index = index;
+    sysctl.u.cpuid_policy.nr_leaves = *nr_leaves;
+    set_xen_guest_handle(sysctl.u.cpuid_policy.policy, leaves);
+
+    ret = do_sysctl(xch, &sysctl);
+
+    xc_hypercall_bounce_post(xch, leaves);
+
+    if ( !ret )
+        *nr_leaves = sysctl.u.cpuid_policy.nr_leaves;
+
+    return ret;
+}
+
 uint32_t xc_get_cpu_featureset_size(void)
 {
     return FEATURESET_NR_ENTRIES;

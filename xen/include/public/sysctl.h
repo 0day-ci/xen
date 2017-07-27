@@ -1095,6 +1095,28 @@ struct xen_sysctl_livepatch_op {
 typedef struct xen_sysctl_livepatch_op xen_sysctl_livepatch_op_t;
 DEFINE_XEN_GUEST_HANDLE(xen_sysctl_livepatch_op_t);
 
+#if defined(__i386__) || defined(__x86_64__)
+/*
+ * XEN_SYSCTL_get_cpuid_policy (x86 specific)
+ *
+ * Return information about CPUID policies available on this host.
+ *  -  Raw: The real cpuid values.
+ */
+struct xen_sysctl_cpuid_policy {
+#define XEN_SYSCTL_cpuid_policy_raw      0
+#define XEN_SYSCTL_cpuid_policy_host     1
+    uint32_t index;       /* IN: Which policy to query? */
+    uint32_t nr_leaves;   /* IN/OUT: Number of leaves in/written to
+                           * 'policy', or the maximum number of leaves if
+                           * the guest handle is NULL.  NB. All policies
+                           * come from the same space, so have the same
+                           * maximum length. */
+    XEN_GUEST_HANDLE_64(xen_cpuid_leaf_t) policy; /* OUT: */
+};
+typedef struct xen_sysctl_cpuid_policy xen_sysctl_cpuid_policy_t;
+DEFINE_XEN_GUEST_HANDLE(xen_sysctl_cpuid_policy_t);
+#endif
+
 struct xen_sysctl {
     uint32_t cmd;
 #define XEN_SYSCTL_readconsole                    1
@@ -1123,6 +1145,7 @@ struct xen_sysctl {
 #define XEN_SYSCTL_get_cpu_levelling_caps        25
 #define XEN_SYSCTL_get_cpu_featureset            26
 #define XEN_SYSCTL_livepatch_op                  27
+#define XEN_SYSCTL_get_cpuid_policy              28
     uint32_t interface_version; /* XEN_SYSCTL_INTERFACE_VERSION */
     union {
         struct xen_sysctl_readconsole       readconsole;
@@ -1151,6 +1174,9 @@ struct xen_sysctl {
         struct xen_sysctl_cpu_levelling_caps cpu_levelling_caps;
         struct xen_sysctl_cpu_featureset    cpu_featureset;
         struct xen_sysctl_livepatch_op      livepatch;
+#if defined(__i386__) || defined(__x86_64__)
+        struct xen_sysctl_cpuid_policy      cpuid_policy;
+#endif
         uint8_t                             pad[128];
     } u;
 };

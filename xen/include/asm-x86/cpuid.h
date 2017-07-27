@@ -70,6 +70,18 @@ DECLARE_PER_CPU(bool, cpuid_faulting_enabled);
 #define CPUID_GUEST_NR_EXTD       MAX(CPUID_GUEST_NR_EXTD_INTEL, \
                                       CPUID_GUEST_NR_EXTD_AMD)
 
+/*
+ * Maximum number of leaves a struct cpuid_policy turns into when serialised
+ * for interaction with the toolstack.  (Sum of all leaves in each union, less
+ * the entries in basic which sub-unions hang off of.)
+ */
+#define CPUID_MAX_SERIALISED_LEAVES                     \
+    (CPUID_GUEST_NR_BASIC +                             \
+     CPUID_GUEST_NR_FEAT - !!CPUID_GUEST_NR_FEAT +      \
+     CPUID_GUEST_NR_CACHE - !!CPUID_GUEST_NR_CACHE +    \
+     CPUID_GUEST_NR_XSTATE - !!CPUID_GUEST_NR_XSTATE +  \
+     CPUID_GUEST_NR_EXTD)
+
 struct cpuid_policy
 {
 #define DECL_BITFIELD(word) _DECL_BITFIELD(FEATURESET_ ## word)
@@ -264,6 +276,11 @@ void recalculate_cpuid_policy(struct domain *d);
 
 void guest_cpuid(const struct vcpu *v, uint32_t leaf,
                  uint32_t subleaf, struct cpuid_leaf *res);
+
+/* Serialise a cpuid policy and copy it to guest context. */
+int copy_cpuid_policy_to_guest(const struct cpuid_policy *policy,
+                               XEN_GUEST_HANDLE_64(xen_cpuid_leaf_t) leaves,
+                               uint32_t *nr_leaves);
 
 #endif /* __ASSEMBLY__ */
 #endif /* !__X86_CPUID_H__ */

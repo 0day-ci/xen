@@ -2,6 +2,7 @@
 #include <xen/lib.h>
 #include <xen/sched.h>
 #include <asm/cpuid.h>
+#include <asm/guest_access.h>
 #include <asm/hvm/hvm.h>
 #include <asm/hvm/nestedhvm.h>
 #include <asm/hvm/svm/svm.h>
@@ -594,6 +595,93 @@ int init_domain_cpuid_policy(struct domain *d)
 
     recalculate_cpuid_policy(d);
 
+    return 0;
+}
+
+/*
+ * Copy a single cpuid_leaf into a guest-provided xen_cpuid_leaf_t buffer,
+ * performing boundary checking against the guests array size.
+ */
+static int copy_leaf_to_guest(uint32_t leaf, uint32_t subleaf,
+                              const struct cpuid_leaf *data,
+                              XEN_GUEST_HANDLE_64(xen_cpuid_leaf_t) leaves,
+                              uint32_t *curr_leaf, uint32_t nr_leaves)
+{
+    const xen_cpuid_leaf_t val =
+        { leaf, subleaf, data->a, data->b, data->c, data->d };
+
+    if ( copy_to_guest_offset(leaves, *curr_leaf, &val, 1) )
+        return -EFAULT;
+
+    if ( ++(*curr_leaf) == nr_leaves )
+        return -ENOBUFS;
+
+    return 0;
+}
+
+/*
+ * Serialise a cpuid_policy object into a guest-provided array.  Writes at
+ * most CPUID_MAX_SERIALISED_LEAVES, but elides leaves which are entirely
+ * empty.  Returns -ENOBUFS if the guest array is too short.  On success,
+ * nr_leaves_p is updated with the actual number of leaves written.
+ */
+int copy_cpuid_policy_to_guest(const struct cpuid_policy *p,
+                               XEN_GUEST_HANDLE_64(xen_cpuid_leaf_t) leaves,
+                               uint32_t *nr_leaves_p)
+{
+    uint32_t nr_leaves = *nr_leaves_p, curr_leaf = 0, leaf, subleaf;
+
+    if ( nr_leaves == 0 )
+        return -ENOBUFS;
+
+#define COPY_LEAF(l, s, data)                                   \
+    ({ int ret; /* Elide leaves which are fully empty. */       \
+        if ( (*(uint64_t *)(&(data)->a) |                       \
+              *(uint64_t *)(&(data)->c)) &&                     \
+             (ret = copy_leaf_to_guest(                         \
+                 l, s, data, leaves, &curr_leaf, nr_leaves)) )  \
+            return ret;                                         \
+    })
+
+    /* Basic leaves. */
+    for ( leaf = 0; leaf <= min(p->basic.max_leaf + 0ul,
+                                ARRAY_SIZE(p->basic.raw) - 1); ++leaf )
+    {
+        switch ( leaf )
+        {
+        case 4:
+            for ( subleaf = 0; subleaf < ARRAY_SIZE(p->cache.raw); ++subleaf )
+                COPY_LEAF(leaf, subleaf, &p->cache.raw[subleaf]);
+            break;
+
+        case 7:
+            for ( subleaf = 0;
+                  subleaf <= min(p->feat.max_subleaf + 0ul,
+                                 ARRAY_SIZE(p->feat.raw) - 1); ++subleaf )
+                COPY_LEAF(leaf, subleaf, &p->feat.raw[subleaf]);
+            break;
+
+        case XSTATE_CPUID:
+            for ( subleaf = 0;
+                  subleaf <= min(63ul,
+                                 ARRAY_SIZE(p->xstate.raw) - 1); ++subleaf )
+                COPY_LEAF(leaf, subleaf, &p->xstate.raw[subleaf]);
+            break;
+
+        default:
+            COPY_LEAF(leaf, XEN_CPUID_NO_SUBLEAF, &p->basic.raw[leaf]);
+            break;
+        }
+    }
+
+    /* Extended leaves. */
+    for ( leaf = 0; leaf <= min(p->extd.max_leaf & 0xfffful,
+                                ARRAY_SIZE(p->extd.raw) - 1); ++leaf )
+        COPY_LEAF(leaf | 0x80000000, XEN_CPUID_NO_SUBLEAF, &p->extd.raw[leaf]);
+
+#undef COPY_LEAF
+
+    *nr_leaves_p = curr_leaf;
     return 0;
 }
 

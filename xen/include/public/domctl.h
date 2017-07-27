@@ -692,6 +692,14 @@ struct xen_domctl_cpuid {
 };
 typedef struct xen_domctl_cpuid xen_domctl_cpuid_t;
 DEFINE_XEN_GUEST_HANDLE(xen_domctl_cpuid_t);
+
+#define XEN_CPUID_NO_SUBLEAF 0xffffffffu
+struct xen_cpuid_leaf {
+    uint32_t leaf, subleaf;
+    uint32_t a, b, c, d;
+};
+typedef struct xen_cpuid_leaf xen_cpuid_leaf_t;
+DEFINE_XEN_GUEST_HANDLE(xen_cpuid_leaf_t);
 #endif
 
 /*

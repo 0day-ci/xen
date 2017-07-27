@@ -250,6 +250,42 @@ long arch_do_sysctl(
         break;
     }
 
+    case XEN_SYSCTL_get_cpuid_policy:
+    {
+        static const struct cpuid_policy *const policy_table[] = {
+            [XEN_SYSCTL_cpuid_policy_raw]  = &raw_cpuid_policy,
+            [XEN_SYSCTL_cpuid_policy_host] = &host_cpuid_policy,
+        };
+        const struct cpuid_policy *p = NULL;
+
+        /* Request for maximum number of leaves? */
+        if ( guest_handle_is_null(sysctl->u.cpuid_policy.policy) )
+        {
+            sysctl->u.cpuid_policy.nr_leaves = CPUID_MAX_SERIALISED_LEAVES;
+            if ( __copy_field_to_guest(u_sysctl, sysctl,
+                                       u.cpuid_policy.nr_leaves) )
+                ret = -EFAULT;
+            break;
+        }
+
+        /* Look up requested policy. */
+        if ( sysctl->u.cpuid_policy.index < ARRAY_SIZE(policy_table) )
+            p = policy_table[sysctl->u.cpuid_policy.index];
+
+        /* Bad policy index? */
+        if ( !p )
+            ret = -EINVAL;
+        else
+            ret = copy_cpuid_policy_to_guest(p, sysctl->u.cpuid_policy.policy,
+                                             &sysctl->u.cpuid_policy.nr_leaves);
+
+        /* Inform the caller of how many leaves we wrote. */
+        if ( !ret )
+            ret = __copy_field_to_guest(u_sysctl, sysctl,
+                                        u.cpuid_policy.nr_leaves);
+        break;
+    }
+
     default:
         ret = -ENOSYS;
         break;
