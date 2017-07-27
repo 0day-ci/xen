@@ -1678,6 +1678,91 @@ static int libxl_device_pci_compare(libxl_device_pci *d1,
     return COMPARE_PCI(d1, d2);
 }
 
+typedef struct {
+    uint32_t domid;
+    libxl__ev_xswatch watch;
+} libxl_aer_watch;
+static libxl_aer_watch aer_watch;
+
+static void aer_backend_watch_callback(libxl__egc *egc,
+                                       libxl__ev_xswatch *watch,
+                                       const char *watch_path,
+                                       const char *event_path)
+{
+    EGC_GC;
+    libxl_aer_watch *l_aer_watch = CONTAINER_OF(watch, *l_aer_watch, watch);
+    uint32_t domid = l_aer_watch->domid;
+    uint32_t dom, bus, dev, fn;
+    int rc;
+    char *p, *path, *dst_path;
+    const char *aerFailedSBDF;
+    struct xs_permissions rwperm[1];
+    libxl_device_pci pcidev;
+
+    /* Extract the backend directory. */
+    path = libxl__strdup(gc, event_path);
+    p = strrchr(path, '/');
+    if (p == NULL)
+        goto skip;
+    if (strcmp(p, "/aerFailedSBDF") != 0)
+        goto skip;
+    /* Truncate the string so it points to the backend directory. */
+    *p = '\0';
+
+    /* Fetch the value of the failed PCI device. */
+    rc = libxl__xs_read_checked(gc, XBT_NULL,
+            GCSPRINTF("%s/aerFailedSBDF", path), &aerFailedSBDF);
+    if (rc || !aerFailedSBDF)
+        goto skip;
+    sscanf(aerFailedSBDF, "%x:%x:%x.%x", &dom, &bus, &dev, &fn);
+
+    libxl_device_pci_init(&pcidev);
+    pcidev_struct_fill(&pcidev, dom, bus, dev, fn, 0);
+    /* Forcibly remove the device from the guest */
+    rc = libxl__device_pci_remove_common(gc, domid, &pcidev, 1);
+
+    rwperm[0].id = 0;
+    rwperm[0].perms = XS_PERM_READ | XS_PERM_WRITE;
+    dst_path = GCSPRINTF("/local/domain/0/backend/pci/0/0/%s", "aerFailedPCIs");
+    rc = libxl__xs_mknod(gc, XBT_NULL, dst_path, rwperm, 1);
+    if (rc) {
+        LOGD(ERROR, domid, " libxl__xs_mknod() failed, rc = %d", rc);
+        goto skip;
+    }
+
+    rc = libxl__xs_write_checked(gc, XBT_NULL, dst_path, aerFailedSBDF);
+    if (rc)
+        LOGD(ERROR, domid, " libxl__xs_write_checked() failed, rc = %d", rc);
+
+skip:
+    return;
+}
+
+int libxl_reg_aer_events_handler(libxl_ctx *ctx, uint32_t domid)
+{
+    int rc = 0;
+    char *be_path;
+    GC_INIT(ctx);
+
+    aer_watch.domid = domid;
+    be_path = GCSPRINTF("/local/domain/0/backend/pci/%u/0/aerFailedSBDF", domid);
+    rc = libxl__ev_xswatch_register(gc, &aer_watch.watch,
+                                    aer_backend_watch_callback, be_path);
+
+    GC_FREE;
+    return rc;
+}
+
+void libxl_unreg_aer_events_handler(libxl_ctx *ctx, uint32_t domid)
+{
+    GC_INIT(ctx);
+
+    libxl__ev_xswatch_deregister(gc, &aer_watch.watch);
+
+    GC_FREE;
+    return;
+}
+
 DEFINE_DEVICE_TYPE_STRUCT_X(pcidev, pci);
 
 /*

@@ -178,6 +178,8 @@ void libxl_event_register_callbacks(libxl_ctx *ctx,
 typedef struct libxl__evgen_domain_death libxl_evgen_domain_death;
 int libxl_evenable_domain_death(libxl_ctx *ctx, uint32_t domid,
                          libxl_ev_user, libxl_evgen_domain_death **evgen_out);
+int libxl_reg_aer_events_handler(libxl_ctx *, uint32_t) LIBXL_EXTERNAL_CALLERS_ONLY;
+void libxl_unreg_aer_events_handler(libxl_ctx *, uint32_t) LIBXL_EXTERNAL_CALLERS_ONLY;
 void libxl_evdisable_domain_death(libxl_ctx *ctx, libxl_evgen_domain_death*);
   /* Arranges for the generation of DOMAIN_SHUTDOWN and DOMAIN_DEATH
    * events.  A domain which is destroyed before it shuts down
