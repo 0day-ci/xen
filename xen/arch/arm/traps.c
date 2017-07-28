@@ -1717,8 +1717,20 @@ static int check_conditional_instr(struct cpu_user_regs *regs,
     int cond;
 
     /* Unconditional Exception classes */
+#ifdef CONFIG_ARM_32
     if ( hsr.ec == HSR_EC_UNKNOWN || hsr.ec >= 0x10 )
         return 1;
+#else
+    if ( hsr.ec == HSR_EC_UNKNOWN || (hsr.ec >= 0x10 && hsr.ec != HSR_EC_SMC32))
+        return 1;
+
+    /*
+     * Special case for SMC32: we need to check CCKNOWNPASS before
+     * checking CCVALID
+     */
+    if (hsr.ec == HSR_EC_SMC32 && hsr.cond.ccknownpass == 0)
+        return 1;
+#endif
 
     /* Check for valid condition in hsr */
     cond = hsr.cond.ccvalid ? hsr.cond.cc : -1;
