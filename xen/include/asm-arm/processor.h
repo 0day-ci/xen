@@ -434,7 +434,7 @@ union hsr {
 
     /* Common to all conditional exception classes (0x0N, except 0x00). */
     struct hsr_cond {
-        unsigned long iss:20;  /* Instruction Specific Syndrome */
+        unsigned long res0:20;  /* Reserved */
         unsigned long cc:4;    /* Condition Code */
         unsigned long ccvalid:1;/* CC Valid */
         unsigned long len:1;   /* Instruction length */
