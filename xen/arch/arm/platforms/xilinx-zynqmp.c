@@ -29,6 +29,7 @@ static const struct dt_device_match zynqmp_blacklist_dev[] __initconst =
 {
     /* Power management is not yet supported.  */
     DT_MATCH_COMPATIBLE("xlnx,zynqmp-pm"),
+    DT_MATCH_COMPATIBLE("xlnx,nwl-pcie-2.11"),
     { /* sentinel */ },
 };
 
