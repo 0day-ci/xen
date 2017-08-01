@@ -152,9 +152,15 @@ int hvm_hypercall(struct cpu_user_regs *regs)
     {
     case 8:
         eax = regs->rax;
+        if ( eax == __HYPERVISOR_hvm_op &&
+             regs->rdi == HVMOP_guest_request_vm_event )
+            break;
         /* Fallthrough to permission check. */
     case 4:
     case 2:
+        if ( mode != 8 && eax == __HYPERVISOR_hvm_op &&
+             regs->ebx == HVMOP_guest_request_vm_event )
+            break;
         if ( unlikely(hvm_get_cpl(curr)) )
         {
     default:
