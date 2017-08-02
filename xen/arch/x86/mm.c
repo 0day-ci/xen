@@ -4863,29 +4863,9 @@ int xenmem_add_to_physmap_one(
                 mfn = virt_to_mfn(d->shared_info);
             break;
         case XENMAPSPACE_grant_table:
-            grant_write_lock(d->grant_table);
-
-            if ( d->grant_table->gt_version == 0 )
-                d->grant_table->gt_version = 1;
-
-            if ( d->grant_table->gt_version == 2 &&
-                 (idx & XENMAPIDX_grant_table_status) )
-            {
-                idx &= ~XENMAPIDX_grant_table_status;
-                if ( idx < nr_status_frames(d->grant_table) )
-                    mfn = virt_to_mfn(d->grant_table->status[idx]);
-            }
-            else
-            {
-                if ( (idx >= nr_grant_frames(d->grant_table)) &&
-                     (idx < max_grant_frames) )
-                    gnttab_grow_table(d, idx + 1);
-
-                if ( idx < nr_grant_frames(d->grant_table) )
-                    mfn = virt_to_mfn(d->grant_table->shared_raw[idx]);
-            }
-
-            grant_write_unlock(d->grant_table);
+            mfn = mfn_x(gnttab_get_frame(d, idx));
+            if ( mfn_eq(_mfn(mfn), INVALID_MFN) )
+                return -EINVAL;
             break;
         case XENMAPSPACE_gmfn_range:
         case XENMAPSPACE_gmfn:

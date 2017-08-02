@@ -128,6 +128,9 @@ gnttab_release_mappings(
 int
 gnttab_grow_table(struct domain *d, unsigned int req_nr_frames);
 
+/* Get mfn of grant frame */
+mfn_t gnttab_get_frame(struct domain *d, unsigned int idx);
+
 /* Number of grant table frames. Caller must hold d's grant table lock. */
 static inline unsigned int nr_grant_frames(struct grant_table *gt)
 {

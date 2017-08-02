@@ -1604,6 +1604,39 @@ active_alloc_failed:
     return 0;
 }
 
+mfn_t
+gnttab_get_frame(struct domain *d, unsigned int idx)
+{
+    struct grant_table *gt = d->grant_table;
+    mfn_t mfn = INVALID_MFN;
+
+    grant_write_lock(gt);
+
+    if ( gt->gt_version == 0 )
+        gt->gt_version = 1;
+
+    if ( gt->gt_version == 2 &&
+         (idx & XENMAPIDX_grant_table_status) )
+    {
+        idx &= ~XENMAPIDX_grant_table_status;
+        if ( idx < nr_status_frames(gt) )
+            mfn = _mfn(virt_to_mfn(gt->status[idx]));
+    }
+    else
+    {
+        if ( (idx >= nr_grant_frames(gt)) &&
+             (idx < max_grant_frames) )
+            gnttab_grow_table(d, idx + 1);
+
+        if ( idx < nr_grant_frames(gt) )
+            mfn = _mfn(virt_to_mfn(gt->shared_raw[idx]));
+    }
+
+    grant_write_unlock(gt);
+
+    return mfn;
+}
+
 static long 
 gnttab_setup_table(
     XEN_GUEST_HANDLE_PARAM(gnttab_setup_table_t) uop, unsigned int count)
