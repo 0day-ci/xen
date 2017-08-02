@@ -120,6 +120,48 @@ int xenforeignmemory_restrict(xenforeignmemory_handle *fmem,
     return osdep_xenforeignmemory_restrict(fmem, domid);
 }
 
+xenforeignmemory_resource_handle *xenforeignmemory_map_resource(
+    xenforeignmemory_handle *fmem, domid_t domid, unsigned int type,
+    unsigned int id, unsigned long frame, unsigned long nr_frames,
+    void **paddr, int prot, int flags)
+{
+    xenforeignmemory_resource_handle *fres;
+    int rc;
+
+    fres = calloc(1, sizeof(*fres));
+    if ( !fres )
+        return NULL;
+
+    fres->domid = domid;
+    fres->type = type;
+    fres->id = id;
+    fres->frame = frame;
+    fres->nr_frames = nr_frames;
+    fres->addr = *paddr;
+    fres->prot = prot;
+    fres->flags = flags;
+
+    rc = osdep_xenforeignmemory_map_resource(fmem, fres);
+    if ( rc )
+        goto fail;
+
+    *paddr = fres->addr;
+    return fres;
+
+fail:
+    free(fres);
+
+    return NULL;
+}
+
+void xenforeignmemory_unmap_resource(
+    xenforeignmemory_handle *fmem, xenforeignmemory_resource_handle *fres)
+{
+    osdep_xenforeignmemory_unmap_resource(fmem, fres);
+
+    free(fres);
+}
+
 /*
  * Local variables:
  * mode: C
