@@ -650,7 +650,43 @@ struct xen_vnuma_topology_info {
 typedef struct xen_vnuma_topology_info xen_vnuma_topology_info_t;
 DEFINE_XEN_GUEST_HANDLE(xen_vnuma_topology_info_t);
 
-/* Next available subop number is 28 */
+#if defined(__XEN__) || defined(__XEN_TOOLS__)
+
+/*
+ * Get the pages for a particular guest resource, so that they can be
+ * mapped directly by a tools domain.
+ */
+#define XENMEM_acquire_resource 28
+struct xen_mem_acquire_resource {
+    /* IN - the domain whose resource is to be mapped */
+    domid_t domid;
+    /* IN - the type of resource (defined below) */
+    uint16_t type;
+
+#define XENMEM_resource_grant_table 0
+
+    /*
+     * IN - a type-specific resource identifier, which must be zero
+     *      unless stated otherwise.
+     */
+    uint32_t id;
+    /* IN - number of (4K) frames of the resource to be mapped */
+    uint32_t nr_frames;
+    /* IN - the index of the initial frame to be mapped */
+    uint64_aligned_t frame;
+    /* IN/OUT - If the tools domain is PV then, upon return, gmfn_list
+     *          will be populated with the MFNs of the resource.
+     *          If the tools domain is HVM then it is expected that, on
+     *          entry, gmfn_list will be populated with a list of GFNs
+     *          that will be mapped to the MFNs of the resource.
+     */
+    XEN_GUEST_HANDLE(xen_pfn_t) gmfn_list;
+};
+typedef struct xen_mem_acquire_resource xen_mem_acquire_resource_t;
+
+#endif /* defined(__XEN__) || defined(__XEN_TOOLS__) */
+
+/* Next available subop number is 29 */
 
 #endif /* __XEN_PUBLIC_MEMORY_H__ */
 

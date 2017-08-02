@@ -4941,6 +4941,107 @@ int xenmem_add_to_physmap_one(
     return rc;
 }
 
+static int xenmem_acquire_grant_table(struct domain *d,
+                                      unsigned long frame,
+                                      unsigned long nr_frames,
+                                      unsigned long mfn_list[])
+{
+    unsigned int i;
+
+    /*
+     * Iterate through the list backwards so that gnttab_get_frame() is
+     * first called for the highest numbered frame. This means that the
+     * out-of-bounds check will be done on the first iteration and, if
+     * the table needs to grow, it will only grow once.
+     */
+    i = nr_frames;
+    while ( i-- != 0 )
+    {
+        mfn_t mfn = gnttab_get_frame(d, frame + i);
+
+        if ( mfn_eq(mfn, INVALID_MFN) )
+            return -EINVAL;
+
+        mfn_list[i] = mfn_x(mfn);
+    }
+
+    return 0;
+}
+
+static int xenmem_acquire_resource(xen_mem_acquire_resource_t *xmar)
+{
+    struct domain *d, *currd = current->domain;
+    unsigned long *mfn_list;
+    int rc;
+
+    if ( xmar->nr_frames == 0 )
+        return -EINVAL;
+
+    d = rcu_lock_domain_by_any_id(xmar->domid);
+    if ( d == NULL )
+        return -ESRCH;
+
+    rc = xsm_domain_memory_map(XSM_TARGET, d);
+    if ( rc )
+        goto out;
+
+    mfn_list = xmalloc_array(unsigned long, xmar->nr_frames);
+
+    rc = -ENOMEM;
+    if ( !mfn_list )
+        goto out;
+
+    switch ( xmar->type )
+    {
+    case XENMEM_resource_grant_table:
+        rc = -EINVAL;
+        if ( xmar->id ) /* must be zero for grant_table */
+            break;
+
+        rc = xenmem_acquire_grant_table(d, xmar->frame, xmar->nr_frames,
+                                        mfn_list);
+        break;
+
+    default:
+        rc = -EOPNOTSUPP;
+        break;
+    }
+
+    if ( rc )
+        goto free_and_out;
+
+    if ( !paging_mode_translate(currd) )
+    {
+        if ( __copy_to_guest_offset(xmar->gmfn_list, 0, mfn_list,
+                                    xmar->nr_frames) )
+            rc = -EFAULT;
+    }
+    else
+    {
+        unsigned int i;
+
+        for ( i = 0; i < xmar->nr_frames; i++ )
+        {
+            xen_pfn_t gfn;
+
+            rc = -EFAULT;
+            if ( __copy_from_guest_offset(&gfn, xmar->gmfn_list, i, 1) )
+                goto free_and_out;
+
+            rc = set_foreign_p2m_entry(currd, gfn, _mfn(mfn_list[i]));
+            if ( rc )
+                goto free_and_out;
+        }
+    }
+
+ free_and_out:
+    xfree(mfn_list);
+
+ out:
+    rcu_unlock_domain(d);
+    return rc;
+}
+
 long arch_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
 {
     int rc;
@@ -5161,6 +5262,16 @@ long arch_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
     pod_target_out_unlock:
         rcu_unlock_domain(d);
         return rc;
+    }
+
+    case XENMEM_acquire_resource:
+    {
+        xen_mem_acquire_resource_t xmar;
+
+        if ( copy_from_guest(&xmar, arg, 1) )
+            return -EFAULT;
+
+        return xenmem_acquire_resource(&xmar);
     }
 
     default:
