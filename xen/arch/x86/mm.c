@@ -1010,12 +1010,15 @@ get_page_from_l1e(
                    (real_pg_owner != dom_cow) ) )
     {
         /*
-         * Let privileged domains transfer the right to map their target
-         * domain's pages. This is used to allow stub-domain pvfb export to
-         * dom0, until pvfb supports granted mappings. At that time this
-         * minor hack can go away.
+         * If the real page owner is not the domain specified in the
+         * hypercall then establish that the specified domain has
+         * mapping privilege over the page owner.
+         * This is used to allow stub-domain pvfb export to dom0. It is
+         * also used to allow a privileged PV domain to map mfns using
+         * DOMID_SELF, which is needed for mapping guest resources such
+         * grant table frames.
          */
-        if ( (real_pg_owner == NULL) || (pg_owner == l1e_owner) ||
+        if ( (real_pg_owner == NULL) ||
              xsm_priv_mapping(XSM_TARGET, pg_owner, real_pg_owner) )
         {
             gdprintk(XENLOG_WARNING,
