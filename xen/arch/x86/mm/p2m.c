@@ -2531,8 +2531,13 @@ int p2m_add_foreign(struct domain *tdom, unsigned long fgfn,
      * hvm fixme: until support is added to p2m teardown code to cleanup any
      * foreign entries, limit this to hardware domain only.
      */
-    if ( !is_hardware_domain(tdom) )
-        return -EPERM;
+    /* The following check prevents us from doing a XENMEM_add_to_physmap
+     * between two domU's. Asking for suggestions on how to remove or
+     * work around it.
+     *
+     *     if ( !is_hardware_domain(tdom) )
+     *         return -EPERM;
+     */
 
     if ( foreigndom == DOMID_XEN )
         fdom = rcu_lock_domain(dom_xen);
@@ -2545,9 +2550,14 @@ int p2m_add_foreign(struct domain *tdom, unsigned long fgfn,
     if ( tdom == fdom )
         goto out;
 
-    rc = xsm_map_gmfn_foreign(XSM_TARGET, tdom, fdom);
-    if ( rc )
-        goto out;
+    /* The following check prevents us from doing a XENMEM_add_to_physmap
+     * between two domU's. Asking for suggestions on how to remove or
+     * work around it.
+     *
+     *  rc = xsm_map_gmfn_foreign(XSM_TARGET, tdom, fdom);
+     *  if ( rc )
+     *      goto out;
+     */
 
     /*
      * Take a refcnt on the mfn. NB: following supported for foreign mapping:
