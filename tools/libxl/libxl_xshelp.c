@@ -193,6 +193,14 @@ char *libxl__xs_libxl_path(libxl__gc *gc, uint32_t domid)
     return s;
 }
 
+char *libxl__xs_get_sshmpath(libxl__gc *gc, const char *id)
+{
+    char *s = GCSPRINTF("/local/static_shm/%s", id);
+    if (!s)
+        LOGE(ERROR, "cannot allocate static shm path");
+    return s;
+}
+
 int libxl__xs_read_mandatory(libxl__gc *gc, xs_transaction_t t,
                              const char *path, const char **result_out)
 {

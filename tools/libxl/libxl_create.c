@@ -918,6 +918,13 @@ static void initiate_domain_create(libxl__egc *egc,
         goto error_out;
     }
 
+    if (d_config->c_info.type != LIBXL_DOMAIN_TYPE_HVM &&
+        d_config->num_sshms != 0) {
+        LOGD(ERROR, domid, "static_shm is only applicable to HVM domains");
+        ret = ERROR_INVAL;
+        goto error_out;
+    }
+
     ret = libxl__domain_make(gc, d_config, &domid, &state->config);
     if (ret) {
         LOGD(ERROR, domid, "cannot make domain: %d", ret);

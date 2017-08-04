@@ -1194,6 +1194,13 @@ int libxl__build_hvm(libxl__gc *gc, uint32_t domid,
         goto out;
     }
 
+    /* the p2m has been setup, we could map the static shared memory now. */
+    rc = libxl__sshm_add(gc, domid, d_config->sshms, d_config->num_sshms);
+    if (rc != 0) {
+        LOG(ERROR, "failed to map static shared memory");
+        goto out;
+    }
+
     rc = hvm_build_set_params(ctx->xch, domid, info, state->store_port,
                                &state->store_mfn, state->console_port,
                                &state->console_mfn, state->store_domid,

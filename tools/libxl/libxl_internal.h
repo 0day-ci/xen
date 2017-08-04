@@ -721,6 +721,7 @@ _hidden char **libxl__xs_directory(libxl__gc *gc, xs_transaction_t t,
                                    const char *path, unsigned int *nb);
    /* On error: returns NULL, sets errno (no logging) */
 _hidden char *libxl__xs_libxl_path(libxl__gc *gc, uint32_t domid);
+_hidden char *libxl__xs_get_sshmpath(libxl__gc *gc, const char *id);
 
 _hidden int libxl__backendpath_parse_domid(libxl__gc *gc, const char *be_path,
                                            libxl_domid *domid_out);
@@ -4351,6 +4352,19 @@ static inline bool libxl__acpi_defbool_val(const libxl_domain_build_info *b_info
            libxl_defbool_val(b_info->u.hvm.acpi);
 }
 #endif
+
+/*
+ * Set up static shared ram pages for HVM domains to communicate
+ *
+ * This function should only be called after the memory map is constructed
+ * and before any further memory access. */
+int libxl__sshm_add(libxl__gc *gc, uint32_t domid,
+                    libxl_static_shm *sshm, int len);
+
+int libxl__sshm_del(libxl__gc *gc, uint32_t domid);
+
+int libxl__sshm_check_slaves_overlap(libxl__gc *gc, uint32_t domid,
+                                     libxl_static_shm *sshms, int len);
 
 /*
  * Local variables:
