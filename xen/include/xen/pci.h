@@ -39,6 +39,10 @@
 #define PCI_SBDF3(s,b,df) ((((s) & 0xffff) << 16) | PCI_BDF2(b, df))
 
 struct pci_dev_info {
+    /*
+     * When 'is_virtfn' is set, 'is_extfn' is re-used to indicate whether
+     * the PF of this VF is an extended function.
+     */
     bool_t is_extfn;
     bool_t is_virtfn;
     struct {

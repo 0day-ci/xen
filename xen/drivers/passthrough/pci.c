@@ -599,6 +599,7 @@ int pci_add_device(u16 seg, u8 bus, u8 devfn,
     unsigned int slot = PCI_SLOT(devfn), func = PCI_FUNC(devfn);
     const char *pdev_type;
     int ret;
+    bool pf_is_extfn = false;
 
     if (!info)
         pdev_type = "device";
@@ -608,6 +609,8 @@ int pci_add_device(u16 seg, u8 bus, u8 devfn,
     {
         pcidevs_lock();
         pdev = pci_get_pdev(seg, info->physfn.bus, info->physfn.devfn);
+        if ( pdev )
+            pf_is_extfn = pdev->info.is_extfn;
         pcidevs_unlock();
         if ( !pdev )
             pci_add_device(seg, info->physfn.bus, info->physfn.devfn,
@@ -707,6 +710,9 @@ int pci_add_device(u16 seg, u8 bus, u8 devfn,
                    seg, bus, slot, func, ctrl);
     }
 
+    /* VF's 'is_extfn' is used to indicate whether PF is an extended function */
+    if ( pdev->info.is_virtfn )
+        pdev->info.is_extfn = pf_is_extfn;
     check_pdev(pdev);
 
     ret = 0;
