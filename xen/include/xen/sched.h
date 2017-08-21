@@ -307,6 +307,7 @@ struct vm_event_per_domain
 };
 
 struct evtchn_port_ops;
+struct grant_table;
 
 enum guest_type {
     guest_type_pv, guest_type_hvm
