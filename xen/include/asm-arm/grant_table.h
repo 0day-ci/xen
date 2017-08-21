@@ -21,6 +21,12 @@ static inline int replace_grant_supported(void)
     return 1;
 }
 
+static inline void gnttab_set_frame_gfn(struct domain *d, unsigned long idx,
+                                        gfn_t gfn)
+{
+    d->arch.grant_table_gfn[idx] = gfn;
+}
+
 #define gnttab_create_shared_page(d, t, i)                               \
     do {                                                                 \
         share_xen_page_with_guest(                                       \

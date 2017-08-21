@@ -24,6 +24,7 @@
 #include <xen/mm.h>
 #include <xen/preempt.h>
 #include <xen/errno.h>
+#include <xen/sched.h>
 #include <xen/grant_table.h>
 #include <xen/softirq.h>
 #include <xen/event.h>
@@ -34,7 +35,6 @@
 #include <asm/current.h>
 #include <asm/flushtlb.h>
 #include <public/memory.h>
-#include <xen/sched.h>
 #include <xen/vmap.h>
 #include <xsm/xsm.h>
 #include <xen/pfn.h>
@@ -1229,37 +1229,11 @@ int xenmem_add_to_physmap_one(
     switch ( space )
     {
     case XENMAPSPACE_grant_table:
-        grant_write_lock(d->grant_table);
-
-        if ( d->grant_table->gt_version == 0 )
-            d->grant_table->gt_version = 1;
-
-        if ( d->grant_table->gt_version == 2 &&
-                (idx & XENMAPIDX_grant_table_status) )
-        {
-            idx &= ~XENMAPIDX_grant_table_status;
-            if ( idx < nr_status_frames(d->grant_table) )
-                mfn = virt_to_mfn(d->grant_table->status[idx]);
-            else
-                return -EINVAL;
-        }
-        else
-        {
-            if ( (idx >= nr_grant_frames(d->grant_table)) &&
-                 (idx < max_grant_frames) )
-                gnttab_grow_table(d, idx + 1);
-
-            if ( idx < nr_grant_frames(d->grant_table) )
-                mfn = virt_to_mfn(d->grant_table->shared_raw[idx]);
-            else
-                return -EINVAL;
-        }
-
-        d->arch.grant_table_gfn[idx] = gfn;
+        rc = gnttab_map_frame(d, idx, gfn, &mfn);
+        if ( rc )
+            return rc;
 
         t = p2m_ram_rw;
-
-        grant_write_unlock(d->grant_table);
         break;
     case XENMAPSPACE_shared_info:
         if ( idx != 0 )

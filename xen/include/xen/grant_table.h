@@ -136,4 +136,7 @@ static inline unsigned int grant_to_status_frames(int grant_frames)
 int mem_sharing_gref_to_gfn(struct grant_table *gt, grant_ref_t ref,
                             gfn_t *gfn, uint16_t *status);
 
+int gnttab_map_frame(struct domain *d, unsigned long idx, gfn_t gfn,
+                     mfn_t *mfn);
+
 #endif /* __XEN_GRANT_TABLE_H__ */

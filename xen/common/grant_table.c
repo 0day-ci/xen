@@ -3607,6 +3607,44 @@ int mem_sharing_gref_to_gfn(struct grant_table *gt, grant_ref_t ref,
 }
 #endif
 
+int gnttab_map_frame(struct domain *d, unsigned long idx, gfn_t gfn,
+                     mfn_t *mfn)
+{
+    int rc = 0;
+
+    grant_write_lock(d->grant_table);
+
+    if ( d->grant_table->gt_version == 0 )
+        d->grant_table->gt_version = 1;
+
+    if ( d->grant_table->gt_version == 2 &&
+         (idx & XENMAPIDX_grant_table_status) )
+    {
+        idx &= ~XENMAPIDX_grant_table_status;
+        if ( idx < nr_status_frames(d->grant_table) )
+            *mfn = _mfn(virt_to_mfn(d->grant_table->status[idx]));
+        else
+            rc = -EINVAL;
+    }
+    else
+    {
+        if ( (idx >= nr_grant_frames(d->grant_table)) &&
+             (idx < max_grant_frames) )
+            gnttab_grow_table(d, idx + 1);
+
+        if ( idx < nr_grant_frames(d->grant_table) )
+            *mfn = _mfn(virt_to_mfn(d->grant_table->shared_raw[idx]));
+        else
+            rc = -EINVAL;
+    }
+
+    gnttab_set_frame_gfn(d, idx, gfn);
+
+    grant_write_unlock(d->grant_table);
+
+    return rc;
+}
+
 static void gnttab_usage_print(struct domain *rd)
 {
     int first = 1;
