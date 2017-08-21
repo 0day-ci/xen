@@ -29,9 +29,6 @@
 #include <asm/page.h>
 #include <asm/grant_table.h>
 
-/* The maximum size of a grant table. */
-extern unsigned int __read_mostly max_grant_frames;
-
 /* Create/destroy per-domain grant table context. */
 int grant_table_create(
     struct domain *d);
@@ -54,5 +51,7 @@ int mem_sharing_gref_to_gfn(struct grant_table *gt, grant_ref_t ref,
 
 int gnttab_map_frame(struct domain *d, unsigned long idx, gfn_t gfn,
                      mfn_t *mfn);
+
+unsigned int max_grant_frames(void);
 
 #endif /* __XEN_GRANT_TABLE_H__ */

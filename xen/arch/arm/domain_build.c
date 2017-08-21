@@ -2095,7 +2095,7 @@ static void __init find_gnttab_region(struct domain *d,
     kinfo->gnttab_size = (_etext - _stext) & PAGE_MASK;
 
     /* Make sure the grant table will fit in the region */
-    if ( (kinfo->gnttab_size >> PAGE_SHIFT) < max_grant_frames )
+    if ( (kinfo->gnttab_size >> PAGE_SHIFT) < max_grant_frames() )
         panic("Cannot find a space for the grant table region\n");
 
 #ifdef CONFIG_ARM_32

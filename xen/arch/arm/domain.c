@@ -469,7 +469,7 @@ struct domain *alloc_domain_struct(void)
         return NULL;
 
     clear_page(d);
-    d->arch.grant_table_gfn = xzalloc_array(gfn_t, max_grant_frames);
+    d->arch.grant_table_gfn = xzalloc_array(gfn_t, max_grant_frames());
     return d;
 }
 

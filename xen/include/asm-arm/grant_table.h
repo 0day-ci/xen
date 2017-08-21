@@ -36,7 +36,8 @@ static inline void gnttab_set_frame_gfn(struct domain *d, unsigned long idx,
 
 #define gnttab_shared_gmfn(d, t, i)                                      \
     ( ((i >= nr_grant_frames(d->grant_table)) &&                         \
-     (i < max_grant_frames)) ? 0 : gfn_x(d->arch.grant_table_gfn[i]))
+     (i < max_grant_frames_v(d->grant_table)))                           \
+        ? 0 : gfn_x(d->arch.grant_table_gfn[i]))
 
 #define gnttab_need_iommu_mapping(d)                    \
     (is_domain_direct_mapped(d) && need_iommu(d))
