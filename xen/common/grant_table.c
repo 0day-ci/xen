@@ -3041,6 +3041,28 @@ gnttab_get_version(XEN_GUEST_HANDLE_PARAM(gnttab_get_version_t) uop)
     return 0;
 }
 
+static long
+gnttab_get_setup_info(XEN_GUEST_HANDLE_PARAM(gnttab_setup_info_t) uop)
+{
+    gnttab_setup_info_t op;
+    struct domain *d = rcu_lock_current_domain();
+    struct grant_table *gt = d->grant_table;
+
+    grant_write_lock(gt);
+    op.version = gt->gt_version;
+    op.nr_frames = nr_grant_frames(gt);
+    grant_write_unlock(gt);
+    op.max_nr_frames_v1 = max_grant_frames_v1;
+    op.max_nr_frames_v2 = max_grant_frames_v2;
+
+    rcu_unlock_domain(d);
+
+    if ( __copy_to_guest(uop, &op, 1) )
+        return -EFAULT;
+
+    return 0;
+}
+
 static s16
 swap_grant_ref(grant_ref_t ref_a, grant_ref_t ref_b)
 {
@@ -3388,6 +3410,10 @@ do_grant_table_op(
         opaque_out = opaque_in;
         break;
     }
+
+    case GNTTABOP_get_setup_info:
+        rc = gnttab_get_setup_info(guest_handle_cast(uop, gnttab_setup_info_t));
+        break;
 
     default:
         rc = -ENOSYS;

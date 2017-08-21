@@ -312,6 +312,7 @@ typedef uint16_t grant_status_t;
 #define GNTTABOP_get_version          10
 #define GNTTABOP_swap_grant_ref	      11
 #define GNTTABOP_cache_flush	      12
+#define GNTTABOP_get_setup_info       13
 #endif /* __XEN_INTERFACE_VERSION__ */
 /* ` } */
 
@@ -596,6 +597,19 @@ struct gnttab_cache_flush {
 };
 typedef struct gnttab_cache_flush gnttab_cache_flush_t;
 DEFINE_XEN_GUEST_HANDLE(gnttab_cache_flush_t);
+
+/*
+ * GNTTABOP_get_setup_info: Get information needed for grant table setup
+ * of the calling domain.
+ */
+struct gnttab_setup_info {
+    uint32_t version;
+    uint32_t nr_frames;
+    uint32_t max_nr_frames_v1;
+    uint32_t max_nr_frames_v2;
+};
+typedef struct gnttab_setup_info gnttab_setup_info_t;
+DEFINE_XEN_GUEST_HANDLE(gnttab_setup_info_t);
 
 #endif /* __XEN_INTERFACE_VERSION__ */
 
