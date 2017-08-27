@@ -85,7 +85,7 @@ struct xsm_operations {
     int (*memory_pin_page) (struct domain *d1, struct domain *d2, struct page_info *page);
     int (*add_to_physmap) (struct domain *d1, struct domain *d2);
     int (*remove_from_physmap) (struct domain *d1, struct domain *d2);
-    int (*map_gmfn_foreign) (struct domain *d, struct domain *t);
+    int (*map_gmfn_foreign) (struct domain *cd, struct domain *d, struct domain *t);
     int (*claim_pages) (struct domain *d);
 
     int (*console_io) (struct domain *d, int cmd);
@@ -372,9 +372,10 @@ static inline int xsm_remove_from_physmap(xsm_default_t def, struct domain *d1, 
     return xsm_ops->remove_from_physmap(d1, d2);
 }
 
-static inline int xsm_map_gmfn_foreign (xsm_default_t def, struct domain *d, struct domain *t)
+static inline int xsm_map_gmfn_foreign (xsm_default_t def, struct domain *cd,
+                                        struct domain *d, struct domain *t)
 {
-    return xsm_ops->map_gmfn_foreign(d, t);
+    return xsm_ops->map_gmfn_foreign(cd, d, t);
 }
 
 static inline int xsm_claim_pages(xsm_default_t def, struct domain *d)

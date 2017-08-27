@@ -525,10 +525,14 @@ static XSM_INLINE int xsm_remove_from_physmap(XSM_DEFAULT_ARG struct domain *d1,
     return xsm_default_action(action, d1, d2);
 }
 
-static XSM_INLINE int xsm_map_gmfn_foreign(XSM_DEFAULT_ARG struct domain *d, struct domain *t)
+static XSM_INLINE int xsm_map_gmfn_foreign(XSM_DEFAULT_ARG struct domain *cd,
+                                           struct domain *d, struct domain *t)
 {
+    int rc;
     XSM_ASSERT_ACTION(XSM_TARGET);
-    return xsm_default_action(action, d, t);
+    rc = xsm_default_action(action, cd, d);
+    if (rc) return rc;
+    return xsm_default_action(action, cd, t);
 }
 
 static XSM_INLINE int xsm_hvm_param(XSM_DEFAULT_ARG struct domain *d, unsigned long op)

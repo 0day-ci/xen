@@ -1284,7 +1284,7 @@ int xenmem_add_to_physmap_one(
             return -EINVAL;
         }
 
-        rc = xsm_map_gmfn_foreign(XSM_TARGET, d, od);
+        rc = xsm_map_gmfn_foreign(XSM_TARGET, current->domain, d, od);
         if ( rc )
         {
             rcu_unlock_domain(od);

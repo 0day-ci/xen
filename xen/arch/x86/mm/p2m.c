@@ -2545,7 +2545,7 @@ int p2m_add_foreign(struct domain *tdom, unsigned long fgfn,
     if ( tdom == fdom )
         goto out;
 
-    rc = xsm_map_gmfn_foreign(XSM_TARGET, tdom, fdom);
+    rc = xsm_map_gmfn_foreign(XSM_TARGET, current->domain, tdom, fdom);
     if ( rc )
         goto out;
 

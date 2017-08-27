@@ -383,6 +383,10 @@ class mmu
 # Allow a privileged domain to install a map of a page it does not own.  Used
 # for stub domain device models with the PV framebuffer.
     target_hack
+# Checked when using map_gmfn_foreign to share memory:
+#  source = domain whose memory is being shared
+#  target = client domain
+    share_mem
 }
 
 # control of the paging_domctl split by subop

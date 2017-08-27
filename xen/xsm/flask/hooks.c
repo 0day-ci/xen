@@ -1165,9 +1165,15 @@ static int flask_remove_from_physmap(struct domain *d1, struct domain *d2)
     return domain_has_perm(d1, d2, SECCLASS_MMU, MMU__PHYSMAP);
 }
 
-static int flask_map_gmfn_foreign(struct domain *d, struct domain *t)
+static int flask_map_gmfn_foreign(struct domain *cd,
+                                  struct domain *d, struct domain *t)
 {
-    return domain_has_perm(d, t, SECCLASS_MMU, MMU__MAP_READ | MMU__MAP_WRITE);
+    int rc;
+    rc = domain_has_perm(cd, d, SECCLASS_MMU, MMU__MAP_READ | MMU__MAP_WRITE);
+    if (rc) return rc;
+    rc = domain_has_perm(cd, t, SECCLASS_MMU, MMU__MAP_READ | MMU__MAP_WRITE);
+    if (rc) return rc;
+    return domain_has_perm(d, t, SECCLASS_MMU, MMU__SHARE_MEM);
 }
 
 static int flask_hvm_param(struct domain *d, unsigned long op)
