@@ -25,6 +25,7 @@
 #include <xen/rbtree.h>
 #include <xen/sched.h>
 #include <xen/sizes.h>
+#include <xen/acpi.h>
 #include <asm/gic.h>
 #include <asm/gic_v3_defs.h>
 #include <asm/gic_v3_its.h>
@@ -32,6 +33,7 @@
 #include <asm/page.h>
 
 #define ITS_CMD_QUEUE_SZ                SZ_1M
+#define ACPI_GICV3_ITS_MEM_SIZE         SZ_64K
 
 /*
  * No lock here, as this list gets only populated upon boot while scanning
@@ -1017,6 +1019,30 @@ void gicv3_its_dt_init(const struct dt_device_node *node)
         add_to_host_its_list(addr, size, its);
     }
 }
+
+#ifdef CONFIG_ACPI
+int gicv3_its_acpi_probe(struct acpi_subtable_header *header,
+                        const unsigned long end)
+{
+    struct acpi_madt_generic_translator *its;
+
+    its = (struct acpi_madt_generic_translator *)header;
+    if ( BAD_MADT_ENTRY(its, end) )
+        return -EINVAL;
+
+    add_to_host_its_list(its->base_address,
+                        ACPI_GICV3_ITS_MEM_SIZE, NULL);
+
+    return 0;
+}
+
+void gicv3_its_acpi_init(void)
+{
+    /* Parse ITS information */
+    acpi_table_parse_madt(ACPI_MADT_TYPE_GENERIC_TRANSLATOR,
+                                  gicv3_its_acpi_probe, 0);
+}
+#endif
 
 /*
  * Local variables:
