@@ -1406,6 +1406,18 @@ static int gicv3_make_hwdom_madt(const struct domain *d, u32 offset)
     return table_len;
 }
 
+static unsigned long gicv3_get_hwdom_madt_size(const struct domain *d)
+{
+    unsigned long size;
+    size  = sizeof(struct acpi_madt_generic_redistributor)
+                    * d->arch.vgic.nr_regions;
+
+    size  += vgic_v3_its_count(d)
+                    * sizeof(struct acpi_madt_generic_translator);
+
+    return size;
+}
+
 static int __init
 gic_acpi_parse_madt_cpu(struct acpi_subtable_header *header,
                         const unsigned long end)
@@ -1597,6 +1609,11 @@ static int gicv3_make_hwdom_madt(const struct domain *d, u32 offset)
 {
     return 0;
 }
+
+static u32 gicv3_get_hwdom_madt_size(const struct domain *d)
+{
+    return 0;
+}
 #endif
 
 /* Set up the GIC */
@@ -1698,6 +1715,7 @@ static const struct gic_hw_operations gicv3_ops = {
     .secondary_init      = gicv3_secondary_cpu_init,
     .make_hwdom_dt_node  = gicv3_make_hwdom_dt_node,
     .make_hwdom_madt     = gicv3_make_hwdom_madt,
+    .get_hwdom_madt_size = gicv3_get_hwdom_madt_size,
     .iomem_deny_access   = gicv3_iomem_deny_access,
     .do_LPI              = gicv3_do_LPI,
 };
