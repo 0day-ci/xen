@@ -137,6 +137,8 @@ void gicv3_its_dt_init(const struct dt_device_node *node);
 
 #ifdef CONFIG_ACPI
 void gicv3_its_acpi_init(void);
+unsigned long gicv3_its_make_hwdom_madt(const struct domain *d, u8 *base_ptr,
+                                        unsigned long offset);
 #endif
 
 /* Deny iomem access for its */
@@ -206,6 +208,12 @@ static inline void gicv3_its_dt_init(const struct dt_device_node *node)
 #ifdef CONFIG_ACPI
 static inline void gicv3_its_acpi_init(void)
 {
+}
+
+unsigned long gicv3_its_make_hwdom_madt(struct domain *d, u8 *base_ptr,
+                                        unsigned long offset)
+{
+    return 0;
 }
 #endif
 

@@ -1403,6 +1403,7 @@ static int gicv3_make_hwdom_madt(const struct domain *d, u32 offset)
         table_len += size;
     }
 
+    table_len = gicv3_its_make_hwdom_madt(d, base_ptr, table_len);
     return table_len;
 }
 
