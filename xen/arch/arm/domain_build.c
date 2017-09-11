@@ -20,6 +20,7 @@
 #include <asm/psci.h>
 #include <asm/setup.h>
 #include <asm/cpufeature.h>
+#include <asm/iort.h>
 
 #include <asm/gic.h>
 #include <xen/irq.h>
@@ -1798,7 +1799,7 @@ static int acpi_create_fadt(struct domain *d, struct membank tbl_add[])
 
 static int estimate_acpi_efi_size(struct domain *d, struct kernel_info *kinfo)
 {
-    size_t efi_size, acpi_size, madt_size;
+    size_t efi_size, acpi_size, madt_size, iort_size;
     u64 addr;
     struct acpi_table_rsdp *rsdp_tbl;
     struct acpi_table_header *table;
@@ -1844,6 +1845,14 @@ static int estimate_acpi_efi_size(struct domain *d, struct kernel_info *kinfo)
     acpi_os_unmap_memory(table, sizeof(struct acpi_table_header));
 
     acpi_size += ROUNDUP(sizeof(struct acpi_table_rsdp), 8);
+
+    if( estimate_iort_size(&iort_size) )
+    {
+        printk("Unable to get hwdom iort size\n");
+        return -EINVAL;
+    }
+    acpi_size += iort_size;
+
     d->arch.efi_acpi_len = PAGE_ALIGN(ROUNDUP(efi_size, 8)
                                       + ROUNDUP(acpi_size, 8));
 
