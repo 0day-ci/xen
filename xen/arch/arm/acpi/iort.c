@@ -240,3 +240,175 @@ int estimate_iort_size(size_t *iort_size)
 err:
     return -EINVAL;
 }
+
+void write_itsgroup_nodes (struct acpi_table_iort *hwdom_iort,
+        struct acpi_table_iort *fw_iort,
+        uint64_t *ofstmap, unsigned int *pos)
+{
+    int i;
+    struct acpi_iort_node *node = NULL;
+    /* Iterate over all its groups in firmware IORT table
+     * and copy them in hwdom iort table.
+     */
+
+    /* First Node */
+    node = (struct acpi_iort_node *)((u8*)fw_iort + fw_iort->node_offset);
+    for ( i = 0; i < fw_iort->node_count; i++ )
+    {
+        if ( node->type == ACPI_IORT_NODE_ITS_GROUP )
+        {
+            u32 l,u;
+            /* Copy ITS group node into dom0 IORT Table */
+            ACPI_MEMCPY((u8*)hwdom_iort + *pos, node, node->length);
+
+            /* keep the new and old offsets, this would resolve smmu idarray's
+             * output ref offsets to the new offsets in hwdom iort table */
+            l = (uint32_t)((u8*)node - (u8*)fw_iort);
+            u = *pos ;
+            *ofstmap = ((uint64_t)(u) << 32)| l;
+
+            hwdom_iort->node_count++;
+            *pos += node->length;
+            ofstmap++;
+        }
+        node = (struct acpi_iort_node *)((u8*)node + node->length);
+    }
+}
+
+unsigned int write_single_pcirc_node(u8 *hwdom_iort, unsigned int pos,
+        struct acpi_iort_node *node,
+        struct list_head *new_idmap_list)
+{
+    unsigned int sz;
+    struct acpi_iort_node *local;
+    struct pcirc_idmap *pidmap;
+    local = (struct acpi_iort_node *)(hwdom_iort + pos);
+
+    /* write the pci_rc node */
+    sz = sizeof(struct acpi_iort_node) -1 +
+    /* -1 as acpi_iort_node has an extra char */
+        sizeof (struct acpi_iort_root_complex) ;
+    ACPI_MEMCPY(hwdom_iort + pos, node, sz);
+
+    pos += sz;
+    local->mapping_offset = sz;
+    local->mapping_count = 0;
+    local->length = sz;
+
+    list_for_each_entry(pidmap, new_idmap_list, entry)
+    {
+        ACPI_MEMCPY(hwdom_iort + pos, &pidmap->idmap,
+                sizeof(struct acpi_iort_id_mapping));
+        pos += sizeof(struct acpi_iort_id_mapping);
+        local->mapping_count++;
+        local->length += sizeof(struct acpi_iort_id_mapping);
+    }
+
+    return pos;
+}
+
+int write_pcirc_nodes(struct acpi_table_iort *hwdom_iort,
+        struct acpi_table_iort *fw_iort,
+        uint64_t  *its_ofstmap, unsigned int *pos)
+{
+    int i, j, ret;
+    struct acpi_iort_node *node = NULL;
+
+    /* Iterate over all PCI_Nodes */
+    /* First Node */
+    node = (struct acpi_iort_node *)((u8*)fw_iort + fw_iort->node_offset);
+    for ( i = 0; i < fw_iort->node_count; i++ )
+    {
+        if ( node->type == ACPI_IORT_NODE_PCI_ROOT_COMPLEX )
+        {
+            struct pcirc_idmap *pidmap;
+            struct list_head new_idmap_list;
+            INIT_LIST_HEAD(&new_idmap_list);
+
+            /* hide smmu nodes and update new_idmap_list with output
+             * refrence of pci idarray as its group
+             */
+            ret = scan_idarray((u8*)fw_iort, node, &new_idmap_list, 0, NULL);
+            if ( ret ) {
+                printk("%s: scan_idarry Failed \r\n", __func__);
+                goto end;
+            }
+
+            /* fixup its_group offsets as per new iort table */
+            list_for_each_entry(pidmap, &new_idmap_list, entry)
+            {
+                /* search output reference offset in its_ofmap
+                 * and replace with new offset
+                 */
+                for (j =0; j < fw_iort->node_count; j++)
+                {
+                    if( !its_ofstmap[j] )
+                        break;
+
+                    if(pidmap->idmap.output_reference
+                            == (its_ofstmap[j] & 0xffffffff))
+                    {
+                        pidmap->idmap.output_reference = its_ofstmap[j] >> 32;
+                        break;
+                    }
+
+                }
+            }
+
+            *pos = write_single_pcirc_node((u8*)hwdom_iort, *pos, node,
+                    &new_idmap_list);
+            hwdom_iort->node_count++;
+
+            /* free new_idmap_list */
+            list_for_each_entry(pidmap, &new_idmap_list, entry)
+                xfree(pidmap);
+        }
+        /* Next Node */
+        node = (struct acpi_iort_node *)((u8*)node + node->length);
+    }
+    return 0;
+end:
+    return -EINVAL;
+}
+
+/*
+ *   Prepares IORT table for hardware domain, removing all the smmu nodes.
+ *  IORT table for hardware domain will have the following structure.
+ *  [IORT Header]
+ *  [ITS Group Nodes]
+ *  [PCI RC Node -N]
+ */
+int prepare_iort(struct acpi_table_iort *fw_iort,
+        struct acpi_table_iort *hwdom_iort,
+        unsigned int *iort_size)
+{
+    unsigned int pos; /* offset into local iort table */
+    uint64_t *its_ofstmap;
+
+    pos = sizeof(struct acpi_table_iort);
+
+    its_ofstmap = xzalloc_array(uint64_t, fw_iort->node_count);
+    if (!its_ofstmap)
+        goto end;
+
+    /* Copy FW iort header, node_count and node_offset updated later */
+    ACPI_MEMCPY(hwdom_iort, fw_iort, sizeof(struct acpi_table_iort));
+    hwdom_iort->node_offset = pos;
+    hwdom_iort->node_count = 0;
+
+    write_itsgroup_nodes(hwdom_iort, fw_iort, its_ofstmap, &pos);
+
+    if( write_pcirc_nodes(hwdom_iort, fw_iort, its_ofstmap, &pos) )
+    {
+        printk("Error in write_pcirc_nodes \r\n");
+        goto end;
+    }
+
+    hwdom_iort->header.length = pos;
+
+    xfree(its_ofstmap);
+    *iort_size = pos;
+    return 0;
+end:
+    return -EINVAL;
+}

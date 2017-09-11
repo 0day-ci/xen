@@ -1655,6 +1655,9 @@ static int acpi_create_xsdt(struct domain *d, struct membank tbl_add[])
                            ACPI_SIG_MADT, tbl_add[TBL_MADT].start);
     xsdt->table_offset_entry[entry_count] = tbl_add[TBL_STAO].start;
 
+    acpi_xsdt_modify_entry(xsdt->table_offset_entry, entry_count,
+                           ACPI_SIG_IORT, tbl_add[TBL_IORT].start);
+
     xsdt->header.length = table_size;
     checksum = acpi_tb_checksum(ACPI_CAST_PTR(u8, xsdt), table_size);
     xsdt->header.checksum -= checksum;
@@ -1702,6 +1705,37 @@ static int acpi_create_stao(struct domain *d, struct membank tbl_add[])
 
     return 0;
 }
+
+static int acpi_create_iort(struct domain *d, struct membank tbl_add[])
+{
+    struct acpi_table_iort *fw_table;
+    struct acpi_table_iort *hwdom_table;
+    acpi_status status;
+    u32 size;
+
+    status = acpi_get_table(ACPI_SIG_IORT, 0,
+                            (struct acpi_table_header **)&fw_table);
+    if ( ACPI_FAILURE(status) )
+    {
+        printk("Failed to get IORT table\n");
+        return -EINVAL;
+    }
+
+    tbl_add[TBL_IORT].start = d->arch.efi_acpi_gpa
+                              + acpi_get_table_offset(tbl_add, TBL_IORT);
+    hwdom_table = d->arch.efi_acpi_table
+                              + acpi_get_table_offset(tbl_add, TBL_IORT);
+
+    if ( prepare_iort(fw_table, hwdom_table, &size) )
+    {
+        printk("Failed to write IORT table\n");
+        return -EINVAL;
+    }
+    tbl_add[TBL_IORT].size = size;
+
+    return 0;
+}
+
 
 static int acpi_create_madt(struct domain *d, struct membank tbl_add[])
 {
@@ -1899,6 +1933,10 @@ static int prepare_acpi(struct domain *d, struct kernel_info *kinfo)
         return rc;
 
     rc = acpi_create_stao(d, tbl_add);
+    if ( rc != 0 )
+        return rc;
+
+    rc = acpi_create_iort(d, tbl_add);
     if ( rc != 0 )
         return rc;
 
