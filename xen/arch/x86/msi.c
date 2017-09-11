@@ -657,7 +657,7 @@ int msi_free_irq(struct msi_desc *entry)
     return 0;
 }
 
-static struct msi_desc *find_msi_entry(struct pci_dev *dev,
+static struct msi_desc *find_msi_entry(const struct pci_dev *dev,
                                        int irq, int cap_id)
 {
     struct msi_desc *entry;
@@ -1274,7 +1274,7 @@ void pci_cleanup_msi(struct pci_dev *pdev)
     msi_free_irqs(pdev);
 }
 
-int pci_msi_conf_write_intercept(struct pci_dev *pdev, unsigned int reg,
+int pci_msi_conf_write_intercept(const struct pci_dev *pdev, unsigned int reg,
                                  unsigned int size, uint32_t *data)
 {
     u16 seg = pdev->seg;
