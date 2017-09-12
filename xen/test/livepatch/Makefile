@@ -11,11 +11,13 @@ LIVEPATCH := xen_hello_world.livepatch
 LIVEPATCH_BYE := xen_bye_world.livepatch
 LIVEPATCH_REPLACE := xen_replace_world.livepatch
 LIVEPATCH_NOP := xen_nop.livepatch
+LIVEPATCH_LOCAL := xen_local_symbols.livepatch
 
 LIVEPATCHES += $(LIVEPATCH)
 LIVEPATCHES += $(LIVEPATCH_BYE)
 LIVEPATCHES += $(LIVEPATCH_REPLACE)
 LIVEPATCHES += $(LIVEPATCH_NOP)
+LIVEPATCHES += $(LIVEPATCH_LOCAL)
 
 LIVEPATCH_DEBUG_DIR ?= $(DEBUG_DIR)/xen-livepatch
 
@@ -109,5 +111,13 @@ $(LIVEPATCH_NOP): xen_nop.o
 	$(OBJCOPY) --strip-debug --strip-symbol=$(NOTE_SYMBOL) $@
 	$(OBJCOPY) --set-section-flags .livepatch.funcs=alloc,readonly $@
 
+xen_local_symbols.o: config.h livepatch_depends.h
+
+.PHONY: $(LIVEPATCH_LOCAL)
+$(LIVEPATCH_LOCAL): xen_hello_world_func.o xen_local_symbols.o
+	$(LD) $(LDFLAGS) $(build_id_linker) -r -o $(LIVEPATCH_LOCAL) $^
+	$(OBJCOPY) --strip-debug --strip-symbol=$(NOTE_SYMBOL) $@
+	$(OBJCOPY) --set-section-flags .livepatch.funcs=alloc,readonly $@
+
 .PHONY: livepatch
-livepatch: $(LIVEPATCH) $(LIVEPATCH_BYE) $(LIVEPATCH_REPLACE) $(LIVEPATCH_NOP)
+livepatch: $(LIVEPATCH) $(LIVEPATCH_BYE) $(LIVEPATCH_REPLACE) $(LIVEPATCH_NOP) $(LIVEPATCH_LOCAL)
