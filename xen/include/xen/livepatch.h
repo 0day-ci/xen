@@ -100,6 +100,19 @@ static inline int livepatch_verify_distance(const struct livepatch_func *func)
 
     return 0;
 }
+
+/*
+ * The va of the hypervisor .text region and the livepatch_funcs.
+ * We need this as the normal va are write protected.
+ */
+struct livepatch_vmap_stash {
+	void *text;                 /* vmap of hypervisor code. */
+	void *funcs;	            /* vmap of the .livepatch.funcs. */
+	unsigned int offset;	    /* Offset in 'funcs'. */
+	struct livepatch_func *va;  /* The original va. */
+};
+
+extern struct livepatch_vmap_stash livepatch_vmap;
 /*
  * These functions are called around the critical region patching live code,
  * for an architecture to take make appropratie global state adjustments.

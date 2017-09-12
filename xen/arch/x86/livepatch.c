@@ -14,18 +14,9 @@
 #include <asm/nmi.h>
 #include <asm/livepatch.h>
 
-int arch_livepatch_quiesce(struct livepatch_func *func, unsigned int nfuncs)
-{
-    /* Disable WP to allow changes to read-only pages. */
-    write_cr0(read_cr0() & ~X86_CR0_WP);
-
-    return 0;
-}
-
 void arch_livepatch_revive(void)
 {
-    /* Reinstate WP. */
-    write_cr0(read_cr0() | X86_CR0_WP);
+    /* Nothing to do. */
 }
 
 int arch_livepatch_verify_func(const struct livepatch_func *func)
@@ -54,14 +45,21 @@ void noinline arch_livepatch_apply(struct livepatch_func *func)
 {
     uint8_t *old_ptr;
     uint8_t insn[sizeof(func->opaque)];
-    unsigned int len;
+    unsigned int i, len;
+    struct livepatch_func *f;
 
-    old_ptr = func->old_addr;
+    /* Recompute using the vmap. */
+    old_ptr = func->old_addr - (void *)_start + livepatch_vmap.text;
     len = livepatch_insn_len(func);
     if ( !len )
         return;
 
-    memcpy(func->opaque, old_ptr, len);
+    /* Index in the vmap region. */
+    i = livepatch_vmap.va - func;
+    f = (struct livepatch_func *)(livepatch_vmap.funcs + livepatch_vmap.offset) + i;
+
+    memcpy(f->opaque, old_ptr, len);
+
     if ( func->new_addr )
     {
         int32_t val;
@@ -85,7 +83,13 @@ void noinline arch_livepatch_apply(struct livepatch_func *func)
  */
 void noinline arch_livepatch_revert(const struct livepatch_func *func)
 {
-    memcpy(func->old_addr, func->opaque, livepatch_insn_len(func));
+    uint32_t *new_ptr;
+    unsigned int len;
+
+    new_ptr = func->old_addr - (void *)_start + livepatch_vmap.text;
+
+    len = livepatch_insn_len(func);
+    memcpy(new_ptr, func->opaque, len);
 }
 
 /*

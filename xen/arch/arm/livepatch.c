@@ -17,57 +17,6 @@
 #undef virt_to_mfn
 #define virt_to_mfn(va) _mfn(__virt_to_mfn(va))
 
-struct livepatch_vmap_stash livepatch_vmap;
-
-int arch_livepatch_quiesce(struct livepatch_func *funcs, unsigned int nfuncs)
-{
-    mfn_t text_mfn, rodata_mfn;
-    void *vmap_addr;
-    unsigned int text_order;
-    unsigned long va = (unsigned long)(funcs);
-    unsigned int offs = va & (PAGE_SIZE - 1);
-    unsigned int size = PFN_UP(offs + nfuncs * sizeof(*funcs));
-
-    if ( livepatch_vmap.text || livepatch_vmap.funcs )
-        return -EINVAL;
-
-    text_mfn = virt_to_mfn(_start);
-    text_order = get_order_from_bytes(_end - _start);
-
-    /*
-     * The text section is read-only. So re-map Xen to be able to patch
-     * the code.
-     */
-    vmap_addr = __vmap(&text_mfn, 1U << text_order, 1, 1, PAGE_HYPERVISOR,
-                       VMAP_DEFAULT);
-
-    if ( !vmap_addr )
-    {
-        printk(XENLOG_ERR LIVEPATCH "Failed to setup vmap of hypervisor! (order=%u)\n",
-               text_order);
-        return -ENOMEM;
-    }
-
-    livepatch_vmap.text = vmap_addr;
-    livepatch_vmap.offset = offs;
-
-    rodata_mfn = virt_to_mfn(va & PAGE_MASK);
-    vmap_addr  = __vmap(&rodata_mfn, size, 1, 1, PAGE_HYPERVISOR, VMAP_DEFAULT);
-    if ( !vmap_addr )
-    {
-        printk(XENLOG_ERR LIVEPATCH "Failed to setup vmap of livepatch_funcs! (mfn=%"PRI_mfn", size=%u)\n",
-               mfn_x(rodata_mfn), size);
-        vunmap(livepatch_vmap.text);
-        livepatch_vmap.text = NULL;
-        return -ENOMEM;
-    }
-
-    livepatch_vmap.funcs = vmap_addr;
-    livepatch_vmap.va = funcs;
-
-    return 0;
-}
-
 void arch_livepatch_revive(void)
 {
     /*
@@ -75,19 +24,6 @@ void arch_livepatch_revive(void)
      * arch_livepatch_[apply|revert].
      */
     invalidate_icache();
-
-    if ( livepatch_vmap.text )
-        vunmap(livepatch_vmap.text);
-
-    livepatch_vmap.text = NULL;
-
-    if ( livepatch_vmap.funcs )
-        vunmap(livepatch_vmap.funcs);
-
-    livepatch_vmap.funcs = NULL;
-
-    livepatch_vmap.va = NULL;
-    livepatch_vmap.offset = 0;
 }
 
 int arch_livepatch_verify_func(const struct livepatch_func *func)

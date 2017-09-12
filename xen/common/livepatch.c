@@ -104,6 +104,12 @@ static struct livepatch_work livepatch_work;
  */
 static DEFINE_PER_CPU(bool_t, work_to_do);
 
+/*
+ * The va of the hypervisor .text region and the livepatch_funcs.
+ * We need this as the normal va are write protected.
+ */
+struct livepatch_vmap_stash livepatch_vmap;
+
 static int get_name(const xen_livepatch_name_t *name, char *n)
 {
     if ( !name->size || name->size > XEN_LIVEPATCH_NAME_SIZE )
@@ -1055,6 +1061,73 @@ static int livepatch_list(xen_sysctl_livepatch_list_t *list)
     return rc ? : idx;
 }
 
+static int livepatch_quiesce(struct livepatch_func *funcs, unsigned int nfuncs)
+{
+    mfn_t text_mfn, rodata_mfn;
+    void *vmap_addr;
+    unsigned int text_order;
+    unsigned long va = (unsigned long)(funcs);
+    unsigned int offs = va & (PAGE_SIZE - 1);
+    unsigned int size = PFN_UP(offs + nfuncs * sizeof(*funcs));
+
+    if ( livepatch_vmap.text || livepatch_vmap.funcs )
+        return -EINVAL;
+
+    text_mfn = _mfn(virt_to_mfn(_start));
+    text_order = get_order_from_bytes(_end - _start);
+
+    /*
+     * The text section is read-only. So re-map Xen to be able to patch
+     * the code.
+     */
+    vmap_addr = __vmap(&text_mfn, 1U << text_order, 1, 1, PAGE_HYPERVISOR,
+                       VMAP_DEFAULT);
+
+    if ( !vmap_addr )
+    {
+        printk(XENLOG_ERR LIVEPATCH "Failed to setup vmap of hypervisor! (order=%u)\n",
+               text_order);
+        return -ENOMEM;
+    }
+
+    livepatch_vmap.text = vmap_addr;
+    livepatch_vmap.offset = offs;
+
+    rodata_mfn = _mfn(virt_to_mfn(va & PAGE_MASK));
+    vmap_addr  = __vmap(&rodata_mfn, size, 1, 1, PAGE_HYPERVISOR, VMAP_DEFAULT);
+    if ( !vmap_addr )
+    {
+        printk(XENLOG_ERR LIVEPATCH "Failed to setup vmap of livepatch_funcs! (mfn=%"PRI_mfn", size=%u)\n",
+               mfn_x(rodata_mfn), size);
+        vunmap(livepatch_vmap.text);
+        livepatch_vmap.text = NULL;
+        return -ENOMEM;
+    }
+
+    livepatch_vmap.funcs = vmap_addr;
+    livepatch_vmap.va = funcs;
+
+    return 0;
+}
+
+static void livepatch_revive(void)
+{
+    arch_livepatch_revive();
+
+    if ( livepatch_vmap.text )
+        vunmap(livepatch_vmap.text);
+
+    livepatch_vmap.text = NULL;
+
+    if ( livepatch_vmap.funcs )
+        vunmap(livepatch_vmap.funcs);
+
+    livepatch_vmap.funcs = NULL;
+
+    livepatch_vmap.va = NULL;
+    livepatch_vmap.offset = 0;
+}
+
 /*
  * The following functions get the CPUs into an appropriate state and
  * apply (or revert) each of the payload's functions. This is needed
@@ -1069,7 +1142,7 @@ static int apply_payload(struct payload *data)
     printk(XENLOG_INFO LIVEPATCH "%s: Applying %u functions\n",
             data->name, data->nfuncs);
 
-    rc = arch_livepatch_quiesce(data->funcs, data->nfuncs);
+    rc = livepatch_quiesce(data->funcs, data->nfuncs);
     if ( rc )
     {
         printk(XENLOG_ERR LIVEPATCH "%s: unable to quiesce!\n", data->name);
@@ -1091,7 +1164,7 @@ static int apply_payload(struct payload *data)
     for ( i = 0; i < data->nfuncs; i++ )
         arch_livepatch_apply(&data->funcs[i]);
 
-    arch_livepatch_revive();
+    livepatch_revive();
 
     /*
      * We need RCU variant (which has barriers) in case we crash here.
@@ -1110,7 +1183,7 @@ static int revert_payload(struct payload *data)
 
     printk(XENLOG_INFO LIVEPATCH "%s: Reverting\n", data->name);
 
-    rc = arch_livepatch_quiesce(data->funcs, data->nfuncs);
+    rc = livepatch_quiesce(data->funcs, data->nfuncs);
     if ( rc )
     {
         printk(XENLOG_ERR LIVEPATCH "%s: unable to quiesce!\n", data->name);
@@ -1132,7 +1205,7 @@ static int revert_payload(struct payload *data)
 
     ASSERT(!local_irq_is_enabled());
 
-    arch_livepatch_revive();
+    livepatch_revive();
 
     /*
      * We need RCU variant (which has barriers) in case we crash here.

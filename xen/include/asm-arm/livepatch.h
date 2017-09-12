@@ -11,19 +11,6 @@
 /* On ARM32,64 instructions are always 4 bytes long. */
 #define ARCH_PATCH_INSN_SIZE 4
 
-/*
- * The va of the hypervisor .text region and the livepatch_funcs.
- * We need this as the normal va are write protected.
- */
-struct livepatch_vmap_stash {
-	void *text;                 /* vmap of hypervisor code. */
-	void *funcs;	            /* vmap of the .livepatch.funcs. */
-	unsigned int offset;	    /* Offset in 'funcs'. */
-	struct livepatch_func *va;  /* The original va. */
-};
-
-extern struct livepatch_vmap_stash livepatch_vmap;
-
 /* These ranges are only for unconditional branches. */
 #ifdef CONFIG_ARM_32
 /* ARM32: A4.3 IN ARM DDI 0406C.c -  we are using only ARM instructions in Xen.*/
