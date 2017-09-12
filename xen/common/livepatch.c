@@ -1128,6 +1128,18 @@ static void livepatch_revive(void)
     livepatch_vmap.offset = 0;
 }
 
+static void livepatch_revert(const struct livepatch_func *func)
+{
+    uint32_t *new_ptr;
+    unsigned int len;
+
+    new_ptr = func->old_addr - (void *)_start + livepatch_vmap.text;
+
+    len = livepatch_insn_len(func);
+    memcpy(new_ptr, func->opaque, len);
+
+    arch_livepatch_revert(new_ptr, len);
+}
 /*
  * The following functions get the CPUs into an appropriate state and
  * apply (or revert) each of the payload's functions. This is needed
@@ -1191,7 +1203,7 @@ static int revert_payload(struct payload *data)
     }
 
     for ( i = 0; i < data->nfuncs; i++ )
-        arch_livepatch_revert(&data->funcs[i]);
+        livepatch_revert(&data->funcs[i]);
 
     /*
      * Since we are running with IRQs disabled and the hooks may call common

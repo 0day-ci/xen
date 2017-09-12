@@ -117,11 +117,10 @@ extern struct livepatch_vmap_stash livepatch_vmap;
  * These functions are called around the critical region patching live code,
  * for an architecture to take make appropratie global state adjustments.
  */
-int arch_livepatch_quiesce(struct livepatch_func *func, unsigned int nfuncs);
 void arch_livepatch_revive(void);
 
 void arch_livepatch_apply(struct livepatch_func *func);
-void arch_livepatch_revert(const struct livepatch_func *func);
+void arch_livepatch_revert(uint32_t *new_ptr, unsigned int len);
 void arch_livepatch_post_action(void);
 
 void arch_livepatch_mask(void);
