@@ -14,7 +14,7 @@
 #include <asm/nmi.h>
 #include <asm/livepatch.h>
 
-int arch_livepatch_quiesce(void)
+int arch_livepatch_quiesce(struct livepatch_func *func, unsigned int nfuncs)
 {
     /* Disable WP to allow changes to read-only pages. */
     write_cr0(read_cr0() & ~X86_CR0_WP);

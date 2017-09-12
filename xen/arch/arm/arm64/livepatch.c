@@ -20,18 +20,23 @@ void arch_livepatch_apply(struct livepatch_func *func)
     uint32_t insn;
     uint32_t *new_ptr;
     unsigned int i, len;
+    struct livepatch_func *f;
 
     BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE > sizeof(func->opaque));
     BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE != sizeof(insn));
 
-    ASSERT(vmap_of_xen_text);
+    ASSERT(livepatch_vmap.text);
 
     len = livepatch_insn_len(func);
     if ( !len )
         return;
 
+    /* Index in the vmap region. */
+    i = livepatch_vmap.va - func;
+    f = (struct livepatch_func *)(livepatch_vmap.funcs + livepatch_vmap.offset) + i;
+
     /* Save old ones. */
-    memcpy(func->opaque, func->old_addr, len);
+    memcpy(f->opaque, func->old_addr, len);
 
     if ( func->new_addr )
         insn = aarch64_insn_gen_branch_imm((unsigned long)func->old_addr,
@@ -43,7 +48,7 @@ void arch_livepatch_apply(struct livepatch_func *func)
     /* Verified in livepatch_verify_distance. */
     ASSERT(insn != AARCH64_BREAK_FAULT);
 
-    new_ptr = func->old_addr - (void *)_start + vmap_of_xen_text;
+    new_ptr = func->old_addr - (void *)_start + livepatch_vmap.text;
     len = len / sizeof(uint32_t);
 
     /* PATCH! */

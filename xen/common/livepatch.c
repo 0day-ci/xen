@@ -571,7 +571,6 @@ static int prepare_payload(struct payload *payload,
         if ( rc )
             return rc;
     }
-
     sec = livepatch_elf_sec_by_name(elf, ".livepatch.hooks.load");
     if ( sec )
     {
@@ -1070,7 +1069,7 @@ static int apply_payload(struct payload *data)
     printk(XENLOG_INFO LIVEPATCH "%s: Applying %u functions\n",
             data->name, data->nfuncs);
 
-    rc = arch_livepatch_quiesce();
+    rc = arch_livepatch_quiesce(data->funcs, data->nfuncs);
     if ( rc )
     {
         printk(XENLOG_ERR LIVEPATCH "%s: unable to quiesce!\n", data->name);
@@ -1111,7 +1110,7 @@ static int revert_payload(struct payload *data)
 
     printk(XENLOG_INFO LIVEPATCH "%s: Reverting\n", data->name);
 
-    rc = arch_livepatch_quiesce();
+    rc = arch_livepatch_quiesce(data->funcs, data->nfuncs);
     if ( rc )
     {
         printk(XENLOG_ERR LIVEPATCH "%s: unable to quiesce!\n", data->name);

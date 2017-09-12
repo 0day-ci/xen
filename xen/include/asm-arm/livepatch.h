@@ -12,10 +12,17 @@
 #define ARCH_PATCH_INSN_SIZE 4
 
 /*
- * The va of the hypervisor .text region. We need this as the
- * normal va are write protected.
+ * The va of the hypervisor .text region and the livepatch_funcs.
+ * We need this as the normal va are write protected.
  */
-extern void *vmap_of_xen_text;
+struct livepatch_vmap_stash {
+	void *text;                 /* vmap of hypervisor code. */
+	void *funcs;	            /* vmap of the .livepatch.funcs. */
+	unsigned int offset;	    /* Offset in 'funcs'. */
+	struct livepatch_func *va;  /* The original va. */
+};
+
+extern struct livepatch_vmap_stash livepatch_vmap;
 
 /* These ranges are only for unconditional branches. */
 #ifdef CONFIG_ARM_32
