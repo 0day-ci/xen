@@ -473,6 +473,13 @@ static bool section_ok(const struct livepatch_elf *elf,
         return false;
     }
 
+    if ( !arch_livepatch_verify_alignment(sec) )
+    {
+        dprintk(XENLOG_ERR, LIVEPATCH "%s: %s text section is not aligned properly!\n",
+               elf->name, sec->name);
+        return false;
+    }
+
     return true;
 }
 

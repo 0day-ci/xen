@@ -86,6 +86,12 @@ bool arch_livepatch_symbol_deny(const struct livepatch_elf *elf,
     return false;
 }
 
+bool arch_livepatch_verify_alignment(const struct livepatch_elf_sec *sec)
+{
+    /* Unaligned access on ARM 64 is OK. */
+    return true;
+}
+
 enum aarch64_reloc_op {
     RELOC_OP_NONE,
     RELOC_OP_ABS,

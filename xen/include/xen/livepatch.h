@@ -76,6 +76,7 @@ void arch_livepatch_init(void);
 #include <asm/livepatch.h>
 int arch_livepatch_verify_func(const struct livepatch_func *func);
 
+bool arch_livepatch_verify_alignment(const struct livepatch_elf_sec *sec);
 static inline
 unsigned int livepatch_insn_len(const struct livepatch_func *func)
 {

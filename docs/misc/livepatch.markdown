@@ -279,6 +279,8 @@ It may also have some architecture-specific sections. For example:
  * Exception tables.
  * Relocations for each of these sections.
 
+Note that on ARM 32 the sections containing code MUST be four byte aligned.
+
 The Xen Live Patch core code loads the payload as a standard ELF binary, relocates it
 and handles the architecture-specifc sections as needed. This process is much
 like what the Linux kernel module loader does.

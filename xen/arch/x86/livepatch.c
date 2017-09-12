@@ -148,6 +148,12 @@ bool arch_livepatch_symbol_deny(const struct livepatch_elf *elf,
     return false;
 }
 
+bool arch_livepatch_verify_alignment(const struct livepatch_elf_sec *sec)
+{
+    /* Unaligned access on x86 is fine. */
+    return true;
+}
+
 int arch_livepatch_perform_rel(struct livepatch_elf *elf,
                                const struct livepatch_elf_sec *base,
                                const struct livepatch_elf_sec *rela)
