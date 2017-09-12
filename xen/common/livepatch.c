@@ -1154,22 +1154,22 @@ static int apply_payload(struct payload *data)
     printk(XENLOG_INFO LIVEPATCH "%s: Applying %u functions\n",
             data->name, data->nfuncs);
 
-    rc = livepatch_quiesce(data->funcs, data->nfuncs);
-    if ( rc )
-    {
-        printk(XENLOG_ERR LIVEPATCH "%s: unable to quiesce!\n", data->name);
-        return rc;
-    }
-
     /*
      * Since we are running with IRQs disabled and the hooks may call common
      * code - which expects certain spinlocks to run with IRQs enabled - we
      * temporarily disable the spin locks IRQ state checks.
      */
     spin_debug_disable();
+    rc = livepatch_quiesce(data->funcs, data->nfuncs);
+    if ( rc )
+    {
+        spin_debug_enable();
+        printk(XENLOG_ERR LIVEPATCH "%s: unable to quiesce!\n", data->name);
+        return rc;
+    }
+
     for ( i = 0; i < data->n_load_funcs; i++ )
         data->load_funcs[i]();
-    spin_debug_enable();
 
     ASSERT(!local_irq_is_enabled());
 
@@ -1177,6 +1177,7 @@ static int apply_payload(struct payload *data)
         arch_livepatch_apply(&data->funcs[i]);
 
     livepatch_revive();
+    spin_debug_enable();
 
     /*
      * We need RCU variant (which has barriers) in case we crash here.
@@ -1195,9 +1196,16 @@ static int revert_payload(struct payload *data)
 
     printk(XENLOG_INFO LIVEPATCH "%s: Reverting\n", data->name);
 
+    /*
+     * Since we are running with IRQs disabled and the hooks may call common
+     * code - which expects certain spinlocks to run with IRQs enabled - we
+     * temporarily disable the spin locks IRQ state checks.
+     */
+    spin_debug_disable();
     rc = livepatch_quiesce(data->funcs, data->nfuncs);
     if ( rc )
     {
+        spin_debug_enable();
         printk(XENLOG_ERR LIVEPATCH "%s: unable to quiesce!\n", data->name);
         return rc;
     }
@@ -1205,19 +1213,13 @@ static int revert_payload(struct payload *data)
     for ( i = 0; i < data->nfuncs; i++ )
         livepatch_revert(&data->funcs[i]);
 
-    /*
-     * Since we are running with IRQs disabled and the hooks may call common
-     * code - which expects certain spinlocks to run with IRQs enabled - we
-     * temporarily disable the spin locks IRQ state checks.
-     */
-    spin_debug_disable();
     for ( i = 0; i < data->n_unload_funcs; i++ )
         data->unload_funcs[i]();
-    spin_debug_enable();
 
     ASSERT(!local_irq_is_enabled());
 
     livepatch_revive();
+    spin_debug_enable();
 
     /*
      * We need RCU variant (which has barriers) in case we crash here.
