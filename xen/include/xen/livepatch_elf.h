@@ -50,6 +50,13 @@ static inline bool livepatch_elf_ignore_section(const Elf_Shdr *sec)
 {
     return !(sec->sh_flags & SHF_ALLOC) || sec->sh_size == 0;
 }
+
+static inline bool livepatch_sym_is_global(const Elf_Sym *sym)
+{
+    return ( (ELF_ST_BIND(sym->st_info) & STB_GLOBAL) &&
+             (sym->st_shndx != SHN_UNDEF) );
+}
+
 #endif /* __XEN_LIVEPATCH_ELF_H__ */
 
 /*

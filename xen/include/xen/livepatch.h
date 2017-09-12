@@ -38,7 +38,8 @@ struct livepatch_symbol {
     const char *name;
     unsigned long value;
     unsigned int size;
-    bool_t new_symbol;
+    unsigned int new_symbol:1;
+    unsigned int global_symbol:1;
 };
 
 int livepatch_op(struct xen_sysctl_livepatch_op *);

@@ -187,7 +187,10 @@ unsigned long livepatch_symbols_lookup_by_name(const char *symname)
             if ( !data->symtab[i].new_symbol )
                 continue;
 
-            if ( !strcmp(data->symtab[i].name, symname) )
+            if ( strcmp(data->symtab[i].name, symname) )
+                continue;
+
+            if ( data->symtab[i].global_symbol )
                 return data->symtab[i].value;
         }
     }
@@ -804,6 +807,7 @@ static int build_symbol_table(struct payload *payload,
             symtab[nsyms].size = elf->sym[i].sym->st_size;
             symtab[nsyms].value = elf->sym[i].sym->st_value;
             symtab[nsyms].new_symbol = 0; /* May be overwritten below. */
+            symtab[nsyms].global_symbol = livepatch_sym_is_global(elf->sym[i].sym);
             strtab_len += strlcpy(strtab + strtab_len, elf->sym[i].name,
                                   KSYM_NAME_LEN) + 1;
             nsyms++;
@@ -828,21 +832,24 @@ static int build_symbol_table(struct payload *payload,
             if ( symbols_lookup_by_name(symtab[i].name) ||
                  livepatch_symbols_lookup_by_name(symtab[i].name) )
             {
-                dprintk(XENLOG_ERR, LIVEPATCH "%s: duplicate new symbol: %s\n",
-                        elf->name, symtab[i].name);
+                dprintk(XENLOG_ERR, LIVEPATCH "%s: duplicate new %s symbol: %s\n",
+                        elf->name, symtab[i].global_symbol ? "global" : "local",
+                        symtab[i].name);
                 xfree(symtab);
                 xfree(strtab);
                 return -EEXIST;
             }
             symtab[i].new_symbol = 1;
-            dprintk(XENLOG_DEBUG, LIVEPATCH "%s: new symbol %s\n",
-                     elf->name, symtab[i].name);
+            dprintk(XENLOG_DEBUG, LIVEPATCH "%s: new %s symbol %s\n",
+                     elf->name, symtab[i].global_symbol ? "global" : "local",
+                     symtab[i].name);
         }
         else
         {
             /* new_symbol is not set. */
-            dprintk(XENLOG_DEBUG, LIVEPATCH "%s: overriding symbol %s\n",
-                    elf->name, symtab[i].name);
+            dprintk(XENLOG_DEBUG, LIVEPATCH "%s: overriding %s symbol %s\n",
+                    elf->name, symtab[i].global_symbol ? "global" : "local",
+                    symtab[i].name);
         }
     }
 
