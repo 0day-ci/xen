@@ -1,15 +1,7 @@
 include $(XEN_ROOT)/Config.mk
 
-ifeq ($(XEN_TARGET_ARCH),x86_64)
-OBJCOPY_MAGIC := -I binary -O elf64-x86-64 -B i386:x86-64
-endif
-ifeq ($(XEN_TARGET_ARCH),arm64)
-OBJCOPY_MAGIC := -I binary -O elf64-littleaarch64 -B aarch64
-endif
-ifeq ($(XEN_TARGET_ARCH),arm32)
-OBJCOPY_MAGIC := -I binary -O elf32-littlearm -B arm
-endif
-
+NOTE_SYMBOL = "note_depends"
+NOTE_DEPENDS = "const  __section(\".livepatch.depends\") $(NOTE_SYMBOL)"
 CODE_ADDR=$(shell nm --defined $(1) | grep $(2) | awk '{print "0x"$$1}')
 CODE_SZ=$(shell nm --defined -S $(1) | grep $(2) | awk '{ print "0x"$$2}')
 
@@ -38,7 +30,7 @@ uninstall:
 
 .PHONY: clean
 clean::
-	rm -f *.o .*.o.d *.livepatch config.h
+	rm -f *.o .*.o.d *.livepatch config.h livepatch_depends.h hello_world_livepatch_depends.h *.bin
 
 #
 # To compute these values we need the binary files: xen-syms
@@ -56,10 +48,10 @@ config.h: xen_hello_world_func.o
 	 echo "#define MINOR_VERSION_ADDR $(MINOR_VERSION_ADDR)"; \
 	 echo "#define OLD_CODE_SZ $(OLD_CODE_SZ)") > $@
 
-xen_hello_world.o: config.h
+xen_hello_world.o: config.h livepatch_depends.h
 
 .PHONY: $(LIVEPATCH)
-$(LIVEPATCH): xen_hello_world_func.o xen_hello_world.o note.o
+$(LIVEPATCH): xen_hello_world_func.o xen_hello_world.o
 	$(LD) $(LDFLAGS) $(build_id_linker) -r -o $(LIVEPATCH) $^
 
 #
@@ -71,40 +63,42 @@ $(LIVEPATCH): xen_hello_world_func.o xen_hello_world.o note.o
 # not be built (it is for EFI builds), and that we do not have
 # the note.o.bin to muck with (as it gets deleted)
 #
-.PHONY: note.o
-note.o:
-	$(OBJCOPY) -O binary --only-section=.note.gnu.build-id $(BASEDIR)/xen-syms $@.bin
-	$(OBJCOPY) $(OBJCOPY_MAGIC) \
-		   --rename-section=.data=.livepatch.depends,alloc,load,readonly,data,contents -S $@.bin $@
-	rm -f $@.bin
+.PHONY: note.bin
+note.bin:
+	$(OBJCOPY) -O binary --only-section=.note.gnu.build-id $(BASEDIR)/xen-syms $@
+
+.PHONY: livepatch_depends.h
+livepatch_depends.h: note.bin
+	$(shell (../../../tools/firmware/hvmloader/mkhex $(NOTE_DEPENDS) $^ > $@))
 
 #
 # Extract the build-id of the xen_hello_world.livepatch
 # (which xen_bye_world will depend on).
 #
-.PHONY: hello_world_note.o
-hello_world_note.o: $(LIVEPATCH)
-	$(OBJCOPY) -O binary --only-section=.note.gnu.build-id $(LIVEPATCH) $@.bin
-	$(OBJCOPY) $(OBJCOPY_MAGIC) \
-		   --rename-section=.data=.livepatch.depends,alloc,load,readonly,data,contents -S $@.bin $@
-	rm -f $@.bin
+.PHONY: hello_world_note.bin
+hello_world_note.bin: $(LIVEPATCH)
+	$(OBJCOPY) -O binary --only-section=.note.gnu.build-id $(LIVEPATCH) $@
 
-xen_bye_world.o: config.h
+.PHONY: hello_world_livepatch_depends.h
+hello_world_livepatch_depends.h: hello_world_note.bin
+	$(shell (../../../tools/firmware/hvmloader/mkhex $(NOTE_DEPENDS) $^ > $@))
+
+xen_bye_world.o: config.h hello_world_livepatch_depends.h
 
 .PHONY: $(LIVEPATCH_BYE)
-$(LIVEPATCH_BYE): xen_bye_world_func.o xen_bye_world.o hello_world_note.o
+$(LIVEPATCH_BYE): xen_bye_world_func.o xen_bye_world.o
 	$(LD) $(LDFLAGS) $(build_id_linker) -r -o $(LIVEPATCH_BYE) $^
 
-xen_replace_world.o: config.h
+xen_replace_world.o: config.h livepatch_depends.h
 
 .PHONY: $(LIVEPATCH_REPLACE)
-$(LIVEPATCH_REPLACE): xen_replace_world_func.o xen_replace_world.o note.o
+$(LIVEPATCH_REPLACE): xen_replace_world_func.o xen_replace_world.o
 	$(LD) $(LDFLAGS) $(build_id_linker) -r -o $(LIVEPATCH_REPLACE) $^
 
-xen_nop.o: config.h
+xen_nop.o: config.h livepatch_depends.h
 
 .PHONY: $(LIVEPATCH_NOP)
-$(LIVEPATCH_NOP): xen_nop.o note.o
+$(LIVEPATCH_NOP): xen_nop.o
 	$(LD) $(LDFLAGS) $(build_id_linker) -r -o $(LIVEPATCH_NOP) $^
 
 .PHONY: livepatch

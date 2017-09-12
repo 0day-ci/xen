@@ -10,6 +10,7 @@
 #include <xen/livepatch.h>
 
 #include <public/sysctl.h>
+#include "hello_world_livepatch_depends.h"
 
 static const char bye_world_patch_this_fnc[] = "xen_extra_version";
 extern const char *xen_bye_world(void);

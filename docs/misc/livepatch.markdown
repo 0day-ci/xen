@@ -430,6 +430,8 @@ checksum, MD5 checksum or any unique value.
 
 The size of these structures varies with the --build-id linker option.
 
+On ARM32 this section must by four-byte aligned.
+
 ## Hypercalls
 
 We will employ the sub operations of the system management hypercall (sysctl).

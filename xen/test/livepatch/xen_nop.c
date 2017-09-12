@@ -7,6 +7,7 @@
 #include <xen/types.h>
 
 #include <public/sysctl.h>
+#include "livepatch_depends.h"
 
 /*
  * All of the .new_size and .old_addr are based on assumptions that the
