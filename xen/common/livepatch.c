@@ -1073,7 +1073,10 @@ static int livepatch_quiesce(struct livepatch_func *funcs, unsigned int nfuncs)
     if ( livepatch_vmap.text || livepatch_vmap.funcs )
         return -EINVAL;
 
-    text_mfn = _mfn(virt_to_mfn(_start));
+    text_mfn = arch_livepatch_lookup_mfn((unsigned long)_start);
+    if ( mfn_eq(text_mfn, INVALID_MFN) )
+        return -EINVAL;
+
     text_order = get_order_from_bytes(_end - _start);
 
     /*
@@ -1093,7 +1096,14 @@ static int livepatch_quiesce(struct livepatch_func *funcs, unsigned int nfuncs)
     livepatch_vmap.text = vmap_addr;
     livepatch_vmap.offset = offs;
 
-    rodata_mfn = _mfn(virt_to_mfn(va & PAGE_MASK));
+    rodata_mfn = arch_livepatch_lookup_mfn(va & PAGE_MASK);
+    if ( mfn_eq(rodata_mfn, INVALID_MFN) )
+    {
+        vunmap(livepatch_vmap.text);
+        livepatch_vmap.text = NULL;
+        return -EINVAL;
+    }
+
     vmap_addr  = __vmap(&rodata_mfn, size, 1, 1, PAGE_HYPERVISOR, VMAP_DEFAULT);
     if ( !vmap_addr )
     {
