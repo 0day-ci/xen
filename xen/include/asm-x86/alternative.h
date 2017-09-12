@@ -56,6 +56,7 @@ extern void alternative_instructions(void);
 
 #define ALTERNATIVE_N(newinstr, feature, number)	\
 	".pushsection .altinstructions,\"a\"\n"		\
+	".p2align 2\n"					\
 	ALTINSTR_ENTRY(feature, number)			\
 	".section .discard,\"a\",@progbits\n"		\
 	DISCARD_ENTRY(number)				\

@@ -155,11 +155,9 @@ SECTIONS
        __initcall_end = .;
 
 #ifdef CONFIG_HAS_ALTERNATIVE
-       . = ALIGN(4);
        __alt_instructions = .;
        *(.altinstructions)
        __alt_instructions_end = .;
-       . = ALIGN(4);
        *(.altinstr_replacement)
 #endif
 
