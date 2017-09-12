@@ -44,29 +44,28 @@ unsigned int __read_mostly m2p_compat_vstart = __HYPERVISOR_COMPAT_VIRT_START;
 
 l2_pgentry_t *compat_idle_pg_table_l2;
 
-void *do_page_walk(struct vcpu *v, unsigned long addr)
+mfn_t _do_page_walk(unsigned long mfn, unsigned long addr)
 {
-    unsigned long mfn = pagetable_get_pfn(v->arch.guest_table);
     l4_pgentry_t l4e, *l4t;
     l3_pgentry_t l3e, *l3t;
     l2_pgentry_t l2e, *l2t;
     l1_pgentry_t l1e, *l1t;
 
-    if ( !is_pv_vcpu(v) || !is_canonical_address(addr) )
-        return NULL;
+    if ( !is_canonical_address(addr) )
+        return INVALID_MFN;
 
     l4t = map_domain_page(_mfn(mfn));
     l4e = l4t[l4_table_offset(addr)];
     unmap_domain_page(l4t);
     if ( !(l4e_get_flags(l4e) & _PAGE_PRESENT) )
-        return NULL;
+        return INVALID_MFN;
 
     l3t = map_l3t_from_l4e(l4e);
     l3e = l3t[l3_table_offset(addr)];
     unmap_domain_page(l3t);
     mfn = l3e_get_pfn(l3e);
     if ( !(l3e_get_flags(l3e) & _PAGE_PRESENT) || !mfn_valid(_mfn(mfn)) )
-        return NULL;
+        return INVALID_MFN;
     if ( (l3e_get_flags(l3e) & _PAGE_PSE) )
     {
         mfn += PFN_DOWN(addr & ((1UL << L3_PAGETABLE_SHIFT) - 1));
@@ -78,7 +77,7 @@ void *do_page_walk(struct vcpu *v, unsigned long addr)
     unmap_domain_page(l2t);
     mfn = l2e_get_pfn(l2e);
     if ( !(l2e_get_flags(l2e) & _PAGE_PRESENT) || !mfn_valid(_mfn(mfn)) )
-        return NULL;
+        return INVALID_MFN;
     if ( (l2e_get_flags(l2e) & _PAGE_PSE) )
     {
         mfn += PFN_DOWN(addr & ((1UL << L2_PAGETABLE_SHIFT) - 1));
@@ -90,10 +89,26 @@ void *do_page_walk(struct vcpu *v, unsigned long addr)
     unmap_domain_page(l1t);
     mfn = l1e_get_pfn(l1e);
     if ( !(l1e_get_flags(l1e) & _PAGE_PRESENT) || !mfn_valid(_mfn(mfn)) )
-        return NULL;
+        return INVALID_MFN;
 
  ret:
-    return map_domain_page(_mfn(mfn)) + (addr & ~PAGE_MASK);
+    return _mfn(mfn);
+}
+
+void *do_page_walk(struct vcpu *v, unsigned long addr)
+{
+    mfn_t mfn;
+    unsigned long cr3;
+
+    if ( !is_pv_vcpu(v) )
+        return NULL;
+
+    cr3 = pagetable_get_pfn(v->arch.guest_table);
+    mfn = _do_page_walk(cr3, addr);
+    if ( mfn_eq(mfn, INVALID_MFN) )
+        return NULL;
+
+    return map_domain_page(mfn) + (addr & ~PAGE_MASK);
 }
 
 /*

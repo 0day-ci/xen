@@ -72,6 +72,9 @@ int arch_livepatch_secure(const void *va, unsigned int pages, enum va_type types
 
 void arch_livepatch_init(void);
 
+#include <xen/mm.h> /* For mfn_t decleration. */
+mfn_t arch_livepatch_lookup_mfn(unsigned long addr);
+
 #include <public/sysctl.h> /* For struct livepatch_func. */
 #include <asm/livepatch.h>
 int arch_livepatch_verify_func(const struct livepatch_func *func);

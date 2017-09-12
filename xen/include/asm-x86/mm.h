@@ -540,6 +540,7 @@ int new_guest_cr3(mfn_t mfn);
 void make_cr3(struct vcpu *v, mfn_t mfn);
 void update_cr3(struct vcpu *v);
 int vcpu_destroy_pagetables(struct vcpu *);
+mfn_t _do_page_walk(unsigned long mfn, unsigned long addr);
 void *do_page_walk(struct vcpu *v, unsigned long addr);
 
 int __sync_local_execstate(void);

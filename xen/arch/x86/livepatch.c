@@ -14,6 +14,16 @@
 #include <asm/nmi.h>
 #include <asm/livepatch.h>
 
+mfn_t arch_livepatch_lookup_mfn(unsigned long addr)
+{
+    unsigned long cr3 = read_cr3() >> PAGE_SHIFT;
+
+    if ( !mfn_valid(_mfn(cr3)) )
+        return INVALID_MFN;
+
+    return _do_page_walk(cr3, addr);
+}
+
 void arch_livepatch_revive(void)
 {
     /* Nothing to do. */

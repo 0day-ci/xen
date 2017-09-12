@@ -13,9 +13,10 @@
 #include <asm/livepatch.h>
 #include <asm/mm.h>
 
-/* Override macros from asm/page.h to make them work with mfn_t */
-#undef virt_to_mfn
-#define virt_to_mfn(va) _mfn(__virt_to_mfn(va))
+mfn_t arch_livepatch_lookup_mfn(unsigned long addr)
+{
+    return _mfn(__virt_to_mfn(addr));
+}
 
 void arch_livepatch_revive(void)
 {
