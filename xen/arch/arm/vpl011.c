@@ -91,19 +91,23 @@ static uint8_t vpl011_read_data(struct domain *d)
      */
     if ( xencons_queued(in_prod, in_cons, sizeof(intf->in)) > 0 )
     {
+        unsigned int fifo_level;
+
         data = intf->in[xencons_mask(in_cons, sizeof(intf->in))];
         in_cons += 1;
         smp_mb();
         intf->in_cons = in_cons;
+
+        fifo_level = xencons_queued(in_prod, in_cons, sizeof(intf->in));
+
+        if ( fifo_level == 0 )
+        {
+            vpl011->uartfr |= RXFE;
+            vpl011->uartris &= ~RXI;
+        }
     }
     else
         gprintk(XENLOG_ERR, "vpl011: Unexpected IN ring buffer empty\n");
-
-    if ( xencons_queued(in_prod, in_cons, sizeof(intf->in)) == 0 )
-    {
-        vpl011->uartfr |= RXFE;
-        vpl011->uartris &= ~RXI;
-    }
 
     vpl011->uartfr &= ~RXFF;
 
@@ -144,28 +148,41 @@ static void vpl011_write_data(struct domain *d, uint8_t data)
     if ( xencons_queued(out_prod, out_cons, sizeof(intf->out)) !=
          sizeof (intf->out) )
     {
+        unsigned int fifo_level, fifo_threshold;
+
         intf->out[xencons_mask(out_prod, sizeof(intf->out))] = data;
         out_prod += 1;
         smp_wmb();
         intf->out_prod = out_prod;
+
+        fifo_level = xencons_queued(out_prod, out_cons, sizeof(intf->out));
+
+        if ( fifo_level == sizeof (intf->out) )
+        {
+            vpl011->uartfr |= TXFF;
+
+            /*
+             * This bit is set only when FIFO becomes full. This ensures that
+             * the SBSA UART driver can write the early console data as fast as
+             * possible, without waiting for the BUSY bit to get cleared before
+             * writing each byte.
+             */
+            vpl011->uartfr |= BUSY;
+        }
+
+        /*
+         * Clear the TXI bit if the fifo level exceeds fifo_size/2 mark which
+         * is the trigger level for asserting/de-assterting the TX interrupt.
+         */
+        fifo_threshold = sizeof (intf->out) - SBSA_UART_FIFO_SIZE/2;
+
+        if ( fifo_level <= fifo_threshold )
+            vpl011->uartris |= TXI;
+        else
+            vpl011->uartris &= ~TXI;
     }
     else
         gprintk(XENLOG_ERR, "vpl011: Unexpected OUT ring buffer full\n");
-
-    if ( xencons_queued(out_prod, out_cons, sizeof(intf->out)) ==
-         sizeof (intf->out) )
-    {
-        vpl011->uartfr |= TXFF;
-        vpl011->uartris &= ~TXI;
-
-        /*
-         * This bit is set only when FIFO becomes full. This ensures that
-         * the SBSA UART driver can write the early console data as fast as
-         * possible, without waiting for the BUSY bit to get cleared before
-         * writing each byte.
-         */
-        vpl011->uartfr |= BUSY;
-    }
 
     vpl011->uartfr &= ~TXFE;
 
@@ -342,7 +359,7 @@ static void vpl011_data_avail(struct domain *d)
     struct vpl011 *vpl011 = &d->arch.vpl011;
     struct xencons_interface *intf = vpl011->ring_buf;
     XENCONS_RING_IDX in_cons, in_prod, out_cons, out_prod;
-    XENCONS_RING_IDX in_ring_qsize, out_ring_qsize;
+    XENCONS_RING_IDX in_fifo_level, out_fifo_level;
 
     VPL011_LOCK(d, flags);
 
@@ -353,37 +370,51 @@ static void vpl011_data_avail(struct domain *d)
 
     smp_rmb();
 
-    in_ring_qsize = xencons_queued(in_prod,
+    in_fifo_level = xencons_queued(in_prod,
                                    in_cons,
                                    sizeof(intf->in));
 
-    out_ring_qsize = xencons_queued(out_prod,
+    out_fifo_level = xencons_queued(out_prod,
                                     out_cons,
                                     sizeof(intf->out));
 
     /* Update the uart rx state if the buffer is not empty. */
-    if ( in_ring_qsize != 0 )
+    if ( in_fifo_level != 0 )
     {
         vpl011->uartfr &= ~RXFE;
-        if ( in_ring_qsize == sizeof(intf->in) )
+
+        if ( in_fifo_level == sizeof(intf->in) )
             vpl011->uartfr |= RXFF;
+
         vpl011->uartris |= RXI;
     }
 
     /* Update the uart tx state if the buffer is not full. */
-    if ( out_ring_qsize != sizeof(intf->out) )
+    if ( out_fifo_level != sizeof(intf->out) )
     {
+        unsigned int out_fifo_threshold;
+
         vpl011->uartfr &= ~TXFF;
-        vpl011->uartris |= TXI;
 
         /*
-         * Clear the BUSY bit as soon as space becomes available
+         * Clear the BUSY bit as soon as space becomes avaliable
          * so that the SBSA UART driver can start writing more data
          * without any further delay.
          */
         vpl011->uartfr &= ~BUSY;
 
-        if ( out_ring_qsize == 0 )
+        /*
+         * Set the TXI bit only when there is space for fifo_size/2 bytes which
+         * is the trigger level for asserting/de-assterting the TX interrupt.
+         */
+        out_fifo_threshold = sizeof(intf->out) - SBSA_UART_FIFO_SIZE/2;
+
+        if ( out_fifo_level <= out_fifo_threshold )
+            vpl011->uartris |= TXI;
+        else
+            vpl011->uartris &= ~TXI;
+
+        if ( out_fifo_level == 0 )
             vpl011->uartfr |= TXFE;
     }
 
