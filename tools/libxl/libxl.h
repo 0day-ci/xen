@@ -308,7 +308,14 @@
 /*
  * LIBXL_HAVE_P9S indicates that the p9 field in IDL has been changed to p9s
  */
+
 #define LIBXL_HAVE_P9S 1
+
+/*
+ * LIBXL_HAVE_BUILDINFO_ARM_VUART indicates that the toolstack supports virtual UART
+ * for ARM.
+ */
+#define LIBXL_HAVE_BUILDINFO_ARM_VUART 1
 
 /*
  * libxl ABI compatibility
