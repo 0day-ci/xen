@@ -1491,6 +1491,10 @@ long arch_do_domctl(
             ret = domctl_psr_get_val(d, domctl, PSR_TYPE_L2_CBM, copyback);
             break;
 
+        case XEN_DOMCTL_PSR_GET_MBA_THRTL:
+            ret = domctl_psr_get_val(d, domctl, PSR_TYPE_MBA_THRTL, copyback);
+            break;
+
         default:
             ret = -EOPNOTSUPP;
             break;
