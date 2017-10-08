@@ -273,10 +273,10 @@ static bool psr_check_cbm(unsigned int cbm_len, unsigned long cbm)
 }
 
 /* CAT common functions implementation. */
-static int cat_init_feature(const struct cpuid_leaf *regs,
-                            struct feat_node *feat,
-                            struct psr_socket_info *info,
-                            enum psr_feat_type type)
+static bool cat_init_feature(const struct cpuid_leaf *regs,
+                             struct feat_node *feat,
+                             struct psr_socket_info *info,
+                             enum psr_feat_type type)
 {
     const char *const cat_feat_name[FEAT_TYPE_NUM] = {
         [FEAT_TYPE_L3_CAT] = "L3 CAT",
@@ -286,7 +286,7 @@ static int cat_init_feature(const struct cpuid_leaf *regs,
 
     /* No valid value so do not enable feature. */
     if ( !regs->a || !regs->d )
-        return -ENOENT;
+        return false;
 
     feat->cbm_len = (regs->a & CAT_CBM_LEN_MASK) + 1;
     feat->cos_max = min(opt_cos_max, regs->d & CAT_COS_MAX_MASK);
@@ -296,7 +296,7 @@ static int cat_init_feature(const struct cpuid_leaf *regs,
     case FEAT_TYPE_L3_CAT:
     case FEAT_TYPE_L2_CAT:
         if ( feat->cos_max < 1 )
-            return -ENOENT;
+            return false;
 
         /* We reserve cos=0 as default cbm (all bits within cbm_len are 1). */
         feat->cos_reg_val[0] = cat_default_val(feat->cbm_len);
@@ -313,7 +313,7 @@ static int cat_init_feature(const struct cpuid_leaf *regs,
         uint64_t val;
 
         if ( feat->cos_max < 3 )
-            return -ENOENT;
+            return false;
 
         /* Cut half of cos_max when CDP is enabled. */
         feat->cos_max = (feat->cos_max - 1) >> 1;
@@ -332,20 +332,18 @@ static int cat_init_feature(const struct cpuid_leaf *regs,
     }
 
     default:
-        return -ENOENT;
+        return false;
     }
 
     /* Add this feature into array. */
     info->features[type] = feat;
 
-    if ( !opt_cpu_info )
-        return 0;
+    if ( opt_cpu_info )
+        printk(XENLOG_INFO "%s: enabled on socket %u, cos_max:%u, cbm_len:%u\n",
+               cat_feat_name[type], cpu_to_socket(smp_processor_id()),
+               feat->cos_max, feat->cbm_len);
 
-    printk(XENLOG_INFO "%s: enabled on socket %u, cos_max:%u, cbm_len:%u\n",
-           cat_feat_name[type], cpu_to_socket(smp_processor_id()),
-           feat->cos_max, feat->cbm_len);
-
-    return 0;
+    return true;
 }
 
 static bool cat_get_feat_info(const struct feat_node *feat,
@@ -1410,6 +1408,7 @@ static void psr_cpu_init(void)
     unsigned int socket, cpu = smp_processor_id();
     struct feat_node *feat;
     struct cpuid_leaf regs;
+    uint32_t feat_mask;
 
     if ( !psr_alloc_feat_enabled() || !boot_cpu_has(X86_FEATURE_PQE) )
         goto assoc_init;
@@ -1428,7 +1427,8 @@ static void psr_cpu_init(void)
     spin_lock_init(&info->ref_lock);
 
     cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 0, &regs);
-    if ( regs.b & PSR_RESOURCE_TYPE_L3 )
+    feat_mask = regs.b;
+    if ( feat_mask & PSR_RESOURCE_TYPE_L3 )
     {
         cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 1, &regs);
 
@@ -1449,8 +1449,7 @@ static void psr_cpu_init(void)
         }
     }
 
-    cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 0, &regs);
-    if ( regs.b & PSR_RESOURCE_TYPE_L2 )
+    if ( feat_mask & PSR_RESOURCE_TYPE_L2 )
     {
         cpuid_count_leaf(PSR_CPUID_LEVEL_CAT, 2, &regs);
 
