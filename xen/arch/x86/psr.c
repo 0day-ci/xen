@@ -1111,25 +1111,43 @@ static unsigned int get_socket_cpu(unsigned int socket)
 struct cos_write_info
 {
     unsigned int cos;
-    struct feat_node *feature;
+    struct feat_node **features;
     const uint32_t *val;
-    const struct feat_props *props;
+    unsigned int array_len;
 };
 
 static void do_write_psr_msrs(void *data)
 {
     const struct cos_write_info *info = data;
-    struct feat_node *feat = info->feature;
-    const struct feat_props *props = info->props;
-    unsigned int i, cos = info->cos, cos_num = props->cos_num;
+    unsigned int i, index = 0, cos = info->cos;
 
-    for ( i = 0; i < cos_num; i++ )
+    /*
+     * Iterate all featuers to write different value (not same as MSR) for
+     * each feature.
+     */
+    for ( i = 0; i < ARRAY_SIZE(feat_props); i++ )
     {
-        if ( feat->cos_reg_val[cos * cos_num + i] != info->val[i] )
+        struct feat_node *feat = info->features[i];
+        const struct feat_props *props = feat_props[i];
+        unsigned int cos_num, j;
+
+        if ( !feat || !props )
+            continue;
+
+        cos_num = props->cos_num;
+        if ( info->array_len < index + cos_num )
+            return;
+
+        for ( j = 0; j < cos_num; j++ )
         {
-            feat->cos_reg_val[cos * cos_num + i] = info->val[i];
-            props->write_msr(cos, info->val[i], props->type[i]);
+            if ( feat->cos_reg_val[cos * cos_num + j] != info->val[index + j] )
+            {
+                feat->cos_reg_val[cos * cos_num + j] = info->val[index + j];
+                props->write_msr(cos, info->val[index + j], props->type[j]);
+            }
         }
+
+        index += cos_num;
     }
 }
 
@@ -1137,29 +1155,17 @@ static int write_psr_msrs(unsigned int socket, unsigned int cos,
                           const uint32_t val[], unsigned int array_len,
                           enum psr_feat_type feat_type)
 {
-    int ret;
     struct psr_socket_info *info = get_socket_info(socket);
     struct cos_write_info data =
     {
         .cos = cos,
-        .feature = info->features[feat_type],
-        .props = feat_props[feat_type],
+        .features = info->features,
+        .val = val,
+        .array_len = array_len,
     };
 
     if ( cos > info->features[feat_type]->cos_max )
         return -EINVAL;
-
-    /* Skip to the feature's value head. */
-    ret = skip_prior_features(&array_len, feat_type);
-    if ( ret < 0 )
-        return ret;
-
-    val += ret;
-
-    if ( array_len < feat_props[feat_type]->cos_num )
-        return -ENOSPC;
-
-    data.val = val;
 
     if ( socket == cpu_to_socket(smp_processor_id()) )
         do_write_psr_msrs(&data);
