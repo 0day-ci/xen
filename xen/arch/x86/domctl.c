@@ -1475,6 +1475,12 @@ long arch_do_domctl(
                               PSR_TYPE_L2_CBM);
             break;
 
+        case XEN_DOMCTL_PSR_SET_MBA_THRTL:
+            ret = psr_set_val(d, domctl->u.psr_alloc.target,
+                              domctl->u.psr_alloc.data,
+                              PSR_TYPE_MBA_THRTL);
+            break;
+
         case XEN_DOMCTL_PSR_GET_L3_CBM:
             ret = domctl_psr_get_val(d, domctl, PSR_TYPE_L3_CBM, copyback);
             break;
