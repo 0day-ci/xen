@@ -168,20 +168,23 @@ void hvm_gsi_deassert(struct domain *d, unsigned int gsi)
     spin_unlock(&d->arch.hvm_domain.irq_lock);
 }
 
-void hvm_isa_irq_assert(
-    struct domain *d, unsigned int isa_irq)
+void hvm_isa_irq_assert_locked(struct domain *d, unsigned int isa_irq)
 {
     struct hvm_irq *hvm_irq = hvm_domain_irq(d);
     unsigned int gsi = hvm_isa_irq_to_gsi(isa_irq);
 
     ASSERT(isa_irq <= 15);
-
-    spin_lock(&d->arch.hvm_domain.irq_lock);
+    ASSERT(spin_is_locked(&d->arch.hvm_domain.irq_lock));
 
     if ( !__test_and_set_bit(isa_irq, &hvm_irq->isa_irq.i) &&
          (hvm_irq->gsi_assert_count[gsi]++ == 0) )
         assert_irq(d, gsi, isa_irq);
+}
 
+void hvm_isa_irq_assert(struct domain *d, unsigned int isa_irq)
+{
+    spin_lock(&d->arch.hvm_domain.irq_lock);
+    hvm_isa_irq_assert_locked(d, isa_irq);
     spin_unlock(&d->arch.hvm_domain.irq_lock);
 }
 

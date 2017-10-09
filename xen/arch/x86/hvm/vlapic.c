@@ -137,6 +137,17 @@ static void vlapic_error(struct vlapic *vlapic, unsigned int errmask)
     spin_unlock_irqrestore(&vlapic->esr_lock, flags);
 }
 
+bool vlapic_test_irq(struct vlapic *vlapic, uint8_t vec)
+{
+    if ( unlikely(vec < 16) )
+        return false;
+
+    if ( hvm_funcs.sync_pir_to_irr )
+        hvm_funcs.sync_pir_to_irr(vlapic_vcpu(vlapic));
+
+    return vlapic_test_vector(vec, &vlapic->regs->data[APIC_IRR]);
+}
+
 void vlapic_set_irq(struct vlapic *vlapic, uint8_t vec, uint8_t trig)
 {
     struct vcpu *target = vlapic_vcpu(vlapic);
