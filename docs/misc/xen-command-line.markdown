@@ -1009,6 +1009,13 @@ debug hypervisor only).
 ### idle\_latency\_factor
 > `= <integer>`
 
+### intel\_pt
+> `= <boolean>`
+
+> Default: `true`
+
+Flag to enable Intel Processor Trace.
+
 ### ioapic\_ack
 > `= old | new`
 
