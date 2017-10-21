@@ -468,6 +468,8 @@ static int vmx_vcpu_initialise(struct vcpu *v)
     if ( v->vcpu_id == 0 )
         v->arch.user_regs.rax = 1;
 
+    pt_vcpu_init(v);
+
     return 0;
 }
 
@@ -3512,6 +3514,7 @@ void vmx_vmexit_handler(struct cpu_user_regs *regs)
     __vmread(GUEST_RSP,    &regs->rsp);
     __vmread(GUEST_RFLAGS, &regs->rflags);
 
+    pt_guest_exit(v);
     hvm_invalidate_regs_fields(regs);
 
     if ( paging_mode_hap(v->domain) )
@@ -4280,6 +4283,7 @@ bool vmx_vmenter_helper(const struct cpu_user_regs *regs)
         }
     }
 
+    pt_guest_enter(curr);
  out:
     if ( unlikely(curr->arch.hvm_vmx.lbr_fixup_enabled) )
         lbr_fixup();

@@ -421,6 +421,8 @@ enum vmcs_field {
     GUEST_PDPTE0                    = 0x0000280a,
 #define GUEST_PDPTE(n) (GUEST_PDPTE0 + (n) * 2) /* n = 0...3 */
     GUEST_BNDCFGS                   = 0x00002812,
+    GUEST_IA32_RTIT_CTL             = 0x00002814,
+    GUEST_IA32_RTIT_CTL_HIGH        = 0x00002815,
     HOST_PAT                        = 0x00002c00,
     HOST_EFER                       = 0x00002c02,
     HOST_PERF_GLOBAL_CTRL           = 0x00002c04,

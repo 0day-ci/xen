@@ -40,4 +40,8 @@ struct pt_desc {
 
 extern bool_t opt_intel_pt;
 
+void pt_vcpu_init(struct vcpu *v);
+void pt_guest_enter(struct vcpu *v);
+void pt_guest_exit(struct vcpu *v);
+
 #endif /* __ASM_X86_HVM_INTEL_PT_H_ */
