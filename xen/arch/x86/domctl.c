@@ -100,6 +100,10 @@ static int update_domain_cpuid_info(struct domain *d,
             p->feat.raw[ctl->input[1]] = leaf;
             break;
 
+        case 0x14:
+            p->intel_pt.raw[ctl->input[1]] = leaf;
+            break;
+
         case XSTATE_CPUID:
             p->xstate.raw[ctl->input[1]] = leaf;
             break;

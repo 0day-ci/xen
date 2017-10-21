@@ -61,10 +61,11 @@ extern struct cpuidmasks cpuidmask_defaults;
 /* Whether or not cpuid faulting is available for the current domain. */
 DECLARE_PER_CPU(bool, cpuid_faulting_enabled);
 
-#define CPUID_GUEST_NR_BASIC      (0xdu + 1)
+#define CPUID_GUEST_NR_BASIC      (0x14u + 1)
 #define CPUID_GUEST_NR_FEAT       (0u + 1)
 #define CPUID_GUEST_NR_CACHE      (5u + 1)
 #define CPUID_GUEST_NR_XSTATE     (62u + 1)
+#define CPUID_GUEST_NR_INTEL_PT   (1u + 1)
 #define CPUID_GUEST_NR_EXTD_INTEL (0x8u + 1)
 #define CPUID_GUEST_NR_EXTD_AMD   (0x1cu + 1)
 #define CPUID_GUEST_NR_EXTD       MAX(CPUID_GUEST_NR_EXTD_INTEL, \
@@ -168,6 +169,15 @@ struct cpuid_policy
             uint32_t _res_d;
         } comp[CPUID_GUEST_NR_XSTATE];
     } xstate;
+
+    /* Structured feature leaf: 0x00000014[xx] */
+    union {
+        struct cpuid_leaf raw[CPUID_GUEST_NR_INTEL_PT];
+        struct {
+            /* Subleaf 0. */
+            uint32_t max_subleaf;
+        };
+    } intel_pt;
 
     /* Extended leaves: 0x800000xx */
     union {

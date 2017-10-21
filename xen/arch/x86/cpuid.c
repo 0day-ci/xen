@@ -9,6 +9,7 @@
 #include <asm/paging.h>
 #include <asm/processor.h>
 #include <asm/xstate.h>
+#include <asm/intel_pt.h>
 
 const uint32_t known_features[] = INIT_KNOWN_FEATURES;
 const uint32_t special_features[] = INIT_SPECIAL_FEATURES;
@@ -487,7 +488,19 @@ void recalculate_cpuid_policy(struct domain *d)
             __clear_bit(X86_FEATURE_VMX, max_fs);
             __clear_bit(X86_FEATURE_SVM, max_fs);
         }
+
+        /*
+         * Hide Intel Processor trace feature when hardware not support
+         * PT-VMX or intel_pt option is disabled.
+         */
+        if ( !opt_intel_pt )
+        {
+            __clear_bit(X86_FEATURE_INTEL_PT, max_fs);
+            zero_leaves(p->intel_pt.raw, 0, ARRAY_SIZE(p->intel_pt.raw) - 1);
+        }
     }
+    else
+        zero_leaves(p->intel_pt.raw, 0, ARRAY_SIZE(p->intel_pt.raw) - 1);
 
     /*
      * Allow the toolstack to set HTT, X2APIC and CMP_LEGACY.  These bits
@@ -632,6 +645,15 @@ void guest_cpuid(const struct vcpu *v, uint32_t leaf,
                 return;
 
             *res = p->feat.raw[subleaf];
+            break;
+
+        case 0x14:
+            ASSERT(p->intel_pt.max_subleaf < ARRAY_SIZE(p->intel_pt.raw));
+            if ( subleaf > min_t(uint32_t, p->intel_pt.max_subleaf,
+                                 ARRAY_SIZE(p->intel_pt.raw) - 1) )
+                return;
+
+            *res = p->intel_pt.raw[subleaf];
             break;
 
         case XSTATE_CPUID:
