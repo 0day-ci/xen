@@ -20,6 +20,7 @@
 
 #include <asm/hvm/io.h>
 #include <irq_vectors.h>
+#include <asm/intel_pt.h>
 
 extern void vmcs_dump_vcpu(struct vcpu *v);
 extern void setup_vmcs_dump(void);
@@ -171,6 +172,8 @@ struct arch_vmx_struct {
      * pCPU and wakeup the related vCPU.
      */
     struct pi_blocking_vcpu pi_blocking;
+
+    struct pt_desc       pt_desc;
 };
 
 int vmx_create_vmcs(struct vcpu *v);

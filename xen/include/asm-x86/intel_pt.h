@@ -21,6 +21,23 @@
 #ifndef __ASM_X86_HVM_INTEL_PT_H_
 #define __ASM_X86_HVM_INTEL_PT_H_
 
+#include <asm/msr-index.h>
+
+struct pt_ctx {
+    u64 ctl;
+    u64 status;
+    u64 output_base;
+    u64 output_mask_ptrs;
+    u64 cr3_match;
+    u64 addr[NUM_MSR_IA32_RTIT_ADDR];
+};
+
+struct pt_desc {
+    bool intel_pt_enabled;
+    unsigned int addr_num;
+    struct pt_ctx guest_pt_ctx;
+};
+
 extern bool_t opt_intel_pt;
 
 #endif /* __ASM_X86_HVM_INTEL_PT_H_ */
