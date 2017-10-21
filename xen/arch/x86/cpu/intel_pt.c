@@ -82,6 +82,7 @@ void pt_vcpu_init(struct vcpu *v)
 {
     struct pt_desc *pt = &v->arch.hvm_vmx.pt_desc;
     unsigned int eax, ebx, ecx, edx;
+    int i;
 
     memset(pt, 0, sizeof(struct pt_desc));
     pt->intel_pt_enabled = false;
@@ -102,5 +103,12 @@ void pt_vcpu_init(struct vcpu *v)
 
     vmx_vmcs_enter(v);
     __vmwrite(GUEST_IA32_RTIT_CTL, 0);
+    vmx_clear_msr_intercept(v, MSR_IA32_RTIT_CTL, VMX_MSR_RW);
+    vmx_clear_msr_intercept(v, MSR_IA32_RTIT_STATUS, VMX_MSR_RW);
+    vmx_clear_msr_intercept(v, MSR_IA32_RTIT_OUTPUT_BASE, VMX_MSR_RW);
+    vmx_clear_msr_intercept(v, MSR_IA32_RTIT_OUTPUT_MASK_PTRS, VMX_MSR_RW);
+    vmx_clear_msr_intercept(v, MSR_IA32_RTIT_CR3_MATCH, VMX_MSR_RW);
+    for ( i = 0; i < pt->addr_num; i++ )
+        vmx_clear_msr_intercept(v, MSR_IA32_RTIT_ADDR0_A + i, VMX_MSR_RW);
     vmx_vmcs_exit(v);
 }
