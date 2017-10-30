@@ -2056,6 +2056,8 @@ int xc_monitor_descriptor_access(xc_interface *xch, uint32_t domain_id,
                                  bool enable);
 int xc_monitor_guest_request(xc_interface *xch, uint32_t domain_id,
                              bool enable, bool sync, bool allow_userspace);
+int xc_monitor_nested_pagefault(xc_interface *xch, uint32_t domain_id,
+                                bool disable);
 int xc_monitor_debug_exceptions(xc_interface *xch, uint32_t domain_id,
                                 bool enable, bool sync);
 int xc_monitor_cpuid(xc_interface *xch, uint32_t domain_id, bool enable);

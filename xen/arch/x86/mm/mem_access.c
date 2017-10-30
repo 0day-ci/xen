@@ -137,6 +137,23 @@ bool p2m_mem_access_emulate_check(struct vcpu *v,
     return violation;
 }
 
+static void p2m_set_ad_bits(struct vcpu *v, paddr_t ga)
+{
+    struct hvm_hw_cpu ctxt;
+    uint32_t pfec = 0;
+
+    hvm_funcs.save_cpu_ctxt(v, &ctxt);
+
+    if ( guest_cpu_user_regs()->eip == v->arch.pg_dirty.eip
+         && ga == v->arch.pg_dirty.gla )
+        pfec = PFEC_write_access;
+
+    paging_ga_to_gfn_cr3(v, ctxt.cr3, ga, &pfec, NULL);
+
+    v->arch.pg_dirty.eip = guest_cpu_user_regs()->eip;
+    v->arch.pg_dirty.gla = ga;
+}
+
 bool p2m_mem_access_check(paddr_t gpa, unsigned long gla,
                           struct npfec npfec,
                           vm_event_request_t **req_ptr)
@@ -206,6 +223,16 @@ bool p2m_mem_access_check(paddr_t gpa, unsigned long gla,
             gfn_unlock(p2m, gfn, 0);
             return true;
         }
+    }
+
+    if ( vm_event_check_ring(d->vm_event_monitor) &&
+         d->arch.monitor.nested_pagefault_disabled &&
+         npfec.kind != npfec_kind_with_gla ) /* don't send a mem_event */
+    {
+        v->arch.vm_event->emulate_flags = 0;
+        p2m_set_ad_bits(v, gla);
+
+        return true;
     }
 
     *req_ptr = NULL;
