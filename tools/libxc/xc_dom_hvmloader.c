@@ -135,20 +135,43 @@ static int module_init_one(struct xc_dom_image *dom,
 {
     struct xc_dom_seg seg;
     void *dest;
+    xen_pfn_t start, end;
+    unsigned int page_size = XC_DOM_PAGE_SIZE(dom);
 
     if ( module->length )
     {
-        if ( xc_dom_alloc_segment(dom, &seg, name, 0, module->length) )
-            goto err;
-        dest = xc_dom_seg_to_ptr(dom, &seg);
-        if ( dest == NULL )
+        /*
+         * Check for module located below kernel.
+         * Make sure not to be fooled by a kernel based on virtual address.
+         */
+        if ( module->guest_addr_out && !(dom->kernel_seg.vstart >> 32) &&
+             module->guest_addr_out + module->length <= dom->kernel_seg.vstart )
         {
-            DOMPRINTF("%s: xc_dom_seg_to_ptr(dom, &seg) => NULL",
-                      __FUNCTION__);
-            goto err;
+            start = module->guest_addr_out / page_size;
+            end = (module->guest_addr_out + module->length + page_size - 1) /
+                  page_size;
+            dest = xc_dom_pfn_to_ptr(dom, start, end - start);
+            if ( dest == NULL )
+            {
+                DOMPRINTF("%s: xc_dom_pfn_to_ptr() => NULL", __FUNCTION__);
+                goto err;
+            }
+            dest += module->guest_addr_out - start * page_size;
+        }
+        else
+        {
+            if ( xc_dom_alloc_segment(dom, &seg, name, 0, module->length) )
+                goto err;
+            dest = xc_dom_seg_to_ptr(dom, &seg);
+            if ( dest == NULL )
+            {
+                DOMPRINTF("%s: xc_dom_seg_to_ptr(dom, &seg) => NULL",
+                          __FUNCTION__);
+                goto err;
+            }
+            module->guest_addr_out = seg.vstart;
         }
         memcpy(dest, module->data, module->length);
-        module->guest_addr_out = seg.vstart;
 
         assert(dom->mmio_start > 0 && dom->mmio_start < UINT32_MAX);
         if ( module->guest_addr_out > dom->mmio_start ||
