@@ -8,6 +8,31 @@
 #define COPY_flush_dcache   (1U << 0)
 #define COPY_from_guest     (0U << 1)
 #define COPY_to_guest       (1U << 1)
+#define COPY_ipa            (0U << 2)
+#define COPY_linear         (1U << 2)
+
+static struct page_info *translate_get_page(struct vcpu *v, paddr_t addr,
+                                            bool linear, bool write)
+{
+    p2m_type_t p2mt;
+    struct page_info *page;
+
+    if ( linear )
+        return get_page_from_gva(v, addr, write ? GV2M_WRITE : GV2M_READ);
+
+    page = get_page_from_gfn(v->domain, paddr_to_pfn(addr), &p2mt, P2M_ALLOC);
+
+    if ( !page )
+        return NULL;
+
+    if ( !p2m_is_ram(p2mt) )
+    {
+        put_page(page);
+        return NULL;
+    }
+
+    return page;
+}
 
 static unsigned long copy_guest(void *buf, paddr_t addr, unsigned int len,
                                 struct vcpu *v, unsigned int flags)
@@ -21,8 +46,8 @@ static unsigned long copy_guest(void *buf, paddr_t addr, unsigned int len,
         unsigned size = min(len, (unsigned)PAGE_SIZE - offset);
         struct page_info *page;
 
-        page = get_page_from_gva(v, addr,
-                                 (flags & COPY_to_guest) ? GV2M_WRITE : GV2M_READ);
+        page = translate_get_page(v, addr, flags & COPY_linear,
+                                  flags & COPY_to_guest);
         if ( page == NULL )
             return len;
 
@@ -63,73 +88,40 @@ static unsigned long copy_guest(void *buf, paddr_t addr, unsigned int len,
 unsigned long raw_copy_to_guest(void *to, const void *from, unsigned len)
 {
     return copy_guest((void *)from, (unsigned long)to, len,
-                      current, COPY_to_guest);
+                      current, COPY_to_guest | COPY_linear);
 }
 
 unsigned long raw_copy_to_guest_flush_dcache(void *to, const void *from,
                                              unsigned len)
 {
     return copy_guest((void *)from, (unsigned long)to, len,
-                      current, COPY_to_guest | COPY_flush_dcache);
+                      current, COPY_to_guest | COPY_flush_dcache | COPY_linear);
 }
 
 unsigned long raw_clear_guest(void *to, unsigned len)
 {
-    return copy_guest(NULL, (unsigned long)to, len, current, COPY_to_guest);
+    return copy_guest(NULL, (unsigned long)to, len, current,
+                      COPY_to_guest | COPY_linear);
 }
 
 unsigned long raw_copy_from_guest(void *to, const void __user *from, unsigned len)
 {
-    return copy_guest(to, (unsigned long)from, len, current, COPY_from_guest);
+    return copy_guest(to, (unsigned long)from, len, current,
+                      COPY_from_guest | COPY_linear);
 }
 
-/*
- * Temporarily map one physical guest page and copy data to or from it.
- * The data to be copied cannot cross a page boundary.
- */
 int access_guest_memory_by_ipa(struct domain *d, paddr_t gpa, void *buf,
                                uint32_t size, bool is_write)
 {
-    struct page_info *page;
-    uint64_t offset = gpa & ~PAGE_MASK;  /* Offset within the mapped page */
-    p2m_type_t p2mt;
-    void *p;
+    unsigned long left;
+    int flags = COPY_ipa;
 
-    /* Do not cross a page boundary. */
-    if ( size > (PAGE_SIZE - offset) )
-    {
-        printk(XENLOG_G_ERR "d%d: guestcopy: memory access crosses page boundary.\n",
-               d->domain_id);
-        return -EINVAL;
-    }
+    flags |= is_write ? COPY_to_guest : COPY_from_guest;
 
-    page = get_page_from_gfn(d, paddr_to_pfn(gpa), &p2mt, P2M_ALLOC);
-    if ( !page )
-    {
-        printk(XENLOG_G_ERR "d%d: guestcopy: failed to get table entry.\n",
-               d->domain_id);
-        return -EINVAL;
-    }
+    /* P2M is shared between all vCPUs, so the vcpu used does not matter. */
+    left = copy_guest(buf, gpa, size, d->vcpu[0], flags);
 
-    if ( !p2m_is_ram(p2mt) )
-    {
-        put_page(page);
-        printk(XENLOG_G_ERR "d%d: guestcopy: guest memory should be RAM.\n",
-               d->domain_id);
-        return -EINVAL;
-    }
-
-    p = __map_domain_page(page);
-
-    if ( is_write )
-        memcpy(p + offset, buf, size);
-    else
-        memcpy(buf, p + offset, size);
-
-    unmap_domain_page(p);
-    put_page(page);
-
-    return 0;
+    return (!left) ? 0 : -EINVAL;
 }
 
 /*
