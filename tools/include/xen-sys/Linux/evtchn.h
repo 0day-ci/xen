@@ -73,7 +73,7 @@ struct ioctl_evtchn_unbind {
 };
 
 /*
- * Unbind previously allocated @port.
+ * Send event to previously allocated @port.
  */
 #define IOCTL_EVTCHN_NOTIFY				\
 	_IOC(_IOC_NONE, 'E', 4, sizeof(struct ioctl_evtchn_notify))
