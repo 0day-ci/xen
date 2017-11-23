@@ -110,6 +110,16 @@ unsigned long raw_copy_from_guest(void *to, const void __user *from, unsigned le
                       COPY_from_guest | COPY_linear);
 }
 
+unsigned long copy_to_guest_phys_flush_dcache(struct domain *d,
+                                              paddr_t gpa,
+                                              void *buf,
+                                              unsigned int len)
+{
+    /* P2M is shared between all vCPUs, so the vCPU used does not matter. */
+    return copy_guest(buf, gpa, len, d->vcpu[0],
+                      COPY_to_guest | COPY_ipa | COPY_flush_dcache);
+}
+
 int access_guest_memory_by_ipa(struct domain *d, paddr_t gpa, void *buf,
                                uint32_t size, bool is_write)
 {
