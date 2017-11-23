@@ -10,7 +10,7 @@
 #define COPY_to_guest       (1U << 1)
 
 static unsigned long copy_guest(void *buf, paddr_t addr, unsigned int len,
-                                unsigned int flags)
+                                struct vcpu *v, unsigned int flags)
 {
     /* XXX needs to handle faults */
     unsigned offset = addr & ~PAGE_MASK;
@@ -21,7 +21,7 @@ static unsigned long copy_guest(void *buf, paddr_t addr, unsigned int len,
         unsigned size = min(len, (unsigned)PAGE_SIZE - offset);
         struct page_info *page;
 
-        page = get_page_from_gva(current, addr,
+        page = get_page_from_gva(v, addr,
                                  (flags & COPY_to_guest) ? GV2M_WRITE : GV2M_READ);
         if ( page == NULL )
             return len;
@@ -62,24 +62,25 @@ static unsigned long copy_guest(void *buf, paddr_t addr, unsigned int len,
 
 unsigned long raw_copy_to_guest(void *to, const void *from, unsigned len)
 {
-    return copy_guest((void *)from, (unsigned long)to, len, COPY_to_guest);
+    return copy_guest((void *)from, (unsigned long)to, len,
+                      current, COPY_to_guest);
 }
 
 unsigned long raw_copy_to_guest_flush_dcache(void *to, const void *from,
                                              unsigned len)
 {
     return copy_guest((void *)from, (unsigned long)to, len,
-                      COPY_to_guest | COPY_flush_dcache);
+                      current, COPY_to_guest | COPY_flush_dcache);
 }
 
 unsigned long raw_clear_guest(void *to, unsigned len)
 {
-    return copy_guest(NULL, (unsigned long)to, len, COPY_to_guest);
+    return copy_guest(NULL, (unsigned long)to, len, current, COPY_to_guest);
 }
 
 unsigned long raw_copy_from_guest(void *to, const void __user *from, unsigned len)
 {
-    return copy_guest(to, (unsigned long)from, len, COPY_from_guest);
+    return copy_guest(to, (unsigned long)from, len, current, COPY_from_guest);
 }
 
 /*
