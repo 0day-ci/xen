@@ -1322,11 +1322,14 @@ static int hvm_load_cpu_xsave_states(struct domain *d, hvm_domain_context_t *h)
 }
 
 #define HVM_CPU_MSR_SIZE(cnt) offsetof(struct hvm_msr, msr[cnt])
-static unsigned int __read_mostly msr_count_max;
+static unsigned int __read_mostly msr_count_max = 1;
 
 static int hvm_save_cpu_msrs(struct domain *d, hvm_domain_context_t *h)
 {
     struct vcpu *v;
+    static const uint32_t msrs[] = {
+        MSR_INTEL_MISC_FEATURES_ENABLES,
+    };
 
     for_each_vcpu ( d, v )
     {
@@ -1339,6 +1342,32 @@ static int hvm_save_cpu_msrs(struct domain *d, hvm_domain_context_t *h)
             return 1;
         ctxt = (struct hvm_msr *)&h->data[h->cur];
         ctxt->count = 0;
+
+        for ( i = 0; i < ARRAY_SIZE(msrs); ++i )
+        {
+            uint64_t val;
+            int rc = guest_rdmsr(v, msrs[i], &val);
+
+            /*
+             * It is the programmers responsibility to ensure that msrs[]
+             * contain generally-readable MSRs.  X86EMUL_EXCEPTION here
+             * implies a missing feature.
+             */
+            if ( rc == X86EMUL_EXCEPTION )
+                continue;
+
+            if ( rc != X86EMUL_OKAY )
+            {
+                ASSERT_UNREACHABLE();
+                return -ENXIO;
+            }
+
+            if ( !val )
+                continue; /* Skip empty MSRs. */
+
+            ctxt->msr[ctxt->count].index = msrs[i];
+            ctxt->msr[ctxt->count++].val = val;
+        }
 
         if ( hvm_funcs.save_msr )
             hvm_funcs.save_msr(v, ctxt);
@@ -1426,6 +1455,15 @@ static int hvm_load_cpu_msrs(struct domain *d, hvm_domain_context_t *h)
     {
         switch ( ctxt->msr[i].index )
         {
+            int rc;
+
+        case MSR_INTEL_MISC_FEATURES_ENABLES:
+            rc = guest_wrmsr(v, ctxt->msr[i].index, ctxt->msr[i].val);
+
+            if ( rc != X86EMUL_OKAY )
+                err = -ENXIO;
+            break;
+
         default:
             if ( !ctxt->msr[i]._rsvd )
                 err = -ENXIO;

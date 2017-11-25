@@ -1286,7 +1286,7 @@ long arch_do_domctl(
         struct xen_domctl_vcpu_msrs *vmsrs = &domctl->u.vcpu_msrs;
         struct xen_domctl_vcpu_msr msr;
         struct vcpu *v;
-        uint32_t nr_msrs = 0;
+        uint32_t nr_msrs = 1;
 
         ret = -ESRCH;
         if ( (vmsrs->vcpu >= d->max_vcpus) ||
@@ -1311,9 +1311,48 @@ long arch_do_domctl(
                 vmsrs->msr_count = nr_msrs;
             else
             {
+                static const uint32_t msrs[] = {
+                    MSR_INTEL_MISC_FEATURES_ENABLES,
+                };
+                unsigned int j;
+
                 i = 0;
 
                 vcpu_pause(v);
+
+                for ( j = 0; j < ARRAY_SIZE(msrs); ++j )
+                {
+                    uint64_t val;
+                    int rc = guest_rdmsr(v, msrs[j], &val);
+
+                    /*
+                     * It is the programmers responsibility to ensure that
+                     * msrs[] contain generally-readable MSRs.
+                     * X86EMUL_EXCEPTION here implies a missing feature.
+                     */
+                    if ( rc == X86EMUL_EXCEPTION )
+                        continue;
+
+                    if ( rc != X86EMUL_OKAY )
+                    {
+                        ASSERT_UNREACHABLE();
+                        ret = -ENXIO;
+                        break;
+                    }
+
+                    if ( !val )
+                        continue; /* Skip empty MSRs. */
+
+                    if ( i < vmsrs->msr_count && !ret )
+                    {
+                        msr.index = msrs[j];
+                        msr.reserved = 0;
+                        msr.value = val;
+                        if ( copy_to_guest_offset(vmsrs->msrs, i, &msr, 1) )
+                            ret = -EFAULT;
+                    }
+                    ++i;
+                }
 
                 if ( boot_cpu_has(X86_FEATURE_DBEXT) )
                 {
@@ -1375,6 +1414,11 @@ long arch_do_domctl(
 
                 switch ( msr.index )
                 {
+                case MSR_INTEL_MISC_FEATURES_ENABLES:
+                    if ( guest_wrmsr(v, msr.index, msr.value) != X86EMUL_OKAY )
+                        break;
+                    continue;
+
                 case MSR_AMD64_DR0_ADDRESS_MASK:
                     if ( !boot_cpu_has(X86_FEATURE_DBEXT) ||
                          (msr.value >> 32) )
