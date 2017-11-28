@@ -140,6 +140,20 @@ config XSM_POLICY
 
 	  If unsure, say Y.
 
+config XSM_POLICY_OVERRIDE
+	bool "Built-in security policy overrides bootloader provided policy"
+	default n
+	depends on XSM && XSM_POLICY
+	---help---
+	  Set this option to 'Y' to have the hypervisor ignore the security
+	  policy provided by the bootloader, and use ONLY the built-in
+	  security policy.
+
+	  This can be used to ensure only verified security policies are
+	  loaded during boot time.
+
+	  If unsure, say N.
+
 config LATE_HWDOM
 	bool "Dedicated hardware domain"
 	default n

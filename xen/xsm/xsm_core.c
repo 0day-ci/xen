@@ -39,7 +39,9 @@ static inline int verify(struct xsm_operations *ops)
 static int __init xsm_core_init(const void *policy_buffer, size_t policy_size)
 {
 #ifdef CONFIG_XSM_POLICY
+#ifndef CONFIG_XSM_POLICY_OVERRIDE
     if ( policy_size == 0 )
+#endif
     {
         policy_buffer = xsm_init_policy;
         policy_size = xsm_init_policy_size;
