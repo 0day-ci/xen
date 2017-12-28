@@ -85,6 +85,7 @@ size_param("highmem-start", highmem_start);
 #endif
 
 cpumask_t __read_mostly cpu_present_map;
+cpumask_t __read_mostly cpu_possible_map;
 
 unsigned long __read_mostly xen_phys_start;
 
@@ -1444,11 +1445,14 @@ void __init noreturn __start_xen(unsigned long mbi_p)
     {
         max_cpus = 0;
         set_nr_cpu_ids(1);
+        cpumask_set_cpu(0, &cpu_possible_map);
     }
     else
     {
         set_nr_cpu_ids(max_cpus);
         max_cpus = nr_cpu_ids;
+        for ( i = 0; i < nr_cpu_ids; i++ )
+            cpumask_set_cpu(i, &cpu_possible_map);
     }
 
     /* Low mappings were only needed for some BIOS table parsing. */
