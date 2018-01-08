@@ -89,6 +89,7 @@
 !	reserved_device_memory_map	memory.h
 ?	vmemrange			memory.h
 !	vnuma_topology_info		memory.h
+!	cpu_topology_info 		memory.h
 ?	physdev_eoi			physdev.h
 ?	physdev_get_free_pirq		physdev.h
 ?	physdev_irq			physdev.h

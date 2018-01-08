@@ -71,6 +71,7 @@ int compat_memory_op(unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) compat)
             struct xen_remove_from_physmap *xrfp;
             struct xen_vnuma_topology_info *vnuma;
             struct xen_mem_access_op *mao;
+            struct xen_cpu_topology_info *cti;
         } nat;
         union {
             struct compat_memory_reservation rsrv;
@@ -79,6 +80,7 @@ int compat_memory_op(unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) compat)
             struct compat_add_to_physmap_batch atpb;
             struct compat_vnuma_topology_info vnuma;
             struct compat_mem_access_op mao;
+            struct compat_cpu_topology_info cti;
         } cmp;
 
         set_xen_guest_handle(nat.hnd, COMPAT_ARG_XLAT_VIRT_BASE);
@@ -395,6 +397,21 @@ int compat_memory_op(unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) compat)
         }
 #endif
 
+        case XENMEM_get_cpu_topology:
+        {
+            enum XLAT_cpu_topology_info_tid tid = XLAT_cpu_topology_info_tid_h;
+
+            if ( copy_from_guest(&cmp.cti, compat, 1) )
+                return -EFAULT;
+#define XLAT_cpu_topology_info_HNDL_tid_h(_d_, _s_)      \
+            guest_from_compat_handle((_d_)->tid.h, (_s_)->tid.h)
+
+            XLAT_cpu_topology_info(nat.cti, &cmp.cti);
+
+#undef XLAT_cpu_topology_info_HNDL_tid_h
+            break;
+        }
+
         default:
             return compat_arch_memory_op(cmd, compat);
         }
@@ -525,6 +542,10 @@ int compat_memory_op(unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) compat)
         case XENMEM_add_to_physmap:
         case XENMEM_remove_from_physmap:
         case XENMEM_access_op:
+            break;
+
+        case XENMEM_get_cpu_topology:
+            printk("finish getting cpu topology\n");
             break;
 
         case XENMEM_get_vnumainfo:
