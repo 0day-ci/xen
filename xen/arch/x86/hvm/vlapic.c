@@ -1053,10 +1053,10 @@ static const struct hvm_mmio_ops vlapic_mmio_ops = {
 
 static void set_x2apic_id(struct vlapic *vlapic)
 {
-    u32 id = vlapic_vcpu(vlapic)->vcpu_id;
-    u32 ldr = ((id & ~0xf) << 12) | (1 << (id & 0xf));
+    u32 x2apic_id = hvm_vcpu_x2apic_id(vlapic_vcpu(vlapic));
+    u32 ldr = ((x2apic_id & ~0xf) << 12) | (1 << (x2apic_id & 0xf));
 
-    vlapic_set_reg(vlapic, APIC_ID, id * 2);
+    vlapic_set_reg(vlapic, APIC_ID, x2apic_id);
     vlapic_set_reg(vlapic, APIC_LDR, ldr);
 }
 
@@ -1365,7 +1365,7 @@ void vlapic_reset(struct vlapic *vlapic)
     if ( v->vcpu_id == 0 )
         vlapic->hw.apic_base_msr |= MSR_IA32_APICBASE_BSP;
 
-    vlapic_set_reg(vlapic, APIC_ID, (v->vcpu_id * 2) << 24);
+    vlapic_set_reg(vlapic, APIC_ID, hvm_vcpu_apic_id(v) << 24);
     vlapic_do_init(vlapic);
 }
 
@@ -1456,7 +1456,7 @@ static void lapic_load_fixup(struct vlapic *vlapic)
          * here, but can be dropped as soon as it is found to conflict with
          * other (future) changes.
          */
-        if ( GET_xAPIC_ID(id) != vlapic_vcpu(vlapic)->vcpu_id * 2 ||
+        if ( GET_xAPIC_ID(id) != hvm_vcpu_apic_id(vlapic_vcpu(vlapic)) ||
              id != SET_xAPIC_ID(GET_xAPIC_ID(id)) )
             printk(XENLOG_G_WARNING "%pv: bogus APIC ID %#x loaded\n",
                    vlapic_vcpu(vlapic), id);

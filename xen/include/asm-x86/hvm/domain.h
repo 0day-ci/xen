@@ -213,6 +213,9 @@ struct hvm_domain {
     uint8_t thread_per_core;
 };
 
+#define hvm_vcpu_x2apic_id(v) (v->domain->arch.hvm_domain.apic_id[v->vcpu_id])
+#define hvm_vcpu_apic_id(v) (hvm_vcpu_x2apic_id(v) % 255)
+
 #define hap_enabled(d)  ((d)->arch.hvm_domain.hap_enabled)
 
 #endif /* __ASM_X86_HVM_DOMAIN_H__ */
