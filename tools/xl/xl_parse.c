@@ -1373,6 +1373,25 @@ void parse_config_data(const char *config_source,
              */
         }
 
+        if (!xlu_cfg_get_string(config, "cpu_topology", &buf, 0))
+        {
+            char *buf2, *p, *oparg, *strtok_ptr;
+
+            buf2 = strdup(buf);
+
+            for (p = strtok_r(buf2, ",", &strtok_ptr); p;
+                 p = strtok_r(NULL, ",", &strtok_ptr)) {
+                if (MATCH_OPTION("cores", p, oparg)) {
+                    b_info->u.hvm.cpu_topology.cores = parse_ulong(oparg);
+                } else if (MATCH_OPTION("threads", p, oparg)) {
+                    b_info->u.hvm.cpu_topology.threads = parse_ulong(oparg);
+                } else if (MATCH_OPTION("real_threads", p, oparg)) {
+                    b_info->u.hvm.cpu_topology.real_threads =
+                        parse_ulong(oparg);
+                }
+            }
+        }
+
         break;
     case LIBXL_DOMAIN_TYPE_PVH:
     case LIBXL_DOMAIN_TYPE_PV:

@@ -501,6 +501,27 @@ Boot the guest using the OVMF UEFI firmware.
 
 Load the specified file as firmware for the guest.
 
+=item B<cpu_topology="CPU_TOPOLOGY_SPEC">
+
+Each B<CPU_TOPOLOGY_SPEC> is a comma-separated list of C<KEY=VALUE>
+settings from the following list:
+
+=over 4
+
+=item B<cores=NUMBER>
+specify the number of cores in each socket.
+
+=item B<threads=NUMBER>
+specify the number of threads in each core.
+
+=item B<real_threads=NUMBER>
+specify the real number of threads in each core. This field can be used
+to expose only part of threads in one core. For example, though the CPUID
+instruction indicates that each core has two threads, but only one thread
+of each core is exposed to the guest.
+
+=back
+
 =back
 
 =head4 PVH guest options
