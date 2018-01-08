@@ -2435,6 +2435,42 @@ int xc_domain_soft_reset(xc_interface *xch,
     domctl.domain = domid;
     return do_domctl(xch, &domctl);
 }
+
+int xc_set_cpu_topology(xc_interface *xch,
+                        uint32_t domid,
+                        uint32_t *tid,
+                        uint32_t size,
+                        uint8_t thread_per_core,
+                        uint8_t core_per_socket)
+{
+    int rc;
+    DECLARE_DOMCTL;
+    DECLARE_HYPERCALL_BOUNCE(tid, sizeof(*tid) * size,
+                             XC_HYPERCALL_BUFFER_BOUNCE_BOTH);
+
+    domctl.cmd = XEN_DOMCTL_set_cpu_topology;
+    domctl.domain = domid;
+
+    if ( xc_hypercall_bounce_pre(xch, tid) )
+    {
+        rc = -1;
+        errno = ENOMEM;
+        goto failed;
+    }
+
+    set_xen_guest_handle(domctl.u.cpu_topology.tid, tid);
+    domctl.u.cpu_topology.size = size;
+    domctl.u.cpu_topology.core_per_socket = core_per_socket;
+    domctl.u.cpu_topology.thread_per_core = thread_per_core;
+    memset(domctl.u.cpu_topology.pad, 0, sizeof(domctl.u.cpu_topology.pad));
+
+    rc = do_domctl(xch, &domctl);
+
+ failed:
+    xc_hypercall_bounce_post(xch, tid);
+
+    return rc;
+}
 /*
  * Local variables:
  * mode: C

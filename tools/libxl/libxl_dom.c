@@ -353,6 +353,10 @@ int libxl__build_pre(libxl__gc *gc, uint32_t domid,
     int rc;
     uint64_t size;
 
+    if (libxl__arch_cpu_topology_init(gc, domid, d_config)) {
+        return ERROR_FAIL;
+    }
+
     if (xc_domain_max_vcpus(ctx->xch, domid, info->max_vcpus) != 0) {
         LOG(ERROR, "Couldn't set max vcpu count");
         return ERROR_FAIL;

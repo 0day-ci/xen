@@ -461,6 +461,7 @@ libxl_cpu_topology = Struct("cpu_topology", [
     ("cores",           uint8),
     ("threads",         uint8),
     ("real_threads",    uint8),
+    ("tid",             Array(uint32, "tid_size")),
     ])
 
 libxl_domain_build_info = Struct("domain_build_info",[

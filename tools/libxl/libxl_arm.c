@@ -1154,6 +1154,12 @@ void libxl__arch_domain_build_info_acpi_setdefault(
     libxl_defbool_setdefault(&b_info->acpi, false);
 }
 
+int libxl__arch_cpu_topology_init(libxl__gc *gc, uint32_t domid,
+                                  libxl_domain_config *d_config)
+{
+    return 0;
+}
+
 /*
  * Local variables:
  * mode: C

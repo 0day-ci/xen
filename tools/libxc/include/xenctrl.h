@@ -1341,6 +1341,13 @@ int xc_domain_set_memory_map(xc_interface *xch,
 int xc_get_machine_memory_map(xc_interface *xch,
                               struct e820entry entries[],
                               uint32_t max_entries);
+
+int xc_set_cpu_topology(xc_interface *xch,
+                        uint32_t domid,
+                        uint32_t *tid,
+                        uint32_t size,
+                        uint8_t thread_per_core,
+                        uint8_t core_per_socket);
 #endif
 
 int xc_reserved_device_memory_map(xc_interface *xch,

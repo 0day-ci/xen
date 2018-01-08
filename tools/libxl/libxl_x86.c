@@ -596,6 +596,76 @@ void libxl__arch_domain_build_info_acpi_setdefault(
     libxl_defbool_setdefault(&b_info->acpi, true);
 }
 
+static inline int fls(unsigned int x)
+{
+    int r;
+
+    asm ( "bsr %1,%0\n\t"
+          "jnz 1f\n\t"
+          "mov $-1,%0\n"
+          "1:" : "=r" (r) : "rm" (x));
+    return r + 1;
+}
+
+int libxl__arch_cpu_topology_init(libxl__gc *gc, uint32_t domid,
+                                  libxl_domain_config *d_config)
+{
+    int i, rc = 0;
+    uint8_t core_shift, socket_shift, real_threads;
+    unsigned int *tid;
+    libxl_domain_build_info *const info = &d_config->b_info;
+
+    if (!info->u.hvm.cpu_topology.cores)
+        info->u.hvm.cpu_topology.cores = 128;
+    if (!info->u.hvm.cpu_topology.threads)
+        info->u.hvm.cpu_topology.threads = 2;
+    if (!info->u.hvm.cpu_topology.real_threads)
+        info->u.hvm.cpu_topology.real_threads = 1;
+
+    if (info->u.hvm.cpu_topology.threads <
+         info->u.hvm.cpu_topology.real_threads)
+    {
+        LOGE(ERROR, "threads cannot be smaller than real threads");
+        return ERROR_FAIL;
+    }
+
+    real_threads = info->u.hvm.cpu_topology.real_threads;
+    tid = libxl__calloc(gc, info->max_vcpus, sizeof(unsigned int));
+    core_shift = fls(info->u.hvm.cpu_topology.threads - 1);
+    socket_shift = core_shift + fls(info->u.hvm.cpu_topology.cores - 1);
+    if (info->num_vnuma_nodes == 0) {
+        for (i = 0; i < info->max_vcpus; i++) {
+            tid[i] = ((i / real_threads) << core_shift) + i % real_threads;
+        }
+    } else {
+        int socket_id;
+
+        for (socket_id = 0; socket_id < info->num_vnuma_nodes; socket_id++) {
+            int j = 0;
+
+            libxl_for_each_set_bit(i, info->vnuma_nodes[socket_id].vcpus) {
+                tid[i] = (socket_id << socket_shift) +
+                         ((j / real_threads) << core_shift) +
+                         (j % real_threads);
+                j++;
+            }
+        }
+    }
+
+    info->u.hvm.cpu_topology.tid = tid;
+    info->u.hvm.cpu_topology.tid_size = info->max_vcpus;
+
+    rc = xc_set_cpu_topology(libxl__gc_owner(gc)->xch, domid, tid,
+                             info->max_vcpus, info->u.hvm.cpu_topology.threads,
+                             info->u.hvm.cpu_topology.cores);
+    if (rc < 0) {
+        LOGE(ERROR, "xc_set_cpu_topology failed");
+        rc = ERROR_FAIL;
+    }
+
+    return rc;
+
+}
 /*
  * Local variables:
  * mode: C
