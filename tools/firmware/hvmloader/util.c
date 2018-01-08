@@ -22,6 +22,7 @@
 #include "hypercall.h"
 #include "ctype.h"
 #include "vnuma.h"
+#include "topology.h"
 #include <acpi2_0.h>
 #include <libacpi.h>
 #include <stdint.h>
@@ -883,9 +884,9 @@ static void acpi_mem_free(struct acpi_ctxt *ctxt,
     /* ACPI builder currently doesn't free memory so this is just a stub */
 }
 
-static uint32_t acpi_lapic_id(unsigned cpu)
+static uint32_t acpi_lapic_id(unsigned cpu, const struct acpi_config *config)
 {
-    return LAPIC_ID(cpu);
+    return config->topology_id[cpu];
 }
 
 void hvmloader_acpi_build_tables(struct acpi_config *config,
@@ -980,6 +981,9 @@ void hvmloader_acpi_build_tables(struct acpi_config *config,
     config->numa.vcpu_to_vnode = vcpu_to_vnode;
     config->numa.vdistance = vdistance;
     config->numa.vmemrange = vmemrange;
+
+    config->topology_id = topology_id;
+    config->topology_id_size = topology_id_size;
 
     config->hvminfo = hvm_info;
 

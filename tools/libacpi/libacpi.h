@@ -91,11 +91,14 @@ struct acpi_config {
     unsigned long rsdp;
 
     /* x86-specific parameters */
-    uint32_t (*lapic_id)(unsigned cpu);
+    uint32_t (*lapic_id)(unsigned cpu, const struct acpi_config *config);
     uint32_t lapic_base_address;
     uint32_t ioapic_base_address;
     uint16_t pci_isa_irq_mask;
     uint8_t ioapic_id;
+    /* CPU topology info */
+    uint32_t *topology_id;
+    uint32_t topology_id_size;
 };
 
 int acpi_build_tables(struct acpi_ctxt *ctxt, struct acpi_config *config);

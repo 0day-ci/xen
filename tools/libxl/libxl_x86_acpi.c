@@ -84,9 +84,9 @@ static void acpi_mem_free(struct acpi_ctxt *ctxt,
 {
 }
 
-static uint32_t acpi_lapic_id(unsigned cpu)
+static uint32_t acpi_lapic_id(unsigned cpu, const struct acpi_config *config)
 {
-    return cpu * 2;
+    return config->topology_id[cpu];
 }
 
 static int init_acpi_config(libxl__gc *gc, 
@@ -155,6 +155,8 @@ static int init_acpi_config(libxl__gc *gc,
     config->lapic_base_address = LAPIC_BASE_ADDRESS;
     config->lapic_id = acpi_lapic_id;
     config->acpi_revision = 5;
+    config->topology_id = b_info->u.hvm.cpu_topology.tid;
+    config->topology_id_size = b_info->u.hvm.cpu_topology.tid_size;
 
     rc = 0;
 out:

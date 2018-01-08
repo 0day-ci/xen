@@ -156,7 +156,7 @@ static struct acpi_20_madt *construct_madt(struct acpi_ctxt *ctxt,
         lapic->length  = sizeof(*lapic);
         /* Processor ID must match processor-object IDs in the DSDT. */
         lapic->acpi_processor_id = i;
-        lapic->apic_id = config->lapic_id(i);
+        lapic->apic_id = config->lapic_id(i, config);
         lapic->flags = (test_bit(i, hvminfo->vcpu_online)
                         ? ACPI_LOCAL_APIC_ENABLED : 0);
         lapic++;
@@ -244,7 +244,7 @@ static struct acpi_20_srat *construct_srat(struct acpi_ctxt *ctxt,
         processor->type     = ACPI_PROCESSOR_AFFINITY;
         processor->length   = sizeof(*processor);
         processor->domain   = config->numa.vcpu_to_vnode[i];
-        processor->apic_id  = config->lapic_id(i);
+        processor->apic_id  = config->lapic_id(i, config);
         processor->flags    = ACPI_LOCAL_APIC_AFFIN_ENABLED;
         processor++;
     }
