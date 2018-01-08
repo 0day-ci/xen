@@ -25,6 +25,7 @@
 #include "pci_regs.h"
 #include "apic_regs.h"
 #include "vnuma.h"
+#include "topology.h"
 #include <acpi2_0.h>
 #include <xen/version.h>
 #include <xen/hvm/params.h>
@@ -343,6 +344,13 @@ int main(void)
 
     apic_setup();
     pci_setup();
+
+    /* smp_initialise() needs the mapping between vcpu_id and apic_id */
+    if ( init_cpu_topology_info() )
+    {
+        printf("Failed to get CPU topology\n");
+        return -1;
+    }
 
     smp_initialise();
 

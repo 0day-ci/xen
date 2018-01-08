@@ -22,6 +22,7 @@
 #include "util.h"
 #include "config.h"
 #include "apic_regs.h"
+#include "topology.h"
 
 #define AP_BOOT_EIP 0x1000
 extern char ap_boot_start[], ap_boot_end[];
@@ -86,7 +87,7 @@ static void lapic_wait_ready(void)
 
 static void boot_cpu(unsigned int cpu)
 {
-    unsigned int icr2 = SET_APIC_DEST_FIELD(LAPIC_ID(cpu));
+    unsigned int icr2 = SET_APIC_DEST_FIELD(topology_id[cpu]);
 
     /* Initialise shared variables. */
     ap_cpuid = cpu;
