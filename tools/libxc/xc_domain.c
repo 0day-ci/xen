@@ -2471,6 +2471,41 @@ int xc_set_cpu_topology(xc_interface *xch,
 
     return rc;
 }
+
+int xc_get_cpu_topology(xc_interface *xch,
+                        uint32_t domid,
+                        uint32_t size,
+                        uint32_t *tid,
+                        uint8_t *thread_per_core,
+                        uint8_t *core_per_socket)
+{
+    int rc;
+    DECLARE_HYPERCALL_BOUNCE(tid, sizeof(*tid) * size,
+                             XC_HYPERCALL_BUFFER_BOUNCE_OUT);
+    struct xen_cpu_topology_info cpu_topology =
+        { .domid = domid, .size = size };
+
+    if ( xc_hypercall_bounce_pre(xch, tid) )
+    {
+        rc = -1;
+        errno = ENOMEM;
+        goto failed;
+    }
+
+    set_xen_guest_handle(cpu_topology.tid.h, tid);
+    rc = do_memory_op(xch, XENMEM_get_cpu_topology, &cpu_topology,
+                      sizeof(cpu_topology));
+    if ( !rc )
+    {
+        *thread_per_core = cpu_topology.thread_per_core;
+        *core_per_socket = cpu_topology.core_per_socket;
+    }
+
+ failed:
+    xc_hypercall_buffer_free(xch, tid);
+
+    return rc;
+}
 /*
  * Local variables:
  * mode: C

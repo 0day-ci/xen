@@ -178,6 +178,10 @@ struct cpuid_domain_info
     /* HVM-only information. */
     bool pae;
     bool nestedhvm;
+    /* CPU topology information. */
+    bool topology_supported;
+    uint8_t core_per_socket;
+    uint8_t thread_per_core;
 };
 
 static void cpuid(const unsigned int *input, unsigned int *regs)
@@ -280,6 +284,14 @@ static int get_cpuid_domain_info(xc_interface *xch, uint32_t domid,
             if ( rc )
                 return rc;
         }
+
+        /* retrieve CPU topology information */
+        rc = xc_get_cpu_topology(xch, domid, 0, NULL,
+                                 &info->thread_per_core,
+                                 &info->core_per_socket);
+        info->topology_supported = !rc;
+        if ( rc )
+            return rc;
     }
     else
     {
@@ -365,6 +377,17 @@ static void amd_xc_cpuid_policy(xc_interface *xch,
     }
 }
 
+static inline int fls(unsigned int x)
+{
+    int r;
+
+    asm ( "bsr %1,%0\n\t"
+          "jnz 1f\n\t"
+          "mov $-1,%0\n"
+          "1:" : "=r" (r) : "rm" (x));
+    return r + 1;
+}
+
 static void intel_xc_cpuid_policy(xc_interface *xch,
                                   const struct cpuid_domain_info *info,
                                   const unsigned int *input, unsigned int *regs)
@@ -379,6 +402,38 @@ static void intel_xc_cpuid_policy(xc_interface *xch,
         regs[0] = (((regs[0] & 0x7c000000u) << 1) | 0x04000000u |
                    (regs[0] & 0x3ffu));
         regs[3] &= 0x3ffu;
+
+        if ( !info->topology_supported )
+            break;
+        /* only emulate cache topology when host supports this level */
+        if ( (input[1] == 2 || input[1] == 3) && regs[0] )
+            regs[0] = (regs[0] & 0x3fffu) | (info->core_per_socket << 26) |
+                      ((info->thread_per_core - 1) << 14);
+        break;
+
+    case 0x0000000b:
+        if ( !info->topology_supported )
+            break;
+
+        switch ( input[1] )
+        {
+        case 0:
+            regs[0] = fls(info->thread_per_core - 1);
+            regs[1] = 1;
+            regs[2] = 1 << 8;
+            break;
+
+        case 1:
+            regs[0] = fls(info->thread_per_core - 1) +
+                      fls(info->core_per_socket - 1);
+            regs[1] = 1;
+            regs[2] = 2 << 8;
+            break;
+
+        default:
+            regs[0] = regs[1] = regs[2] = regs[3] = 0;
+            break;
+        }
         break;
 
     case 0x80000000:
@@ -409,16 +464,27 @@ static void xc_cpuid_hvm_policy(xc_interface *xch,
         break;
 
     case 0x00000001:
-        /*
-         * EBX[23:16] is Maximum Logical Processors Per Package.
-         * Update to reflect vLAPIC_ID = vCPU_ID * 2.
-         */
-        regs[1] = (regs[1] & 0x0000ffffu) | ((regs[1] & 0x007f0000u) << 1);
+    {
+        if ( info->topology_supported )
+        {
+            int bit = fls(info->thread_per_core - 1) +
+                      fls(info->core_per_socket - 1);
+
+            regs[1] = (regs[1] & 0x0000ffffu) |
+                      (((bit < 8) ? (1 << bit) : 0xff) << 16);
+        }
+        else
+            /*
+             * EBX[23:16] is Maximum Logical Processors Per Package.
+             * Update to reflect vLAPIC_ID = vCPU_ID * 2.
+             */
+            regs[1] = (regs[1] & 0x0000ffffu) | ((regs[1] & 0x007f0000u) << 1);
 
         regs[2] = info->featureset[featureword_of(X86_FEATURE_SSE3)];
         regs[3] = (info->featureset[featureword_of(X86_FEATURE_FPU)] |
                    bitmaskof(X86_FEATURE_HTT));
         break;
+    }
 
     case 0x00000007: /* Intel-defined CPU features */
         if ( input[1] == 0 )
@@ -470,6 +536,7 @@ static void xc_cpuid_hvm_policy(xc_interface *xch,
 
     case 0x00000002: /* Intel cache info (dumped by AMD policy) */
     case 0x00000004: /* Intel cache info (dumped by AMD policy) */
+    case 0x0000000b: /* Intel Extended Topology Enumeration Leaf */
     case 0x0000000a: /* Architectural Performance Monitor Features */
     case 0x80000002: /* Processor name string */
     case 0x80000003: /* ... continued         */
@@ -757,12 +824,19 @@ int xc_cpuid_apply_policy(xc_interface *xch, uint32_t domid,
                 continue;
         }
 
+        if ( input[0] == 0xb )
+        {
+            input[1]++;
+            if ( regs[0] || regs[1] || regs[2] || regs[3] )
+                continue;
+        }
+
         input[0]++;
         if ( !(input[0] & 0x80000000u) && (input[0] > base_max ) )
             input[0] = 0x80000000u;
 
         input[1] = XEN_CPUID_INPUT_UNUSED;
-        if ( (input[0] == 4) || (input[0] == 7) )
+        if ( (input[0] == 4) || (input[0] == 7) || (input[0] == 0xb) )
             input[1] = 0;
         else if ( input[0] == 0xd )
             input[1] = 1; /* Xen automatically calculates almost everything. */

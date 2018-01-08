@@ -563,6 +563,24 @@ void recalculate_cpuid_policy(struct domain *d)
         }
     }
 
+    for ( i = 0; i < ARRAY_SIZE(p->ext_topo.raw); ++i )
+    {
+        printk("level_type %x\n", p->ext_topo.subleaf[i].level_type);
+        if ( p->ext_topo.subleaf[i].level_type == 1 ||
+             p->ext_topo.subleaf[i].level_type == 2 )
+        {
+            /* Subleaf has a valid level type. Zero reserved fields. */
+            p->ext_topo.raw[i].a &= 0x0000001f;
+            p->ext_topo.raw[i].b &= 0x0000ffff;
+            p->ext_topo.raw[i].c &= 0x0000ffff;
+        }
+        else
+        {
+            zero_leaves(p->ext_topo.raw, i, ARRAY_SIZE(p->cache.raw) - 1);
+            break;
+        }
+    }
+
     if ( !p->extd.svm )
         p->extd.raw[0xa] = EMPTY_LEAF;
 
@@ -632,6 +650,13 @@ void guest_cpuid(const struct vcpu *v, uint32_t leaf,
                 return;
 
             *res = p->feat.raw[subleaf];
+            break;
+
+        case 0xb:
+            if ( subleaf >= ARRAY_SIZE(p->ext_topo.raw) )
+                return;
+
+            *res = p->ext_topo.raw[subleaf];
             break;
 
         case XSTATE_CPUID:

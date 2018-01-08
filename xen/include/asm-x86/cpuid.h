@@ -64,6 +64,7 @@ DECLARE_PER_CPU(bool, cpuid_faulting_enabled);
 #define CPUID_GUEST_NR_BASIC      (0xdu + 1)
 #define CPUID_GUEST_NR_FEAT       (0u + 1)
 #define CPUID_GUEST_NR_CACHE      (5u + 1)
+#define CPUID_GUEST_NR_EXT_TOPO   (2u + 1)
 #define CPUID_GUEST_NR_XSTATE     (62u + 1)
 #define CPUID_GUEST_NR_EXTD_INTEL (0x8u + 1)
 #define CPUID_GUEST_NR_EXTD_AMD   (0x1cu + 1)
@@ -144,6 +145,17 @@ struct cpuid_policy
             };
         };
     } feat;
+
+    /* Structured Extended Topology Enumeration Leaf */
+    union {
+        struct cpuid_leaf raw[CPUID_GUEST_NR_EXT_TOPO];
+        struct cpuid_ext_topo_leaf {
+            uint32_t shift:5, :27;
+            uint32_t proc_num:16, :16;
+            uint32_t level_num:8, level_type:8, :16;
+            uint32_t x2apic_id;
+        } subleaf[CPUID_GUEST_NR_EXT_TOPO];
+    } ext_topo;
 
     /* Xstate feature leaf: 0x0000000D[xx] */
     union {
