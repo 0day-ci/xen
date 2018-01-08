@@ -1509,6 +1509,13 @@ int hvm_vcpu_initialise(struct vcpu *v)
     int rc;
     struct domain *d = v->domain;
 
+    if ( v->vcpu_id > d->arch.hvm_domain.apic_id_size )
+    {
+        printk(XENLOG_ERR "d%dv%d's apic id isn't set.\n",
+               d->domain_id, v->vcpu_id);
+        return -ENOENT;
+    }
+
     hvm_asid_flush_vcpu(v);
 
     spin_lock_init(&v->arch.hvm_vcpu.tm_lock);

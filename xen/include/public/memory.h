@@ -650,7 +650,32 @@ struct xen_vnuma_topology_info {
 typedef struct xen_vnuma_topology_info xen_vnuma_topology_info_t;
 DEFINE_XEN_GUEST_HANDLE(xen_vnuma_topology_info_t);
 
-/* Next available subop number is 28 */
+/*
+ * XENMEM_get_cpu_topology is used by guest to acquire vcpu topology from
+ * hypervisor.
+ */
+#define XENMEM_get_cpu_topology     28
+
+struct xen_cpu_topology_info {
+    /* IN */
+    domid_t domid;
+    uint16_t pad;
+
+    /* IN/OUT */
+    uint32_t size;
+
+    /* OUT */
+    uint8_t core_per_socket;
+    uint8_t thread_per_core;
+    uint16_t pad2;
+
+    union {
+        XEN_GUEST_HANDLE(uint32) h;
+        uint64_t pad;
+    } tid;
+};
+typedef struct xen_cpu_topology_info xen_cpu_topology_info_t;
+DEFINE_XEN_GUEST_HANDLE(xen_cpu_topology_info_t);
 
 #endif /* __XEN_PUBLIC_MEMORY_H__ */
 

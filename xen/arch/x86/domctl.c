@@ -347,6 +347,29 @@ void arch_get_domain_info(const struct domain *d,
         info->flags |= XEN_DOMINF_hap;
 }
 
+static int arch_set_cpu_topology(struct domain *d,
+                                 struct xen_domctl_cpu_topology *topology)
+{
+    if ( !is_hvm_domain(d) ||
+         !topology->size || topology->size > HVM_MAX_VCPUS )
+        return -EINVAL;
+
+    if ( !d->arch.hvm_domain.apic_id )
+        d->arch.hvm_domain.apic_id = xmalloc_array(uint32_t, topology->size);
+
+    if ( !d->arch.hvm_domain.apic_id )
+        return -ENOMEM;
+
+    if ( copy_from_guest(d->arch.hvm_domain.apic_id, topology->tid,
+                         topology->size) )
+        return -EFAULT;
+
+    d->arch.hvm_domain.apic_id_size = topology->size;
+    d->arch.hvm_domain.core_per_socket = topology->core_per_socket;
+    d->arch.hvm_domain.thread_per_core = topology->thread_per_core;
+    return 0;
+}
+
 #define MAX_IOPORTS 0x10000
 
 long arch_do_domctl(
@@ -1543,6 +1566,10 @@ long arch_do_domctl(
     case XEN_DOMCTL_disable_migrate:
         d->disable_migrate = domctl->u.disable_migrate.disable;
         recalculate_cpuid_policy(d);
+        break;
+
+    case XEN_DOMCTL_set_cpu_topology:
+        ret = arch_set_cpu_topology(d, &domctl->u.cpu_topology);
         break;
 
     default:

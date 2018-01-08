@@ -196,6 +196,21 @@ struct hvm_domain {
         struct vmx_domain vmx;
         struct svm_domain svm;
     };
+
+    /*
+     * an array of apic_id, which is unique and can be used to extract
+     * socket ID, core ID and thread ID
+     */
+    uint32_t *apic_id;
+    uint32_t apic_id_size;
+
+    /*
+     * reports the number of core/thread in a socket/core, determining the
+     * right-shift value to extract {core/thread} ID from apic_id (defined
+     * above).
+     */
+    uint8_t core_per_socket;
+    uint8_t thread_per_core;
 };
 
 #define hap_enabled(d)  ((d)->arch.hvm_domain.hap_enabled)

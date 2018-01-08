@@ -427,6 +427,11 @@ static int flask_get_vnumainfo(struct domain *d)
     return current_has_perm(d, SECCLASS_DOMAIN2, DOMAIN2__GET_VNUMAINFO);
 }
 
+static int flask_get_cpu_topology(struct domain *d)
+{
+    return current_has_perm(d, SECCLASS_DOMAIN2, DOMAIN2__GET_CPU_TOPOLOGY);
+}
+
 static int flask_console_io(struct domain *d, int cmd)
 {
     u32 perm;
@@ -751,6 +756,9 @@ static int flask_domctl(struct domain *d, int cmd)
 
     case XEN_DOMCTL_set_gnttab_limits:
         return current_has_perm(d, SECCLASS_DOMAIN2, DOMAIN2__SET_GNTTAB_LIMITS);
+
+    case XEN_DOMCTL_set_cpu_topology:
+        return current_has_perm(d, SECCLASS_DOMAIN2, DOMAIN2__SET_CPU_TOPOLOGY);
 
     default:
         return avc_unknown_permission("domctl", cmd);
@@ -1799,6 +1807,8 @@ static struct xsm_operations flask_ops = {
 
     .do_xsm_op = do_flask_op,
     .get_vnumainfo = flask_get_vnumainfo,
+
+    .get_cpu_topology = flask_get_cpu_topology,
 
     .vm_event_control = flask_vm_event_control,
 

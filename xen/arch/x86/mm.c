@@ -4413,6 +4413,51 @@ long arch_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
         return rc;
     }
 
+    case XENMEM_get_cpu_topology:
+    {
+        struct domain *d;
+        struct xen_cpu_topology_info topology;
+
+        if ( copy_from_guest(&topology, arg, 1) )
+            return -EFAULT;
+
+        if ( topology.pad || topology.pad2 )
+            return -EINVAL;
+
+        if ( (d = rcu_lock_domain_by_any_id(topology.domid)) == NULL )
+            return -ESRCH;
+
+        rc = xsm_get_cpu_topology(XSM_TARGET, d);
+        if ( rc )
+            goto get_cpu_topology_failed;
+
+        rc = -EOPNOTSUPP;
+        if ( !is_hvm_domain(d) || !d->arch.hvm_domain.apic_id )
+            goto get_cpu_topology_failed;
+
+        /* allow the size to be zero for users who don't care apic_id */
+        if ( topology.size )
+        {
+            rc = -E2BIG;
+            if ( topology.size != d->arch.hvm_domain.apic_id_size )
+                goto get_cpu_topology_failed;
+
+            rc = -EFAULT;
+            if ( copy_to_guest(topology.tid.h, d->arch.hvm_domain.apic_id,
+                               topology.size) )
+                goto get_cpu_topology_failed;
+        }
+
+        topology.core_per_socket = d->arch.hvm_domain.core_per_socket;
+        topology.thread_per_core = d->arch.hvm_domain.thread_per_core;
+
+        rc = __copy_to_guest(arg, &topology, 1) ? -EFAULT : 0;
+
+ get_cpu_topology_failed:
+        rcu_unlock_domain(d);
+        return rc;
+    }
+
     default:
         return subarch_memory_op(cmd, arg);
     }

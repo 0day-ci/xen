@@ -1105,6 +1105,26 @@ struct xen_domctl_vuart_op {
                                  */
 };
 
+/* XEN_DOMCTL_set_cpu_topology */
+struct xen_domctl_cpu_topology {
+    /* IN - size of 'topology' array */
+    uint32_t size;
+    /* IN - the number of core in the same socket */
+    uint8_t core_per_socket;
+    /* IN - the number of thread in the same core */
+    uint8_t thread_per_core;
+    /* IN - should be 0 */
+    uint8_t pad[2];
+    /*
+     * IN - an array of topology ID (tid), which is used to compute a given
+     * vcpu's core id and thread id. For x86, topology ID is the APIC ID,
+     * which is system-level unique.
+     */
+    XEN_GUEST_HANDLE_64(uint32) tid;
+};
+typedef struct xen_domctl_cpu_topology xen_domctl_cpu_topology;
+DEFINE_XEN_GUEST_HANDLE(xen_domctl_cpu_topology);
+
 struct xen_domctl {
     uint32_t cmd;
 #define XEN_DOMCTL_createdomain                   1
@@ -1184,6 +1204,7 @@ struct xen_domctl {
 #define XEN_DOMCTL_soft_reset                    79
 #define XEN_DOMCTL_set_gnttab_limits             80
 #define XEN_DOMCTL_vuart_op                      81
+#define XEN_DOMCTL_set_cpu_topology              82
 #define XEN_DOMCTL_gdbsx_guestmemio            1000
 #define XEN_DOMCTL_gdbsx_pausevcpu             1001
 #define XEN_DOMCTL_gdbsx_unpausevcpu           1002
@@ -1248,6 +1269,7 @@ struct xen_domctl {
         struct xen_domctl_psr_alloc         psr_alloc;
         struct xen_domctl_set_gnttab_limits set_gnttab_limits;
         struct xen_domctl_vuart_op          vuart_op;
+        struct xen_domctl_cpu_topology      cpu_topology;
         uint8_t                             pad[128];
     } u;
 };
